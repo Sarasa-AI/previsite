@@ -51,3 +51,10 @@ uploads/
 
 # Backend error files
 error
+
+# Test results
+test-results/
+
+# Environment files
+backend/.env
+frontend/.env
