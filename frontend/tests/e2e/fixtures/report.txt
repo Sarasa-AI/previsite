@@ -1,0 +1,1 @@
+Sample medical file content for E2E upload test.

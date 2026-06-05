@@ -1,0 +1,6 @@
+.venv
+__pycache__
+*.pyc
+previsit.db
+uploads
+.env

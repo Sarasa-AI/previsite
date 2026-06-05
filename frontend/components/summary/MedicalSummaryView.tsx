@@ -1,0 +1,202 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { AlertCircle, ChevronDown, FileText, Pill, ShieldAlert, Stethoscope, ImageIcon } from "lucide-react";
+
+type SummaryPayload = {
+  soap_note?: string | null;
+  medical_data?: {
+    chief_complaint?: string | null;
+    history_present_illness?: string | null;
+    past_medical_history?: string | null;
+    medications?: string | null;
+    allergies?: string | null;
+  };
+};
+
+type FileItem = {
+  id: number;
+  filename: string;
+  size: number;
+  mime_type: string;
+  url: string;
+};
+
+type MedicalSummaryViewProps = {
+  data: SummaryPayload;
+  files?: FileItem[];
+};
+
+function parseList(value?: string | null) {
+  if (!value) return [];
+  return value
+    .split(/[\n،,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function soapSections(note?: string | null) {
+  const source = note ?? "";
+  const sections = [
+    { key: "Subjective", patterns: [/Subjective/i, /\*\*S\s*-\s*Subjective/i, /ذهنی/i] },
+    { key: "Objective", patterns: [/Objective/i, /\*\*O\s*-\s*Objective/i, /عینی/i] },
+    { key: "Assessment", patterns: [/Assessment/i, /\*\*A\s*-\s*Assessment/i, /ارزیابی/i] },
+    { key: "Plan", patterns: [/Plan/i, /\*\*P\s*-\s*Plan/i, /برنامه/i] },
+  ];
+
+  return sections.map((section, index) => {
+    let start = -1;
+    for (const pattern of section.patterns) {
+      const match = source.match(pattern);
+      if (match && match.index !== undefined) {
+        start = match.index + match[0].length;
+        break;
+      }
+    }
+
+    let end = source.length;
+    if (index < sections.length - 1) {
+      for (let i = index + 1; i < sections.length; i++) {
+        for (const pattern of sections[i].patterns) {
+          const nextMatch = source.match(pattern);
+          if (nextMatch && nextMatch.index !== undefined) {
+            end = nextMatch.index;
+            break;
+          }
+        }
+        if (end !== source.length) break;
+      }
+    }
+
+    const raw = start >= 0 ? source.slice(start, end) : "";
+    return {
+      title: section.key,
+      content: raw.replace(/^[:\-\s#\*]+/, "").trim() || "هنوز محتوایی برای این بخش تولید نشده است.",
+    };
+  });
+}
+
+// نکته آموزشی:
+// این ویوِ تعاملی فقط برای Accordion سمت کاربر client است. خود route summary می‌تواند
+// داده را در سطح بالاتر بگیرد و UI پزشکی ساختاریافته را به این لایه بسپارد.
+export default function MedicalSummaryView({ data, files = [] }: MedicalSummaryViewProps) {
+  const [pmhOpen, setPmhOpen] = useState(true);
+  const meds = useMemo(() => parseList(data.medical_data?.medications), [data.medical_data?.medications]);
+  const allergies = useMemo(() => parseList(data.medical_data?.allergies), [data.medical_data?.allergies]);
+  const sections = useMemo(() => soapSections(data.soap_note), [data.soap_note]);
+
+  const images = useMemo(() => files.filter(f => f.mime_type.startsWith("image/")), [files]);
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-[28px] border border-trust/10 bg-trust/5 p-5 shadow-soft">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-trust text-white">
+            <AlertCircle className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-trust">CC | دلیل اصلی مراجعه</p>
+            <h2 className="text-2xl font-bold text-slate-900">
+              {data.medical_data?.chief_complaint || "دلیل مراجعه هنوز استخراج نشده است."}
+            </h2>
+          </div>
+        </div>
+      </div>
+
+      <div className="medical-card space-y-3">
+        <div className="flex items-center gap-2 text-trust">
+          <Stethoscope className="h-5 w-5" />
+          <h3 className="text-lg font-bold">HPI | تاریخچه بیماری فعلی</h3>
+        </div>
+        <p className="leading-relaxed text-slate-700">
+          {data.medical_data?.history_present_illness || "هنوز شرح حال فعلی برای این بیمار ثبت نشده است."}
+        </p>
+      </div>
+
+      <div className="medical-card">
+        <button
+          className="flex w-full items-center justify-between gap-3 text-right"
+          onClick={() => setPmhOpen((current) => !current)}
+          type="button"
+        >
+          <span className="flex items-center gap-2 text-lg font-bold text-trust">
+            <FileText className="h-5 w-5" />
+            PMH | سوابق پزشکی
+          </span>
+          <ChevronDown className={`h-5 w-5 text-slate-500 transition-transform duration-300 ${pmhOpen ? "rotate-180" : ""}`} />
+        </button>
+        {pmhOpen ? (
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm leading-7 text-slate-700">
+            {data.medical_data?.past_medical_history || "سابقه پزشکی قابل‌نمایشی ثبت نشده است."}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="medical-card space-y-3">
+          <div className="flex items-center gap-2 text-trust">
+            <Pill className="h-5 w-5" />
+            <h3 className="text-lg font-bold">داروها</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {meds.length ? meds.map((item) => <span key={item} className="status-chip bg-slate-100 text-slate-700">{item}</span>) : <span className="text-sm text-slate-500">دارویی ثبت نشده است.</span>}
+          </div>
+        </div>
+
+        <div className="medical-card space-y-3">
+          <div className="flex items-center gap-2 text-trust">
+            <ShieldAlert className="h-5 w-5" />
+            <h3 className="text-lg font-bold">حساسیت‌ها</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {allergies.length ? allergies.map((item) => <span key={item} className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">{item}</span>) : <span className="text-sm text-slate-500">حساسیتی ثبت نشده است.</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-semibold text-trust">SOAP Note</p>
+          <h3 className="text-xl font-bold text-slate-900">نمای ۲×۲ برای اسکن سه‌ثانیه‌ای پزشک</h3>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {sections.map((section) => (
+            <article key={section.title} className="glass-card min-h-[180px]">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-trust/75">{section.title}</p>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{section.content}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      {images.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-trust">
+            <ImageIcon className="h-5 w-5" />
+            <h3 className="text-xl font-bold text-slate-900">تصاویر و مدارک پیوست</h3>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {images.map((img) => (
+              <a 
+                key={img.id} 
+                href={`/api/proxy${img.url}`} 
+                target="_blank" 
+                rel="noreferrer"
+                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 transition-all hover:shadow-md"
+              >
+                <img 
+                  src={`/api/proxy${img.url}`} 
+                  alt={img.filename}
+                  className="h-48 w-full rounded-xl object-cover"
+                />
+                <div className="mt-2 px-1">
+                  <p className="truncate text-xs font-medium text-slate-700">{img.filename}</p>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
