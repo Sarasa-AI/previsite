@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     gapgpt_base_url: str = "https://api.gapgpt.app/v1"
     gapgpt_model: str = "gapgpt-qwen-3.5"
 
+    # OpenRouter (Layer 2 & 3 intake LLM)
+    openrouter_api_key: Optional[str] = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "google/gemini-2.0-flash-lite-preview-02-05:free"
+    openrouter_http_referer: str = "http://localhost:3000"
+    openrouter_app_title: str = "PreVisit MVP"
+
     # File Upload
     upload_dir: str = "uploads"
     max_file_size: int = 10 * 1024 * 1024  # 10MB

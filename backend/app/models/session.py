@@ -27,3 +27,4 @@ class Session(Base):
     messages = relationship("Message", back_populates="session", cascade="all, delete-orphan")
     files = relationship("File", back_populates="session", cascade="all, delete-orphan")
     summary = relationship("Summary", back_populates="session", uselist=False, cascade="all, delete-orphan")
+    intake = relationship("Intake", back_populates="session", uselist=False, cascade="all, delete-orphan")

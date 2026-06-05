@@ -108,6 +108,65 @@ class LLMService:
 - پاسخ‌های شما نباید بیش از ۲ یا ۳ جمله باشد.
 """
 
+    async def chat_json(self, messages: list[dict], system_prompt: str) -> str:
+        """LLM call optimized for structured JSON output."""
+        self._ensure_client()
+        self._check_local_rate_limit()
+
+        logger.info("AI JSON call started provider=%s messages=%s", self.provider, len(messages))
+
+        max_retries = 3
+        retry_delay = 1
+
+        for attempt in range(max_retries):
+            try:
+                request_kwargs = {
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        *messages,
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 2000,
+                }
+                try:
+                    response = await self.client.chat.completions.create(
+                        **request_kwargs,
+                        response_format={"type": "json_object"},
+                    )
+                except Exception:
+                    response = await self.client.chat.completions.create(**request_kwargs)
+
+                usage = response.usage
+                self._record_usage(
+                    input_tokens=getattr(usage, "prompt_tokens", 0) if usage else 0,
+                    output_tokens=getattr(usage, "completion_tokens", 0) if usage else 0,
+                )
+                logger.info("AI JSON call completed provider=%s", self.provider)
+                return response.choices[0].message.content
+
+            except (APIConnectionError, APIStatusError, RateLimitError) as exc:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        "LLM JSON call failed (attempt %s/%s): %s. Retrying...",
+                        attempt + 1,
+                        max_retries,
+                        exc,
+                    )
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+                    continue
+                raise LLMServiceError(
+                    f"{self.provider.capitalize()} JSON request failed after {max_retries} attempts."
+                ) from exc
+            except AuthenticationError as exc:
+                raise LLMAuthenticationError(
+                    f"{self.provider.capitalize()} authentication failed."
+                ) from exc
+            except Exception as exc:
+                raise LLMServiceError(f"Unexpected error during LLM JSON call: {exc}") from exc
+
+        raise LLMServiceError(f"Unsupported LLM provider: {self.provider}")
+
     async def chat(self, messages: list[dict], system_prompt: str = None) -> str:
         """
         messages format: [{"role": "user/assistant", "content": "..."}]

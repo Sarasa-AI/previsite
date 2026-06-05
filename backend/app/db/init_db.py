@@ -1,7 +1,7 @@
 import logging
 
 from app.db.database import Base, engine
-from app.models import User, Session, Message, File, Summary
+from app.models import User, Session, Message, File, Summary, Intake
 
 logger = logging.getLogger(__name__)
 

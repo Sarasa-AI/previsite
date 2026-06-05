@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import auth
-from app.api import chat, summary, files
+from app.api import chat, summary, files, intake
 from app.core.config import settings
 from app.core.error_handler import register_exception_handlers
 from app.core.logging_config import setup_logging
@@ -87,3 +87,4 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(summary.router)
 app.include_router(files.router)
+app.include_router(intake.router)

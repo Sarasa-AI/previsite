@@ -1,13 +1,14 @@
+import json
+import logging
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-import logging
 
-from app.db.database import get_db
-
-logger = logging.getLogger(__name__)
-from app.models import Summary, User, Session as SessionModel
 from app.auth.dependencies import get_current_user
+from app.db.database import get_db
+from app.models import Intake, Summary, User, Session as SessionModel
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/summary", tags=["summary"])
 
@@ -59,6 +60,19 @@ def get_summary(
             detail=f"Summary not found for session {session_id}"
         )
     
+    intake_data = None
+    intake = db.query(Intake).filter(Intake.session_id == session_id).first()
+    if intake:
+        from app.api.intake import _to_response
+        intake_data = _to_response(intake).model_dump()
+
+    assessment_data = None
+    if summary.assessment:
+        try:
+            assessment_data = json.loads(summary.assessment)
+        except json.JSONDecodeError:
+            assessment_data = None
+
     try:
         return {
             "id": summary.id,
@@ -71,6 +85,8 @@ def get_summary(
                 "medications": summary.medications,
                 "allergies": summary.allergies,
             },
+            "assessment_data": assessment_data,
+            "intake": intake_data,
             "created_at": summary.created_at.isoformat() if summary.created_at else None
         }
     except Exception as e:

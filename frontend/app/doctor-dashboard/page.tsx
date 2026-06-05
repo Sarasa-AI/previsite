@@ -73,11 +73,11 @@ export default function DoctorDashboardPage() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Link href={`/summary/${session.id}`} className="primary-button sm:w-auto">
-                    مشاهده خلاصه و SOAP
+                  <Link href={`/clinician/${session.id}`} className="primary-button sm:w-auto">
+                    داشبورد پزشک
                   </Link>
-                  <Link href={`/chat/${session.id}`} className="secondary-button sm:w-auto">
-                    تاریخچه چت
+                  <Link href={`/summary/${session.id}`} className="secondary-button sm:w-auto">
+                    خلاصه و SOAP
                   </Link>
                 </div>
               </div>

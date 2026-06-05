@@ -94,7 +94,7 @@ export default function SessionCard({ session }: SessionCardProps) {
       </div>
 
       <div className="mt-6 flex flex-wrap gap-3">
-        <Link className="primary-button" href={`/chat/${session.id}`}>
+        <Link className="primary-button" href={`/intake/${session.id}`}>
           ادامه مصاحبه
           <ArrowLeft className="h-4 w-4" />
         </Link>
