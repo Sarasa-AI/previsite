@@ -55,6 +55,59 @@ Rules:
 JSON Output Schema:
 { "chief_complaint": "Brief physician-facing chief complaint.", "hpi_summary": "Concise narrative summary of the present illness.", "pertinent_positives": ["Important symptoms or findings reported"], "pertinent_negatives": ["Important symptoms specifically denied"], "red_flags": ["Potentially concerning findings explicitly reported"] }"""
 
+INTERVIEW_CHAT_BASE_PROMPT = """شما یک دستیار پزشکی هوشمند و همدل هستید که در حال انجام مصاحبه با بیمار به زبان فارسی هستید.
+
+هدف شما: جمع‌آوری تاریخچه پزشکی کامل بیمار به صورت گفت‌وگوی طبیعی و محترمانه — نه پرسشنامه ثابت.
+
+زمینه بالینی استخراج‌شده تاکنون:
+{clinical_context}
+
+گفتگوی اخیر (پاسخ‌های قبلی بیمار):
+{recent_conversation}
+
+دستورالعمل‌های کلی:
+- فقط و فقط «یک» سوال در هر نوبت بپرسید.
+- سوالات را کوتاه، روان و محترمانه نگه دارید.
+- در صورت ابراز درد یا نگرانی، با بیمار همدلی کنید.
+- پاسخ‌های شما نباید بیش از ۲ یا ۳ جمله باشد.
+
+تولید سوال پویا:
+- سوالات را تکرار نکنید. اگر بیمار قبلاً اطلاعاتی داده، دوباره درباره همان موضوع نپرسید.
+- ۳ پیام آخر و خلاصه بالینی را مرور کنید، بزرگ‌ترین خلأ اطلاعاتی را شناسایی کنید، و یک سوال پیگیری طبیعی بسازید.
+- بر اساس لحن بیمار و شکایت اصلی فعلی، سوالی بپرسید که همدلی و استدلال پزشکی نشان دهد.
+- از الگوی ثابت پرسشنامه‌ای خودداری کنید؛ گفتگو باید ادامه طبیعی مکالمه قبلی باشد.
+
+- هرگاه تمام اطلاعات لازم را جمع‌آوری کردید، دقیقاً با این جمله گفتگو را تمام کنید: "ممنون از همکاری شما. اطلاعات کافی جمع‌آوری شد. subject object plan"
+"""
+
+
+def _format_recent_conversation(chat_history: list[dict], limit: int = 5) -> str:
+    if not chat_history:
+        return "هنوز گفتگویی ثبت نشده است."
+
+    recent = chat_history[-limit:]
+    lines = []
+    for msg in recent:
+        role = "بیمار" if msg.get("role") == "user" else "دستیار"
+        content = msg.get("content", "").strip()
+        if content:
+            lines.append(f"- {role}: {content}")
+    return "\n".join(lines) if lines else "هنوز گفتگویی ثبت نشده است."
+
+
+def build_interview_system_prompt(
+    clinical_context: str = "",
+    chat_history: list[dict] | None = None,
+    stage_instruction: str = "",
+) -> str:
+    prompt = INTERVIEW_CHAT_BASE_PROMPT.format(
+        clinical_context=clinical_context or "هنوز داده‌ای استخراج نشده است.",
+        recent_conversation=_format_recent_conversation(chat_history or []),
+    )
+    if stage_instruction.strip():
+        prompt += f"\n\nدستورالعمل این نوبت:\n{stage_instruction.strip()}"
+    return prompt
+
 
 def _build_layer2_user_prompt(demographics: DemographicsInput) -> str:
     return f"""Patient Information

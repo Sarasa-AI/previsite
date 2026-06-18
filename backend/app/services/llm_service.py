@@ -84,30 +84,19 @@ class LLMService:
             self._total_output_tokens,
         )
 
-    def get_system_prompt(self, current_data: str = "") -> str:
-        return f"""شما یک دستیار پزشکی هوشمند و همدل هستید که در حال انجام مصاحبه با بیمار به زبان فارسی هستید.
+    def get_system_prompt(
+        self,
+        current_data: str = "",
+        chat_history: list[dict] | None = None,
+        stage_instruction: str = "",
+    ) -> str:
+        from app.services.intake_llm import build_interview_system_prompt
 
-هدف شما: جمع‌آوری تاریخچه پزشکی کامل بیمار به صورت گام‌به‌گام و محترمانه.
-
-اطلاعاتی که تاکنون جمع‌آوری شده (فقط برای اطلاع شما):
-{current_data}
-
-دستورالعمل‌ها:
-- فقط و فقط "یک" سوال در هر نوبت بپرسید.
-- از پرسیدن سوالاتی که پاسخ آن‌ها قبلاً داده شده خودداری کنید.
-- از زبان فارسی ساده، روان و محترمانه استفاده کنید.
-- در صورت ابراز درد یا نگرانی، با بیمار همدلی کنید (مثلاً: "متاسفم که این درد را تجربه می‌کنید").
-- سوالات را کوتاه و مستقیم نگه دارید.
-- مراحل را به ترتیب زیر طی کنید:
-  1. جزئیات شکایت اصلی (شروع، مدت، شدت، عوامل تشدید یا بهبود)
-  2. علائم همراه
-  3. سوابق پزشکی گذشته
-  4. داروهای مصرفی و آلرژی‌ها
-  5. سوابق خانوادگی و اجتماعی (سیگار، الکل، شغل)
-
-- هرگاه تمام اطلاعات لازم را جمع‌آوری کردید، دقیقاً با این جمله گفتگو را تمام کنید: "ممنون از همکاری شما. اطلاعات کافی جمع‌آوری شد. subject object plan"
-- پاسخ‌های شما نباید بیش از ۲ یا ۳ جمله باشد.
-"""
+        return build_interview_system_prompt(
+            clinical_context=current_data,
+            chat_history=chat_history,
+            stage_instruction=stage_instruction,
+        )
 
     async def chat_json(self, messages: list[dict], system_prompt: str) -> str:
         """LLM call optimized for structured JSON output."""

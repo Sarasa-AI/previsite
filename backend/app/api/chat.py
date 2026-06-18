@@ -21,6 +21,7 @@ from app.core.rate_limiter import chat_rate_limit
 
 from app.services.llm_service import llm_service
 from app.services.interview_controller import interview_controller
+from app.services.interview_flow import InterviewStage
 from app.services.medical_extractor import medical_extractor
 from app.services.medical_storage import save_medical_data, save_summary
 from app.services.summary_builder import summary_builder
@@ -31,19 +32,34 @@ from app.schemas.medical import MedicalSummary
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
-def _build_fallback_question(stage_instruction: str) -> str:
+def _summary_text_field(value: str | None) -> list[str]:
+    if not value or value.strip().lower() in {"نامشخص", "unknown", "n/a", ""}:
+        return []
+    return [value.strip()]
+
+
+def _summary_notes(value: str | None) -> str | None:
+    if not value or value.strip().lower() in {"نامشخص", "unknown", "n/a", ""}:
+        return None
+    return value.strip()
+
+
+def _build_fallback_question(stage: InterviewStage) -> str:
     """Return a deterministic fallback prompt when the LLM is unavailable."""
-    if "دارو" in stage_instruction:
-        return "چه داروهایی در حال حاضر مصرف می‌کنید؟"
-    if "آلرژی" in stage_instruction:
-        return "آیا به دارو یا غذای خاصی حساسیت دارید؟"
-    if "خانواده" in stage_instruction:
-        return "در خانواده شما سابقه بیماری مهمی وجود دارد؟"
-    if "سبک زندگی" in stage_instruction:
-        return "آیا سیگار، الکل یا عامل شغلی مرتبطی وجود دارد؟"
-    if "جمع‌بندی" in stage_instruction:
-        return "ممنون از همکاری شما. اطلاعات کافی جمع‌آوری شد. "
-    return "لطفا کمی بیشتر درباره مشکل اصلی و زمان شروع آن توضیح دهید."
+    fallbacks = {
+        InterviewStage.MEDICATIONS: "چه داروهایی در حال حاضر مصرف می‌کنید؟",
+        InterviewStage.ALLERGIES: "آیا به دارو یا غذای خاصی حساسیت دارید؟",
+        InterviewStage.FAMILY_HISTORY: "در خانواده شما سابقه بیماری مهمی وجود دارد؟",
+        InterviewStage.SOCIAL_HISTORY: "آیا سیگار، الکل یا عامل شغلی مرتبطی وجود دارد؟",
+        InterviewStage.COMPLETION: "ممنون از همکاری شما. اطلاعات کافی جمع‌آوری شد. ",
+        InterviewStage.ASSOCIATED_SYMPTOMS: "آیا علامت دیگری همراه با مشکل فعلی‌تان دارید؟",
+        InterviewStage.PAST_MEDICAL_HISTORY: "آیا سابقه بیماری یا جراحی مهمی دارید؟",
+        InterviewStage.OPQRST: "لطفاً کمی بیشتر درباره شدت و زمان شروع علائم توضیح دهید.",
+    }
+    return fallbacks.get(
+        stage,
+        "لطفا کمی بیشتر درباره مشکل اصلی و زمان شروع آن توضیح دهید.",
+    )
 
 
 # ---------------------------------------------------------
@@ -241,10 +257,10 @@ async def send_message(
             # نگاشت مدل دیتابیس به اسکیما
             current_summary_obj = MedicalSummary(
                 chief_complaint=last_summary.chief_complaint,
-                past_medical_history=[last_summary.past_medical_history] if last_summary.past_medical_history else [],
-                current_medications=[last_summary.medications] if last_summary.medications else [],
-                allergies=[last_summary.allergies] if last_summary.allergies else [],
-                additional_notes=last_summary.history_present_illness
+                past_medical_history=_summary_text_field(last_summary.past_medical_history),
+                current_medications=_summary_text_field(last_summary.medications),
+                allergies=_summary_text_field(last_summary.allergies),
+                additional_notes=_summary_notes(last_summary.history_present_illness),
             )
         except Exception:
             pass
@@ -269,8 +285,12 @@ async def send_message(
     # -------------------------------------------------
 
     message_count = len(db_messages)
-    current_stage = interview_controller.detect_stage(current_summary_obj, message_count)
-    stage_instruction = interview_controller.get_stage_instruction(current_stage)
+    current_stage = interview_controller.detect_stage(current_summary_obj, history)
+    stage_instruction = interview_controller.get_stage_instruction(
+        current_stage,
+        summary=current_summary_obj,
+        chat_history=history,
+    )
 
     # نمایش وضعیت فعلی داده‌ها به LLM برای جلوگیری از تکرار سوالات
     current_data_str = "هنوز داده‌ای استخراج نشده است."
@@ -278,10 +298,11 @@ async def send_message(
         summary_dict = current_summary_obj.model_dump(exclude_none=True, exclude={'extracted_at'})
         current_data_str = json.dumps(summary_dict, ensure_ascii=False, indent=2)
 
-    system_prompt = llm_service.get_system_prompt(current_data_str)
-    
-    # اضافه کردن دستورالعمل مرحله فعلی به پرامپت سیستمی
-    system_prompt += f"\n\nمرحله فعلی مصاحبه: {current_stage.value}\nدستورالعمل این مرحله:\n{stage_instruction}"
+    system_prompt = llm_service.get_system_prompt(
+        current_data_str,
+        chat_history=history,
+        stage_instruction=stage_instruction,
+    )
 
     # -------------------------------------------------
     # دریافت پاسخ از مدل
@@ -291,7 +312,7 @@ async def send_message(
         ai_response = await llm_service.chat(history, system_prompt=system_prompt)
     except Exception as e:
         logger.error(f"LLM Chat Error: {str(e)}")
-        ai_response = _build_fallback_question(stage_instruction)
+        ai_response = _build_fallback_question(current_stage)
 
     # -------------------------------------------------
     # ذخیره پاسخ مدل
