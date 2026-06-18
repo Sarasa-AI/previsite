@@ -7,8 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { extractApiError } from "@/lib/api";
 
 export default function RegisterPage() {
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,9 +31,8 @@ export default function RegisterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
+          name,
           password,
-          full_name: fullName,
           role: "patient",
         }),
       });
@@ -61,8 +59,7 @@ export default function RegisterPage() {
     router.push("/login");
   };
 
-  const onNameChange = (e: ChangeEvent<HTMLInputElement>) => setFullName(e.target.value);
-  const onEmailChange = (e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value);
+  const onNameChange = (e: ChangeEvent<HTMLInputElement>) => setName(e.target.value);
   const onPasswordChange = (e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value);
   const onConfirmPasswordChange = (e: ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value);
 
@@ -76,20 +73,12 @@ export default function RegisterPage() {
         <form className="medical-card space-y-4" onSubmit={onSubmit}>
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-slate-800">ثبت‌نام بیمار</h2>
-            <p className="text-sm text-slate-500 mt-2">اطلاعات خود را وارد کنید</p>
+            <p className="text-sm text-slate-500 mt-2">نام و رمز عبور خود را وارد کنید</p>
           </div>
           <input
-            value={fullName}
+            value={name}
             onChange={onNameChange}
-            placeholder="نام کامل"
-            className="field-input"
-            required
-          />
-          <input
-            value={email}
-            onChange={onEmailChange}
-            type="email"
-            placeholder="ایمیل"
+            placeholder="نام"
             className="field-input"
             required
           />

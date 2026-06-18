@@ -33,7 +33,7 @@ class LLMService:
         self._total_input_tokens = 0
         self._total_output_tokens = 0
 
-        if self.provider != "gapgpt":
+        if self.provider != "openrouter":
             logger.error("Unsupported LLM provider configured: %s", self.provider)
             raise LLMServiceError(f"Unsupported LLM provider: {self.provider}")
 
@@ -41,21 +41,22 @@ class LLMService:
         if self.client is not None:
             return
 
-        if not settings.gapgpt_api_key:
-            raise LLMAuthenticationError("GAPGPT_API_KEY is not configured.")
-        
-        # Use a custom httpx client with increased timeout for slow LLM responses
-        # Default httpx timeout is 5s, which is often too short for LLM calls.
-        # We increase it to 60s to handle complex generation tasks.
-        http_client = httpx.AsyncClient(timeout=60.0)
-        
+        if not settings.openrouter_api_key or not settings.openrouter_api_key.strip():
+            raise LLMAuthenticationError("OPENROUTER_API_KEY is not configured.")
+
+        http_client = httpx.AsyncClient(proxies=settings.HTTP_PROXY, timeout=60.0)
+
         self.client = AsyncOpenAI(
-            base_url=settings.gapgpt_base_url,
-            api_key=settings.gapgpt_api_key,
-            max_retries=0,  # Disable internal retries
-            http_client=http_client
+            base_url=settings.openrouter_base_url,
+            api_key=settings.openrouter_api_key,
+            max_retries=0,
+            http_client=http_client,
+            default_headers={
+                "HTTP-Referer": settings.openrouter_http_referer,
+                "X-Title": settings.openrouter_app_title,
+            },
         )
-        logger.info("LLMService initialized with GapGPT model=%s", self.model)
+        logger.info("LLMService initialized with OpenRouter model=%s", self.model)
 
     def _check_local_rate_limit(self) -> None:
         now = int(time.time())

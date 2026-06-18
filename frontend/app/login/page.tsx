@@ -7,7 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { extractApiError } from "@/lib/api";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -23,7 +23,7 @@ export default function LoginPage() {
       res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ name, password }),
       });
     } catch {
       setLoading(false);
@@ -48,7 +48,7 @@ export default function LoginPage() {
     router.push("/dashboard");
   };
 
-  const onEmailChange = (e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value);
+  const onNameChange = (e: ChangeEvent<HTMLInputElement>) => setName(e.target.value);
   const onPasswordChange = (e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value);
 
   return (
@@ -61,13 +61,12 @@ export default function LoginPage() {
         <form className="medical-card space-y-4" onSubmit={onSubmit}>
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-slate-800">ورود به عنوان بیمار</h2>
-            <p className="text-sm text-slate-500 mt-2">ایمیل و رمز عبور خود را وارد کنید</p>
+            <p className="text-sm text-slate-500 mt-2">نام و رمز عبور خود را وارد کنید</p>
           </div>
           <input
-            value={email}
-            onChange={onEmailChange}
-            type="email"
-            placeholder="ایمیل"
+            value={name}
+            onChange={onNameChange}
+            placeholder="نام"
             className="field-input"
             required
           />

@@ -11,10 +11,20 @@ class MedicalExtractor:
         self.client = None
         self.model = None
         
-        # Use a custom httpx client to avoid the "proxies" argument error in some environments
-        http_client = httpx.Client()
-        
-        if self.provider == "openai" and settings.openai_api_key:
+        http_client = httpx.Client(proxies=settings.HTTP_PROXY)
+
+        if self.provider == "openrouter" and settings.openrouter_api_key:
+            self.client = OpenAI(
+                base_url=settings.openrouter_base_url,
+                api_key=settings.openrouter_api_key,
+                http_client=http_client,
+                default_headers={
+                    "HTTP-Referer": settings.openrouter_http_referer,
+                    "X-Title": settings.openrouter_app_title,
+                },
+            )
+            self.model = settings.openrouter_default_model
+        elif self.provider == "openai" and settings.openai_api_key:
             self.client = OpenAI(
                 api_key=settings.openai_api_key,
                 http_client=http_client

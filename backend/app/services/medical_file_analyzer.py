@@ -16,6 +16,8 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from app.core.config import settings
+
 # تنظیم logging با ماسک کردن اطلاعات حساس
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -125,27 +127,40 @@ class MedicalFileAnalyzer:
         self,
         openai_api_key: Optional[str] = None,
         anthropic_api_key: Optional[str] = None,
-        gapgpt_api_key: Optional[str] = None,
-        gapgpt_base_url: str = "https://api.gapgpt.app/v1",
+        openrouter_api_key: Optional[str] = None,
+        openrouter_base_url: Optional[str] = None,
         cache_dir: Optional[Union[str, Path]] = None,
         timeout: int = 30,
     ) -> None:
-        # Use a custom httpx client to avoid the "proxies" argument error in some environments
-        http_client = httpx.AsyncClient(timeout=timeout)
-        
+        http_client = httpx.AsyncClient(proxies=settings.HTTP_PROXY, timeout=timeout)
+
+        resolved_openrouter_key = openrouter_api_key or settings.openrouter_api_key
+        resolved_openrouter_base_url = openrouter_base_url or settings.openrouter_base_url
+
         self.openai_client = (
             AsyncOpenAI(api_key=openai_api_key, timeout=timeout, http_client=http_client) if openai_api_key else None
         )
-        self.gapgpt_client = (
-            AsyncOpenAI(api_key=gapgpt_api_key, base_url=gapgpt_base_url, timeout=timeout, http_client=http_client) if gapgpt_api_key else None
+        self.openrouter_client = (
+            AsyncOpenAI(
+                api_key=resolved_openrouter_key,
+                base_url=resolved_openrouter_base_url,
+                timeout=timeout,
+                http_client=http_client,
+                default_headers={
+                    "HTTP-Referer": settings.openrouter_http_referer,
+                    "X-Title": settings.openrouter_app_title,
+                },
+            )
+            if resolved_openrouter_key
+            else None
         )
         self.anthropic_client = (
             AsyncAnthropic(api_key=anthropic_api_key, timeout=timeout) if anthropic_api_key else None
         )
         self.timeout = timeout
 
-        if not self.openai_client and not self.anthropic_client and not self.gapgpt_client:
-            raise ValueError("حداقل یکی از کلیدهای OpenAI، GapGPT یا Anthropic باید ارائه شود.")
+        if not self.openai_client and not self.anthropic_client and not self.openrouter_client:
+            raise ValueError("حداقل یکی از کلیدهای OpenAI، OpenRouter یا Anthropic باید ارائه شود.")
 
         self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".medical_analyzer_cache"
         self.cache_dir.mkdir(exist_ok=True)
@@ -390,9 +405,15 @@ class MedicalFileAnalyzer:
         retry=retry_if_exception_type(RetryableAPIError),
         reraise=True,
     )
-    async def _analyze_with_gapgpt(self, processed_file: ProcessedFile, model: str = "gapgpt-qwen-3.5") -> Dict[str, Any]:
-        if not self.gapgpt_client:
-            raise RuntimeError("GapGPT client is not configured.")
+    async def _analyze_with_openrouter(
+        self,
+        processed_file: ProcessedFile,
+        model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if not self.openrouter_client:
+            raise RuntimeError("OpenRouter client is not configured.")
+
+        model = model or settings.openrouter_default_model
 
         try:
             messages: List[Dict[str, Any]] = [{"role": "system", "content": MEDICAL_EXTRACTION_PROMPT}]
@@ -420,7 +441,7 @@ class MedicalFileAnalyzer:
                     }
                 )
 
-            response = await self.gapgpt_client.chat.completions.create(
+            response = await self.openrouter_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=0.0,
@@ -432,17 +453,17 @@ class MedicalFileAnalyzer:
             if isinstance(content, list):
                 content = "".join(chunk["text"] for chunk in content if chunk.get("type") == "text")
 
-            logger.info("GapGPT response received (model: %s).", model)
+            logger.info("OpenRouter response received (model: %s).", model)
             return self._safe_json_load(content)
 
         except Exception as exc:
             error_msg = str(exc).lower()
             if any(keyword in error_msg for keyword in ("timeout", "connection", "network", "rate limit")):
-                logger.warning("Retryable error from GapGPT: %s", exc)
-                raise RetryableAPIError(f"GapGPT API error: {exc}") from exc
+                logger.warning("Retryable error from OpenRouter: %s", exc)
+                raise RetryableAPIError(f"OpenRouter API error: {exc}") from exc
 
-            logger.error("Permanent error from GapGPT: %s", exc)
-            raise PermanentAPIError(f"GapGPT API error: {exc}") from exc
+            logger.error("Permanent error from OpenRouter: %s", exc)
+            raise PermanentAPIError(f"OpenRouter API error: {exc}") from exc
 
     @retry(
         stop=stop_after_attempt(3),
@@ -498,7 +519,7 @@ class MedicalFileAnalyzer:
         file_path: str,
         *,
         use_cache: bool = True,
-        prefer_provider: Optional[Literal["openai", "anthropic", "gapgpt"]] = None,
+        prefer_provider: Optional[Literal["openai", "anthropic", "openrouter"]] = None,
     ) -> MedicalExtraction:
         validated_path = self._validate_file(file_path)
         logger.info("Processing file: %s", validated_path.name)
@@ -514,16 +535,16 @@ class MedicalFileAnalyzer:
 
         providers_order: List[str] = []
         if prefer_provider == "openai" and self.openai_client:
-            providers_order = ["openai", "gapgpt", "anthropic"]
-        elif prefer_provider == "gapgpt" and self.gapgpt_client:
-            providers_order = ["gapgpt", "openai", "anthropic"]
+            providers_order = ["openai", "openrouter", "anthropic"]
+        elif prefer_provider == "openrouter" and self.openrouter_client:
+            providers_order = ["openrouter", "openai", "anthropic"]
         elif prefer_provider == "anthropic" and self.anthropic_client:
-            providers_order = ["anthropic", "openai", "gapgpt"]
+            providers_order = ["anthropic", "openai", "openrouter"]
         else:
+            if self.openrouter_client:
+                providers_order.append("openrouter")
             if self.openai_client:
                 providers_order.append("openai")
-            if self.gapgpt_client:
-                providers_order.append("gapgpt")
             if self.anthropic_client:
                 providers_order.append("anthropic")
 
@@ -535,8 +556,8 @@ class MedicalFileAnalyzer:
             try:
                 if provider == "openai":
                     raw_result = await self._analyze_with_openai(processed_file)
-                elif provider == "gapgpt":
-                    raw_result = await self._analyze_with_gapgpt(processed_file)
+                elif provider == "openrouter":
+                    raw_result = await self._analyze_with_openrouter(processed_file)
                 else:
                     raw_result = await self._analyze_with_anthropic(processed_file)
 
@@ -580,8 +601,8 @@ async def main() -> None:
     analyzer = MedicalFileAnalyzer(
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-        gapgpt_api_key=os.getenv("GAPGPT_API_KEY"),
-        gapgpt_base_url=os.getenv("GAPGPT_BASE_URL", "https://api.gapgpt.app/v1"),
+        openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+        openrouter_base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
         timeout=30,
     )
 

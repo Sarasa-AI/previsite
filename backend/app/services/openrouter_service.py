@@ -43,7 +43,7 @@ class OpenRouterService:
         self.base_url = settings.openrouter_base_url
 
     def _model_candidates(self) -> list[str]:
-        configured = settings.openrouter_model
+        configured = settings.openrouter_default_model
         candidates = [configured]
         for model in FREE_MODEL_FALLBACKS:
             if model not in candidates:
@@ -54,10 +54,14 @@ class OpenRouterService:
         if self.client is not None:
             return
 
-        if not settings.openrouter_api_key:
+        if not settings.openrouter_api_key or not settings.openrouter_api_key.strip():
+            logger.error(
+                "OpenRouter authentication failed: OPENROUTER_API_KEY is not configured. "
+                "Set a valid key in backend/.env to enable AI intake features."
+            )
             raise OpenRouterAuthenticationError("OPENROUTER_API_KEY is not configured.")
 
-        http_client = httpx.AsyncClient(timeout=60.0)
+        http_client = httpx.AsyncClient(proxies=settings.HTTP_PROXY, timeout=60.0)
         self.client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=settings.openrouter_api_key,
@@ -103,13 +107,49 @@ class OpenRouterService:
                         )
                         break
                 except AuthenticationError as exc:
+                    logger.error(
+                        "OpenRouter authentication failed (401 Unauthorized): "
+                        "invalid or missing API key. Check OPENROUTER_API_KEY in backend/.env. "
+                        "Detail: %s",
+                        exc,
+                    )
                     raise OpenRouterAuthenticationError(
                         "OpenRouter authentication failed."
                     ) from exc
-                except (APIConnectionError, APIStatusError, RateLimitError) as exc:
+                except APIConnectionError as exc:
                     last_error = exc
                     logger.warning(
-                        "OpenRouter API error model=%s json_format=%s: %s",
+                        "OpenRouter API connection error (network timeout or unreachable) "
+                        "model=%s json_format=%s: %s",
+                        model,
+                        use_json_format,
+                        exc,
+                    )
+                except APIStatusError as exc:
+                    if exc.status_code == 401:
+                        logger.error(
+                            "OpenRouter authentication failed (401 Unauthorized): "
+                            "invalid API key. Check OPENROUTER_API_KEY in backend/.env. "
+                            "model=%s json_format=%s status=%s",
+                            model,
+                            use_json_format,
+                            exc.status_code,
+                        )
+                        raise OpenRouterAuthenticationError(
+                            "OpenRouter authentication failed."
+                        ) from exc
+                    last_error = exc
+                    logger.warning(
+                        "OpenRouter API status error model=%s json_format=%s status=%s: %s",
+                        model,
+                        use_json_format,
+                        exc.status_code,
+                        exc,
+                    )
+                except RateLimitError as exc:
+                    last_error = exc
+                    logger.warning(
+                        "OpenRouter rate limit exceeded model=%s json_format=%s: %s",
                         model,
                         use_json_format,
                         exc,

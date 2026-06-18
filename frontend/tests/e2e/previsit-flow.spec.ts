@@ -2,17 +2,16 @@ import { expect, test } from "@playwright/test";
 
 test("register -> login -> session -> chat -> upload -> summary", async ({ page }) => {
   const nonce = Date.now();
-  const email = `patient-${nonce}@example.com`;
+  const name = `بیمار تست ${nonce}`;
   const password = "VeryStrongPassword123!";
 
   await page.goto("/register");
-  await page.getByPlaceholder("نام کامل").fill("بیمار تست");
-  await page.getByPlaceholder("ایمیل").fill(email);
+  await page.getByPlaceholder("نام").fill(name);
   await page.getByPlaceholder("رمز عبور").fill(password);
   await page.getByRole("button", { name: "ثبت‌نام" }).click();
   await expect(page).toHaveURL(/\/login$/);
 
-  await page.getByPlaceholder("ایمیل").fill(email);
+  await page.getByPlaceholder("نام").fill(name);
   await page.getByPlaceholder("رمز عبور").fill(password);
   await page.getByRole("button", { name: "ورود" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);

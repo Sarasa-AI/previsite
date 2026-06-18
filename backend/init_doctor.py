@@ -11,22 +11,22 @@ from app.auth.security import get_password_hash
 def create_default_doctor():
     db = SessionLocal()
     try:
-        existing_doctor = db.query(User).filter(User.email == "Amsh@doctor.com").first()
+        existing_doctor = db.query(User).filter(User.email == "bagherzade@doctor.com").first()
         if existing_doctor:
             print("Doctor user already exists")
             return
 
         doctor = User(
-            email="Amsh@doctor.com",
-            full_name="Dr. Amsh",
-            hashed_password=get_password_hash("1234"),
+            email="bagherzade@doctor.com",
+            full_name="bagherzade",
+            hashed_password=get_password_hash("0808"),
             role=UserRole.DOCTOR,
             is_active=True
         )
         db.add(doctor)
         db.commit()
         db.refresh(doctor)
-        print(f"Doctor user created successfully: {doctor.email}")
+        print(f"Doctor user created successfully: {doctor.full_name}")
     except Exception as e:
         print(f"Error creating doctor: {e}")
         db.rollback()

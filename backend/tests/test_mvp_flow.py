@@ -40,13 +40,12 @@ def _create_client(tmp_path, monkeypatch) -> TestClient:
     return client
 
 
-def _register_and_login(client: TestClient, *, email: str, password: str, full_name: str) -> str:
+def _register_and_login(client: TestClient, *, name: str, password: str) -> str:
     register_response = client.post(
         "/api/auth/register",
         json={
-            "email": email,
+            "name": name,
             "password": password,
-            "full_name": full_name,
             "role": "patient",
         },
     )
@@ -54,7 +53,7 @@ def _register_and_login(client: TestClient, *, email: str, password: str, full_n
 
     login_response = client.post(
         "/api/auth/login",
-        json={"email": email, "password": password},
+        json={"name": name, "password": password},
     )
     assert login_response.status_code == 200
     return login_response.json()["access_token"]
@@ -66,9 +65,8 @@ def test_register_rejects_invalid_role(tmp_path, monkeypatch) -> None:
     response = client.post(
         "/api/auth/register",
         json={
-            "email": "bad-role@example.com",
+            "name": "Bad Role",
             "password": "VeryStrongPassword123!",
-            "full_name": "Bad Role",
             "role": "visitor",
         },
     )
@@ -125,9 +123,8 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
 
     token = _register_and_login(
         client,
-        email="patient@example.com",
+        name="Patient One",
         password="VeryStrongPassword123!",
-        full_name="Patient One",
     )
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -208,9 +205,8 @@ def test_upload_invalid_extension_returns_400(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
     token = _register_and_login(
         client,
-        email="upload@example.com",
+        name="Upload User",
         password="VeryStrongPassword123!",
-        full_name="Upload User",
     )
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -255,9 +251,8 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
 
     owner_token = _register_and_login(
         client,
-        email="owner@example.com",
+        name="Owner",
         password="VeryStrongPassword123!",
-        full_name="Owner",
     )
     owner_headers = {"Authorization": f"Bearer {owner_token}"}
 
@@ -276,9 +271,8 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
 
     other_token = _register_and_login(
         client,
-        email="other@example.com",
+        name="Other User",
         password="VeryStrongPassword123!",
-        full_name="Other User",
     )
     other_headers = {"Authorization": f"Bearer {other_token}"}
 

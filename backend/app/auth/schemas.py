@@ -1,18 +1,17 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.user import UserRole
 
 class UserRegister(BaseModel):
-    email: EmailStr
+    name: str = Field(..., min_length=2)
     password: str = Field(..., min_length=8)
-    full_name: str = Field(..., min_length=2)
     role: UserRole = Field(default=UserRole.PATIENT)
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    name: str = Field(..., min_length=1)
     password: str
 
 class Token(BaseModel):

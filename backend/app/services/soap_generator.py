@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class LLMProvider(str, Enum):
     """مدل‌های LLM پشتیبانی شده"""
-    GAPGPT = "gapgpt"
+    OPENROUTER = "openrouter"
 
 
 class SOAPNoteGenerator:
@@ -30,20 +30,23 @@ class SOAPNoteGenerator:
 
     def __init__(self):
         """راه‌اندازی کلاینت‌های LLM"""
-        self.gapgpt_client = None
-        
-        # Use a custom httpx client with increased timeout
-        http_client = httpx.AsyncClient(timeout=60.0)
-        
-        if settings.gapgpt_api_key:
-            self.gapgpt_client = AsyncOpenAI(
-                base_url=settings.gapgpt_base_url,
-                api_key=settings.gapgpt_api_key,
-                http_client=http_client
+        self.openrouter_client = None
+
+        http_client = httpx.AsyncClient(proxies=settings.HTTP_PROXY, timeout=60.0)
+
+        if settings.openrouter_api_key and settings.openrouter_api_key.strip():
+            self.openrouter_client = AsyncOpenAI(
+                base_url=settings.openrouter_base_url,
+                api_key=settings.openrouter_api_key,
+                http_client=http_client,
+                default_headers={
+                    "HTTP-Referer": settings.openrouter_http_referer,
+                    "X-Title": settings.openrouter_app_title,
+                },
             )
-            logger.info("GapGPT client initialized (Async)")
-        
-        if not self.gapgpt_client:
+            logger.info("OpenRouter client initialized (Async)")
+
+        if not self.openrouter_client:
             logger.warning("No LLM provider configured")
 
     def _get_system_prompt(self) -> str:
@@ -185,11 +188,11 @@ class SOAPNoteGenerator:
 
 
 
-    async def _generate_with_gapgpt(self, context: str) -> str:
-        """تولید SOAP با GapGPT"""
+    async def _generate_with_openrouter(self, context: str) -> str:
+        """تولید SOAP با OpenRouter"""
 
-        response = await self.gapgpt_client.chat.completions.create(
-            model=settings.gapgpt_model or "gapgpt-qwen-3.5",
+        response = await self.openrouter_client.chat.completions.create(
+            model=settings.openrouter_default_model,
             temperature=0.2,
             max_tokens=2500,
             messages=[
@@ -228,9 +231,9 @@ class SOAPNoteGenerator:
             provider = None
             note = None
 
-            if self.gapgpt_client:
-                provider = LLMProvider.GAPGPT
-                note = await self._generate_with_gapgpt(context)
+            if self.openrouter_client:
+                provider = LLMProvider.OPENROUTER
+                note = await self._generate_with_openrouter(context)
             else:
                 raise ValueError("No LLM provider configured")
 

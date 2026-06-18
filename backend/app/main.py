@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import auth
 from app.api import chat, summary, files, intake
-from app.core.config import settings
+from app.core.config import settings, validate_startup_config
 from app.core.error_handler import register_exception_handlers
 from app.core.logging_config import setup_logging
 from app.db.init_db import init_db
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Initialize shared resources when the API starts."""
+    validate_startup_config()
     init_db()
     logger.info("Database initialized")
     yield

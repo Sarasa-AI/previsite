@@ -38,16 +38,15 @@ def client(tmp_path, monkeypatch):
 def test_chat_message_and_summary_flow(client, monkeypatch):
     # 1. Register
     reg_res = client.post("/api/auth/register", json={
-        "email": "test_fix@example.com",
+        "name": "Test Fix",
         "password": "password123",
-        "full_name": "Test Fix",
         "role": "patient"
     })
     assert reg_res.status_code == 200
 
     # 2. Login
     login_res = client.post("/api/auth/login", json={
-        "email": "test_fix@example.com",
+        "name": "Test Fix",
         "password": "password123"
     })
     assert login_res.status_code == 200

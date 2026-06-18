@@ -7,8 +7,8 @@ import Link from "next/link";
 import { extractApiError } from "@/lib/api";
 
 export default function DoctorLoginPage() {
-  const [username, setUsername] = useState("Amsh");
-  const [password, setPassword] = useState("1234");
+  const [username, setUsername] = useState("bagherzade");
+  const [password, setPassword] = useState("0808");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -23,7 +23,7 @@ export default function DoctorLoginPage() {
       res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: `${username}@doctor.com`, password }),
+        body: JSON.stringify({ name: username, password }),
       });
     } catch {
       setLoading(false);

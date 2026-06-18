@@ -1,6 +1,20 @@
+import logging
 from typing import Optional
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+OPENROUTER_API_KEY_PLACEHOLDERS = frozenset(
+    {
+        "",
+        "your-openrouter-api-key",
+        "replace-me",
+        "changeme",
+        "sk-or-v1-placeholder",
+    }
+)
 
 
 class Settings(BaseSettings):
@@ -19,8 +33,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
 
     # LLM Configuration
-    llm_provider: str = "gapgpt"
-    llm_model: str = "gapgpt-qwen-3.5"
+    llm_provider: str = "openrouter"
+    llm_model: str = "qwen/qwen-2.5-72b-instruct"
     
     # OpenAI
     openai_api_key: Optional[str] = None
@@ -35,12 +49,22 @@ class Settings(BaseSettings):
     gapgpt_base_url: str = "https://api.gapgpt.app/v1"
     gapgpt_model: str = "gapgpt-qwen-3.5"
 
-    # OpenRouter (Layer 2 & 3 intake LLM)
+    # OpenRouter (primary LLM provider)
     openrouter_api_key: Optional[str] = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "google/gemini-2.0-flash-lite-preview-02-05:free"
+    openrouter_default_model: str = Field(
+        default="qwen/qwen-2.5-72b-instruct",
+        validation_alias=AliasChoices(
+            "openrouter_default_model",
+            "OPENROUTER_DEFAULT_MODEL",
+            "OPENROUTER_MODEL",
+        ),
+    )
     openrouter_http_referer: str = "http://localhost:3000"
     openrouter_app_title: str = "PreVisit MVP"
+
+    # Outbound HTTP proxy for LLM API calls
+    http_proxy: Optional[str] = None
 
     # File Upload
     upload_dir: str = "uploads"
@@ -74,6 +98,38 @@ class Settings(BaseSettings):
     @property
     def ACCESS_TOKEN_EXPIRE_MINUTES(self) -> int:
         return self.access_token_expire_minutes
+
+    @property
+    def HTTP_PROXY(self) -> Optional[str]:
+        return self.http_proxy
+
+    @property
+    def openrouter_model(self) -> str:
+        """Backward-compatible alias for openrouter_default_model."""
+        return self.openrouter_default_model
+
+
+def is_openrouter_api_key_configured(api_key: Optional[str] = None) -> bool:
+    """Return True when a non-placeholder OpenRouter API key is present."""
+    key = api_key if api_key is not None else settings.openrouter_api_key
+    if key is None:
+        return False
+    normalized = key.strip()
+    if not normalized:
+        return False
+    return normalized.lower() not in OPENROUTER_API_KEY_PLACEHOLDERS
+
+
+def validate_startup_config() -> None:
+    """Log severe warnings for missing configuration that degrades AI features."""
+    if not is_openrouter_api_key_configured():
+        banner = "=" * 72
+        logger.warning(banner)
+        logger.warning(
+            "AI features are disabled due to missing OPENROUTER_API_KEY. "
+            "System will operate in deterministic fallback mode."
+        )
+        logger.warning(banner)
 
 
 settings = Settings()

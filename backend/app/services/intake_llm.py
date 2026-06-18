@@ -1,4 +1,5 @@
 import logging
+import asyncio
 
 from app.schemas.intake import ClinicalSummary, DemographicsInput, HPIQuestionsResponse
 from app.services.openrouter_service import OpenRouterServiceError, openrouter_service
@@ -144,15 +145,21 @@ class IntakeLLMService:
         user_prompt = _build_layer2_user_prompt(demographics)
 
         try:
-            parsed = await openrouter_service.generate_json(
-                system_prompt=LAYER2_SYSTEM_PROMPT,
-                user_prompt=user_prompt,
+            parsed = await asyncio.wait_for(
+                openrouter_service.generate_json(
+                    system_prompt=LAYER2_SYSTEM_PROMPT,
+                    user_prompt=user_prompt,
+                ),
+                timeout=15.0
             )
             result = HPIQuestionsResponse.model_validate(parsed)
             result.questions.sort(key=lambda q: q.priority)
             return result
-        except (OpenRouterServiceError, ValueError) as exc:
-            logger.warning("Layer 2 LLM fallback triggered: %s", exc)
+        except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
+            if isinstance(exc, TimeoutError):
+                logger.warning("Layer 2 LLM fallback triggered: LLM response exceeded 15s SLA")
+            else:
+                logger.warning("Layer 2 LLM fallback triggered: %s", exc)
             return _fallback_questions(demographics)
 
     async def generate_clinical_summary(
@@ -163,13 +170,19 @@ class IntakeLLMService:
         user_prompt = _build_layer3_user_prompt(demographics, hpi_answers)
 
         try:
-            parsed = await openrouter_service.generate_json(
-                system_prompt=LAYER3_SYSTEM_PROMPT,
-                user_prompt=user_prompt,
+            parsed = await asyncio.wait_for(
+                openrouter_service.generate_json(
+                    system_prompt=LAYER3_SYSTEM_PROMPT,
+                    user_prompt=user_prompt,
+                ),
+                timeout=15.0
             )
             return ClinicalSummary.model_validate(parsed)
-        except (OpenRouterServiceError, ValueError) as exc:
-            logger.warning("Layer 3 LLM fallback triggered: %s", exc)
+        except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
+            if isinstance(exc, TimeoutError):
+                logger.warning("Layer 3 LLM fallback triggered: LLM response exceeded 15s SLA")
+            else:
+                logger.warning("Layer 3 LLM fallback triggered: %s", exc)
             return _fallback_clinical_summary(demographics, hpi_answers)
 
 
