@@ -58,3 +58,6 @@ test-results/
 # Environment files
 backend/.env
 frontend/.env
+frontend/.env.local
+.env.local
+*.env.local

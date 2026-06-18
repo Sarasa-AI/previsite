@@ -10,6 +10,7 @@ from app.api import chat, summary, files, intake
 from app.core.config import settings, validate_startup_config
 from app.core.error_handler import register_exception_handlers
 from app.core.logging_config import setup_logging
+from app.core.startup_health import verify_llm_connection
 from app.db.init_db import init_db
 
 setup_logging()
@@ -22,6 +23,7 @@ async def lifespan(_: FastAPI):
     validate_startup_config()
     init_db()
     logger.info("Database initialized")
+    await verify_llm_connection()
     yield
 
 # ─────────── ایجاد FastAPI Application ───────────
