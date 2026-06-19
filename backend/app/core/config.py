@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     log_level: str = "INFO"
+    skip_health_check: bool = False
 
     # Rate limiting
     chat_rate_limit_requests: int = 20
@@ -107,6 +108,10 @@ class Settings(BaseSettings):
     def openrouter_model(self) -> str:
         """Backward-compatible alias for openrouter_default_model."""
         return self.openrouter_default_model
+
+    @property
+    def SKIP_HEALTH_CHECK(self) -> bool:
+        return self.skip_health_check
 
 
 def is_openrouter_api_key_configured(api_key: Optional[str] = None) -> bool:

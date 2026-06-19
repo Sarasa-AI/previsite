@@ -11,6 +11,20 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+FAST_START=false
+for arg in "$@"; do
+    case "$arg" in
+        --fast)
+            FAST_START=true
+            ;;
+        *)
+            echo -e "${RED}❌ Unknown argument: $arg${NC}"
+            echo "Usage: ./run.sh [--fast]"
+            exit 1
+            ;;
+    esac
+done
+
 BACKEND_PORT=8000
 BACKEND_HEALTH_URL="http://127.0.0.1:${BACKEND_PORT}/health"
 BACKEND_LOG="${TMPDIR:-/tmp}/previsit-backend.log"
@@ -104,6 +118,10 @@ source ../.venv/bin/activate
 echo -e "${YELLOW}Installing dependencies...${NC}"
 pip install -q -r requirements.txt
 echo -e "${YELLOW}Starting backend server...${NC}"
+if [ "$FAST_START" = true ]; then
+    export SKIP_HEALTH_CHECK=true
+    echo -e "${YELLOW}Fast mode: skipping LLM health check (SKIP_HEALTH_CHECK=true)${NC}"
+fi
 : > "$BACKEND_LOG"
 uvicorn app.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT" >> "$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!

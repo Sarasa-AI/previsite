@@ -23,7 +23,10 @@ async def lifespan(_: FastAPI):
     validate_startup_config()
     init_db()
     logger.info("Database initialized")
-    await verify_llm_connection()
+    if settings.SKIP_HEALTH_CHECK:
+        logger.warning("Skipping mandatory LLM health check due to configuration.")
+    else:
+        await verify_llm_connection()
     yield
 
 # ─────────── ایجاد FastAPI Application ───────────
