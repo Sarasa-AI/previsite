@@ -1,0 +1,13 @@
+{
+  "app": "sarasa-ai",
+  "port": 3000,
+  "build": {
+    "location": "iran"
+  },
+  "disks": [
+    {
+      "name": "site",
+      "mountTo": "/app/path/to/folder"
+    }
+  ]
+}

@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     # Outbound HTTP proxy for LLM API calls
     http_proxy: Optional[str] = None
 
+    # Ollama / embeddings (Phase 2 RAG)
+    ollama_host: str = "http://localhost:11434"
+    embedding_model: str = "nomic-embed-text"
+    embedding_dimensions: int = 768
+    max_embedding_tokens: int = 512
+
     # File Upload
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     allowed_extensions: list[str] = ["pdf", "jpg", "jpeg", "png", "doc", "docx", "txt"]

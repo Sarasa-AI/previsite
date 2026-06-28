@@ -32,7 +32,10 @@ class SOAPNoteGenerator:
         """راه‌اندازی کلاینت‌های LLM"""
         self.openrouter_client = None
 
-        http_client = httpx.AsyncClient(proxies=settings.HTTP_PROXY, timeout=60.0)
+        http_client_kwargs = {"timeout": 60.0}
+        if settings.HTTP_PROXY and settings.HTTP_PROXY.strip():
+            http_client_kwargs["proxies"] = settings.HTTP_PROXY
+        http_client = httpx.AsyncClient(**http_client_kwargs)
 
         if settings.openrouter_api_key and settings.openrouter_api_key.strip():
             self.openrouter_client = AsyncOpenAI(

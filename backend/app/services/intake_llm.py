@@ -1,7 +1,15 @@
 import logging
 import asyncio
+import json
+
+from pydantic import BaseModel, Field
 
 from app.schemas.intake import ClinicalSummary, DemographicsInput, HPIQuestionsResponse
+from app.services.narrative_utils import (
+    build_hpi_narrative_fallback,
+    sex_label_fa,
+    validate_narrative,
+)
 from app.services.openrouter_service import OpenRouterServiceError, openrouter_service
 
 logger = logging.getLogger(__name__)
@@ -36,24 +44,30 @@ Question Writing Guidelines:
 JSON Output Schema:
 { "question_strategy": "brief explanation for developers", "questions": [ { "id": "short_identifier", "question": "Persian question", "priority": 1, "red_flag_related": false } ] }"""
 
-LAYER3_SYSTEM_PROMPT = """You are a clinical documentation assistant for physicians.
-Your task is to convert patient-provided intake information into a concise clinician-facing summary.
-The patient is Persian-speaking, but the output should use professional Persian medical terminology commonly used in clinical documentation.
-Goals: Save physician time, Preserve clinical accuracy, Present information in a concise and organized format, Use medical terminology when appropriate, Convert lay language into physician-friendly language, Highlight clinically relevant positives and negatives.
+EXTRACTION_SYSTEM_PROMPT = """You are a clinical documentation assistant for physicians.
+Extract structured clinical data from patient intake answers.
 Rules:
 - Use only information provided in the input.
 - Never invent symptoms, findings, diagnoses, or negative findings.
 - Never infer diagnoses.
 - Never suggest treatments.
-- Never add information that was not explicitly stated by the patient.
-- If information is missing, omit it.
-- Preserve chronology and severity when available.
-- Use concise physician-oriented language.
-- Maintain a neutral clinical tone.
 - Output valid JSON only.
 
 JSON Output Schema:
-{ "chief_complaint": "Brief physician-facing chief complaint.", "hpi_summary": "Concise narrative summary of the present illness.", "pertinent_positives": ["Important symptoms or findings reported"], "pertinent_negatives": ["Important symptoms specifically denied"], "red_flags": ["Potentially concerning findings explicitly reported"] }"""
+{ "chief_complaint": "Brief physician-facing chief complaint.", "pertinent_positives": ["Important symptoms or findings reported"], "pertinent_negatives": ["Important symptoms specifically denied"], "red_flags": ["Potentially concerning findings explicitly reported"] }"""
+
+NARRATION_SYSTEM_PROMPT = """You are a clinical documentation assistant for physicians.
+Write a concise Persian clinical narrative (hpi_summary) for the History of Present Illness section.
+Rules:
+- Write fluent professional Persian medical prose, NOT key-value pairs.
+- Never use English words like male, female, true, false, none.
+- Use only information provided in the input.
+- Never invent symptoms or findings.
+- Do not use JSON field names or colon-separated labels in the narrative.
+- Output valid JSON only with a single field.
+
+JSON Output Schema:
+{ "hpi_summary": "Concise narrative summary of the present illness in fluent Persian." }"""
 
 INTERVIEW_CHAT_BASE_PROMPT = """شما یک دستیار پزشکی هوشمند و همدل هستید که در حال انجام مصاحبه با بیمار به زبان فارسی هستید.
 
@@ -109,26 +123,54 @@ def build_interview_system_prompt(
     return prompt
 
 
+class ClinicalExtraction(BaseModel):
+    chief_complaint: str
+    pertinent_positives: list[str] = Field(default_factory=list)
+    pertinent_negatives: list[str] = Field(default_factory=list)
+    red_flags: list[str] = Field(default_factory=list)
+
+
+class HpiNarration(BaseModel):
+    hpi_summary: str
+
+
 def _build_layer2_user_prompt(demographics: DemographicsInput) -> str:
+    sex_fa = sex_label_fa(demographics.sex)
     return f"""Patient Information
 Age: {demographics.age}
-Sex: {demographics.sex}
+Sex: {sex_fa}
 Chief Complaint: {demographics.chief_complaint}
 Generate the Present Illness questions."""
 
 
-def _build_layer3_user_prompt(
+def _build_extraction_user_prompt(
     demographics: DemographicsInput,
     hpi_answers: dict[str, str],
 ) -> str:
-    import json
-
+    sex_fa = sex_label_fa(demographics.sex)
     return f"""Patient Information
 Age: {demographics.age}
-Sex: {demographics.sex}
+Sex: {sex_fa}
 Chief Complaint: {demographics.chief_complaint}
 Present Illness Answers: {json.dumps(hpi_answers, ensure_ascii=False)}
-Generate a clinician-facing summary."""
+Extract structured clinical data."""
+
+
+def _build_narration_user_prompt(
+    demographics: DemographicsInput,
+    hpi_answers: dict[str, str],
+    extracted: ClinicalExtraction,
+) -> str:
+    sex_fa = sex_label_fa(demographics.sex)
+    return f"""Patient Information
+Age: {demographics.age}
+Sex: {sex_fa}
+Chief Complaint: {demographics.chief_complaint}
+Present Illness Answers: {json.dumps(hpi_answers, ensure_ascii=False)}
+Extracted Positives: {json.dumps(extracted.pertinent_positives, ensure_ascii=False)}
+Extracted Negatives: {json.dumps(extracted.pertinent_negatives, ensure_ascii=False)}
+Extracted Red Flags: {json.dumps(extracted.red_flags, ensure_ascii=False)}
+Write a fluent Persian hpi_summary narrative."""
 
 
 def _fallback_questions(demographics: DemographicsInput) -> HPIQuestionsResponse:
@@ -173,23 +215,37 @@ def _fallback_questions(demographics: DemographicsInput) -> HPIQuestionsResponse
     )
 
 
-def _fallback_clinical_summary(
+def _fallback_extraction(
     demographics: DemographicsInput,
     hpi_answers: dict[str, str],
-) -> ClinicalSummary:
-    """Build a basic clinician summary from patient answers when LLM is unavailable."""
-    answer_parts = [f"{k}: {v}" for k, v in hpi_answers.items()]
-    hpi_text = "؛ ".join(answer_parts) if answer_parts else "اطلاعات تکمیلی ثبت نشده است."
-
-    return ClinicalSummary(
+) -> ClinicalExtraction:
+    return ClinicalExtraction(
         chief_complaint=demographics.chief_complaint,
-        hpi_summary=(
-            f"بیمار {demographics.sex} {demographics.age} ساله با شکایت {demographics.chief_complaint} مراجعه کرده است. "
-            f"{hpi_text}"
-        ),
         pertinent_positives=list(hpi_answers.values()),
         pertinent_negatives=[],
         red_flags=[],
+    )
+
+
+def _fallback_clinical_summary(
+    demographics: DemographicsInput,
+    hpi_answers: dict[str, str],
+    extracted: ClinicalExtraction | None = None,
+) -> ClinicalSummary:
+    structured = extracted or _fallback_extraction(demographics, hpi_answers)
+    hpi_text = build_hpi_narrative_fallback(
+        age=demographics.age,
+        sex=demographics.sex,
+        chief_complaint=structured.chief_complaint,
+        hpi_answers=hpi_answers,
+    )
+
+    return ClinicalSummary(
+        chief_complaint=structured.chief_complaint,
+        hpi_summary=hpi_text,
+        pertinent_positives=structured.pertinent_positives,
+        pertinent_negatives=structured.pertinent_negatives,
+        red_flags=structured.red_flags,
     )
 
 
@@ -202,8 +258,9 @@ class IntakeLLMService:
                 openrouter_service.generate_json(
                     system_prompt=LAYER2_SYSTEM_PROMPT,
                     user_prompt=user_prompt,
+                    temperature=0.0,
                 ),
-                timeout=15.0
+                timeout=15.0,
             )
             result = HPIQuestionsResponse.model_validate(parsed)
             result.questions.sort(key=lambda q: q.priority)
@@ -215,28 +272,87 @@ class IntakeLLMService:
                 logger.warning("Layer 2 LLM fallback triggered: %s", exc)
             return _fallback_questions(demographics)
 
+    async def _extract_clinical_data(
+        self,
+        demographics: DemographicsInput,
+        hpi_answers: dict[str, str],
+    ) -> ClinicalExtraction:
+        user_prompt = _build_extraction_user_prompt(demographics, hpi_answers)
+        try:
+            parsed = await asyncio.wait_for(
+                openrouter_service.generate_json(
+                    system_prompt=EXTRACTION_SYSTEM_PROMPT,
+                    user_prompt=user_prompt,
+                    temperature=0.0,
+                ),
+                timeout=15.0,
+            )
+            return ClinicalExtraction.model_validate(parsed)
+        except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
+            logger.warning("Clinical extraction fallback triggered: %s", exc)
+            return _fallback_extraction(demographics, hpi_answers)
+
+    async def _generate_hpi_narration(
+        self,
+        demographics: DemographicsInput,
+        hpi_answers: dict[str, str],
+        extracted: ClinicalExtraction,
+    ) -> str:
+        user_prompt = _build_narration_user_prompt(demographics, hpi_answers, extracted)
+        max_attempts = 2
+
+        for attempt in range(max_attempts):
+            try:
+                parsed = await asyncio.wait_for(
+                    openrouter_service.generate_json(
+                        system_prompt=NARRATION_SYSTEM_PROMPT,
+                        user_prompt=user_prompt,
+                        temperature=0.3,
+                    ),
+                    timeout=15.0,
+                )
+                narration = HpiNarration.model_validate(parsed)
+                if validate_narrative(narration.hpi_summary):
+                    return narration.hpi_summary
+                logger.warning(
+                    "HPI narration failed validation (attempt %s/%s)",
+                    attempt + 1,
+                    max_attempts,
+                )
+            except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
+                logger.warning(
+                    "HPI narration LLM error (attempt %s/%s): %s",
+                    attempt + 1,
+                    max_attempts,
+                    exc,
+                )
+
+        return build_hpi_narrative_fallback(
+            age=demographics.age,
+            sex=demographics.sex,
+            chief_complaint=extracted.chief_complaint,
+            hpi_answers=hpi_answers,
+        )
+
     async def generate_clinical_summary(
         self,
         demographics: DemographicsInput,
         hpi_answers: dict[str, str],
     ) -> ClinicalSummary:
-        user_prompt = _build_layer3_user_prompt(demographics, hpi_answers)
+        extracted = await self._extract_clinical_data(demographics, hpi_answers)
 
         try:
-            parsed = await asyncio.wait_for(
-                openrouter_service.generate_json(
-                    system_prompt=LAYER3_SYSTEM_PROMPT,
-                    user_prompt=user_prompt,
-                ),
-                timeout=15.0
+            hpi_summary = await self._generate_hpi_narration(demographics, hpi_answers, extracted)
+            return ClinicalSummary(
+                chief_complaint=extracted.chief_complaint,
+                hpi_summary=hpi_summary,
+                pertinent_positives=extracted.pertinent_positives,
+                pertinent_negatives=extracted.pertinent_negatives,
+                red_flags=extracted.red_flags,
             )
-            return ClinicalSummary.model_validate(parsed)
-        except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
-            if isinstance(exc, TimeoutError):
-                logger.warning("Layer 3 LLM fallback triggered: LLM response exceeded 15s SLA")
-            else:
-                logger.warning("Layer 3 LLM fallback triggered: %s", exc)
-            return _fallback_clinical_summary(demographics, hpi_answers)
+        except Exception as exc:
+            logger.warning("Clinical summary assembly fallback triggered: %s", exc)
+            return _fallback_clinical_summary(demographics, hpi_answers, extracted)
 
 
 intake_llm_service = IntakeLLMService()

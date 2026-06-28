@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { extractApiError } from "@/lib/api";
+import { mapAuthError, validateIranianNationalId } from "@/lib/national-id";
 
 export default function RegisterPage() {
-  const [name, setName] = useState("");
+  const [nationalId, setNationalId] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,6 +19,12 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+
+    if (!validateIranianNationalId(nationalId)) {
+      setError("کد ملی وارد شده معتبر نیست");
+      setLoading(false);
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("رمز عبور و تکرار آن مطابقت ندارند");
@@ -31,7 +38,7 @@ export default function RegisterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
+          national_id: nationalId,
           password,
           role: "patient",
         }),
@@ -53,13 +60,17 @@ export default function RegisterPage() {
     setLoading(false);
 
     if (!res.ok) {
-      setError(extractApiError(data, "ثبت‌نام ناموفق بود"));
+      const detail =
+        data && typeof data === "object" && "detail" in data && typeof (data as { detail: unknown }).detail === "string"
+          ? (data as { detail: string }).detail
+          : undefined;
+      setError(mapAuthError(detail, extractApiError(data, "ثبت‌نام ناموفق بود")));
       return;
     }
     router.push("/login");
   };
 
-  const onNameChange = (e: ChangeEvent<HTMLInputElement>) => setName(e.target.value);
+  const onNationalIdChange = (e: ChangeEvent<HTMLInputElement>) => setNationalId(e.target.value);
   const onPasswordChange = (e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value);
   const onConfirmPasswordChange = (e: ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value);
 
@@ -73,13 +84,15 @@ export default function RegisterPage() {
         <form className="medical-card space-y-4" onSubmit={onSubmit}>
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-slate-800">ثبت‌نام بیمار</h2>
-            <p className="text-sm text-slate-500 mt-2">نام و رمز عبور خود را وارد کنید</p>
+            <p className="text-sm text-slate-500 mt-2">کد ملی و رمز عبور خود را وارد کنید</p>
           </div>
           <input
-            value={name}
-            onChange={onNameChange}
-            placeholder="نام"
+            value={nationalId}
+            onChange={onNationalIdChange}
+            placeholder="کد ملی (۱۰ رقم)"
             className="field-input"
+            pattern="\d{10}"
+            maxLength={10}
             required
           />
           <input

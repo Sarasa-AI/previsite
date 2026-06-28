@@ -11,7 +11,10 @@ class MedicalExtractor:
         self.client = None
         self.model = None
         
-        http_client = httpx.Client(proxies=settings.HTTP_PROXY)
+        http_client_kwargs = {}
+        if settings.HTTP_PROXY and settings.HTTP_PROXY.strip():
+            http_client_kwargs["proxies"] = settings.HTTP_PROXY
+        http_client = httpx.Client(**http_client_kwargs)
 
         if self.provider == "openrouter" and settings.openrouter_api_key:
             self.client = OpenAI(

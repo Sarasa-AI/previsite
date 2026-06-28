@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.utils.national_id import validate_iranian_national_id
 
 
 class DemographicsInput(BaseModel):
@@ -14,6 +16,14 @@ class DemographicsInput(BaseModel):
     weight: float = Field(gt=0)
     height: float = Field(gt=0)
     chief_complaint: str
+
+    @field_validator("national_id")
+    @classmethod
+    def validate_national_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not validate_iranian_national_id(normalized):
+            raise ValueError("INVALID_NATIONAL_ID")
+        return normalized
 
 
 class HPIQuestion(BaseModel):

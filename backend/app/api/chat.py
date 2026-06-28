@@ -1,33 +1,33 @@
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 
-logger = logging.getLogger(__name__)
-from sqlalchemy.orm import Session
-
-from app.db.database import get_db
-from app.models import Session as DBSession, Message, User
-
-from app.schemas.chat import (
-    SessionCreate,
-    SessionResponse,
-    MessageCreate,
-    MessageResponse,
-    ChatHistoryResponse
-)
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth.dependencies import get_current_user
 from app.core.rate_limiter import chat_rate_limit
-
-from app.services.llm_service import llm_service
+from app.db.database import get_async_session, get_db
+from app.models import Message, User
+from app.models import Session as DBSession
+from app.schemas.chat import (
+    ChatHistoryResponse,
+    MessageCreate,
+    MessageResponse,
+    SessionCreate,
+    SessionResponse,
+)
+from app.schemas.medical import MedicalSummary
 from app.services.interview_controller import interview_controller
 from app.services.interview_flow import InterviewStage
-from app.services.medical_extractor import medical_extractor
-from app.services.medical_storage import save_medical_data, save_summary
+from app.services.llm_service import llm_service
+from app.services.medical_storage import save_summary
+from app.services.soap_task import run_soap_generation
 from app.services.summary_builder import summary_builder
-from app.services.soap_generator import soap_generator
-from app.schemas.medical import MedicalSummary
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -62,227 +62,212 @@ def _build_fallback_question(stage: InterviewStage) -> str:
     )
 
 
-# ---------------------------------------------------------
-# Create Interview Session
-# ---------------------------------------------------------
-
 def _calculate_progress(session: DBSession) -> int:
     """محاسبه درصد پیشرفت بر اساس داده‌های موجود در خلاصه"""
     if session.status == "completed" or session.status == "pending_review":
         return 100
-        
+
+    if "summary" in sa_inspect(session).unloaded:
+        return 10
+
     if not session.summary:
         return 10
-        
-    progress = 20  # پایه برای شروع مصاحبه
+
+    progress = 20
     summary = session.summary
-    
-    if summary.chief_complaint: progress += 20
-    if summary.history_present_illness: progress += 20
-    if summary.past_medical_history: progress += 10
-    if summary.medications: progress += 10
-    if summary.allergies: progress += 10
-    if summary.soap_note: progress += 10
-    
-    return min(progress, 95)  # حداکثر ۹۵ قبل از اتمام نهایی
+
+    if summary.chief_complaint:
+        progress += 20
+    if summary.history_present_illness:
+        progress += 20
+    if summary.past_medical_history:
+        progress += 10
+    if summary.medications:
+        progress += 10
+    if summary.allergies:
+        progress += 10
+    if summary.soap_note:
+        progress += 10
+
+    return min(progress, 95)
 
 
 @router.post("/session", response_model=SessionResponse)
-def create_session(
+async def create_session(
     data: SessionCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """ایجاد جلسه جدید مصاحبه پزشکی"""
-
     new_session = DBSession(
         patient_id=current_user.id,
         status="active",
-        initial_complaint=data.initial_complaint
+        initial_complaint=data.initial_complaint,
     )
 
     db.add(new_session)
-    db.commit()
-    db.refresh(new_session)
-    
+    await db.commit()
+    await db.refresh(new_session)
+
     response = SessionResponse.model_validate(new_session)
     response.progress = _calculate_progress(new_session)
     return response
 
 
 @router.get("/sessions", response_model=list[SessionResponse])
-def list_sessions(
-    db: Session = Depends(get_db),
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """لیست جلسات (برای بیمار: جلسات خودش، برای پزشک: تمام جلسات)"""
-    query = db.query(DBSession)
-    
+    query = select(DBSession).options(selectinload(DBSession.summary))
+
     if current_user.role == "patient":
-        query = query.filter(DBSession.patient_id == current_user.id)
-    # پزشک می‌تواند همه جلسات را ببیند (در نسخه MVP)
-    
-    sessions = query.order_by(DBSession.created_at.desc()).all()
-    
+        query = query.where(DBSession.patient_id == current_user.id)
+
+    query = query.order_by(DBSession.created_at.desc())
+    result = await db.execute(query)
+    sessions = result.scalars().all()
+
     results = []
     for s in sessions:
         resp = SessionResponse.model_validate(s)
         resp.progress = _calculate_progress(s)
         results.append(resp)
-        
+
     return results
 
 
-async def _process_final_summary(session_id: int, db_gen):
+async def _process_final_summary(session_id: int) -> None:
     """پردازش پس‌زمینه برای تولید خلاصه نهایی و SOAP note"""
-    db = next(db_gen)
-    try:
-        logger.info(f"Starting background summary/SOAP processing for session {session_id}")
-        db_messages = (
-            db.query(Message)
-            .filter(Message.session_id == session_id)
-            .order_by(Message.created_at)
-            .all()
-        )
-        history = [{"role": m.role, "content": m.content} for m in db_messages]
-        
-        new_summary_data = await summary_builder.build_summary(history)
-        if new_summary_data:
-            med_sum = MedicalSummary(
-                chief_complaint=new_summary_data.get("chief_complaint"),
-                past_medical_history=[new_summary_data.get("past_medical_history")] if new_summary_data.get("past_medical_history") != "نامشخص" else [],
-                current_medications=[new_summary_data.get("medications")] if new_summary_data.get("medications") != "نامشخص" else [],
-                allergies=[new_summary_data.get("allergies")] if new_summary_data.get("allergies") != "نامشخص" else [],
-                additional_notes=new_summary_data.get("history_present_illness"),
+    async with get_async_session() as db:
+        try:
+            logger.info("Starting background summary/SOAP processing for session %s", session_id)
+            result = await db.execute(
+                select(DBSession).where(DBSession.id == session_id)
             )
-            soap_note_result = await soap_generator.generate_soap_note(
-                summary=med_sum,
-                chat_history=history,
-                file_analyses=[]
+            session = result.scalar_one_or_none()
+            if session:
+                session.soap_status = "generating"
+                session.soap_error_detail = None
+                await db.commit()
+
+            msg_result = await db.execute(
+                select(Message)
+                .where(Message.session_id == session_id)
+                .order_by(Message.created_at)
             )
-            soap_note_content = soap_note_result.get("soap_note") if soap_note_result.get("status") == "success" else None
-            save_summary(db, session_id, new_summary_data, soap_note=soap_note_content)
-            logger.info(f"Background processing completed for session {session_id}")
-    except Exception as e:
-        logger.error(f"Final background summary/SOAP update error: {e}")
-    finally:
-        db.close()
+            db_messages = msg_result.scalars().all()
+            history = [{"role": m.role, "content": m.content} for m in db_messages]
+
+            new_summary_data = await summary_builder.build_summary(history)
+            if new_summary_data:
+                await save_summary(db, session_id, new_summary_data)
+                logger.info("Summary saved for session %s, starting SOAP generation", session_id)
+        except Exception as e:
+            logger.error("Final background summary update error: %s", e)
+
+    await run_soap_generation(session_id)
 
 
 @router.post("/{session_id}/submit", response_model=SessionResponse)
 async def submit_session(
     session_id: int,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """ثبت نهایی و ارسال به پزشک"""
-    session = db.query(DBSession).filter(
-        DBSession.id == session_id,
-        DBSession.patient_id == current_user.id
-    ).first()
+    result = await db.execute(
+        select(DBSession)
+        .options(selectinload(DBSession.summary))
+        .where(
+            DBSession.id == session_id,
+            DBSession.patient_id == current_user.id,
+        )
+    )
+    session = result.scalar_one_or_none()
 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # به‌روزرسانی نهایی خلاصه و SOAP در پس‌زمینه برای کاهش تأخیر پاسخ‌دهی به کاربر
-    background_tasks.add_task(_process_final_summary, session_id, get_db())
+    background_tasks.add_task(_process_final_summary, session_id)
 
     session.status = "pending_review"
-    db.commit()
-    db.refresh(session)
-    
+    session.soap_status = "generating"
+    session.soap_error_detail = None
+    await db.commit()
+    await db.refresh(session)
+
     resp = SessionResponse.model_validate(session)
     resp.progress = _calculate_progress(session)
     return resp
 
-
-# ---------------------------------------------------------
-# Send Message
-# ---------------------------------------------------------
 
 @router.post("/{session_id}", response_model=MessageResponse)
 async def send_message(
     session_id: int,
     data: MessageCreate,
     _: None = Depends(chat_rate_limit),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """ارسال پیام کاربر و دریافت پاسخ از LLM"""
-
-    # بررسی session
-    session = db.query(DBSession).filter(DBSession.id == session_id).first()
+    result = await db.execute(
+        select(DBSession)
+        .options(selectinload(DBSession.summary))
+        .where(DBSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # بیمار فقط به تاریخچه چت خودش دسترسی دارد، اما پزشک و ادمین به همه دسترسی دارند
     if current_user.role == "patient" and session.patient_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-
-    # -------------------------------------------------
-    # ذخیره پیام کاربر
-    # -------------------------------------------------
 
     try:
         user_message = Message(
             session_id=session_id,
             role="user",
-            content=data.content
+            content=data.content,
         )
-
         db.add(user_message)
-        db.commit()
+        await db.commit()
     except Exception as e:
-        db.rollback()
-        logger.error(f"Error saving user message: {str(e)}")
+        await db.rollback()
+        logger.error("Error saving user message: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="خطا در ذخیره پیام کاربر"
+            detail="خطا در ذخیره پیام کاربر",
         )
 
-    # -------------------------------------------------
-    # استخراج داده پزشکی و به‌روزرسانی خلاصه
-    # -------------------------------------------------
-    # نکته: برای کاهش تأخیر، استخراج داده را فقط در صورت نیاز انجام می‌دهیم
-    # یا آن را با مرحله تولید پاسخ ترکیب می‌کنیم. فعلاً تعداد پیام‌ها را چک می‌کنیم.
-    
-    # دریافت آخرین خلاصه از دیتابیس برای اطلاع از وضعیت فعلی
     last_summary = session.summary
-    
+
     current_summary_obj = None
     if last_summary:
         try:
-            # نگاشت مدل دیتابیس به اسکیما
             current_summary_obj = MedicalSummary(
                 chief_complaint=last_summary.chief_complaint,
                 past_medical_history=_summary_text_field(last_summary.past_medical_history),
                 current_medications=_summary_text_field(last_summary.medications),
                 allergies=_summary_text_field(last_summary.allergies),
                 additional_notes=_summary_notes(last_summary.history_present_illness),
+                is_hpi_complete=getattr(last_summary, "is_hpi_complete", False) or False,
             )
         except Exception:
             pass
 
-    # -------------------------------------------------
-    # دریافت تاریخچه پیام‌ها (بدون سیستم پرامپت قدیمی)
-    # -------------------------------------------------
-
-    db_messages = (
-        db.query(Message)
-        .filter(Message.session_id == session_id)
+    msg_result = await db.execute(
+        select(Message)
+        .where(Message.session_id == session_id)
         .order_by(Message.created_at)
-        .all()
     )
-    
+    db_messages = msg_result.scalars().all()
+
     history = []
     for m in db_messages:
         history.append({"role": m.role, "content": m.content})
-
-    # -------------------------------------------------
-    # تشخیص مرحله مصاحبه و ساخت پرامپت
-    # -------------------------------------------------
 
     message_count = len(db_messages)
     current_stage = interview_controller.detect_stage(current_summary_obj, history)
@@ -292,10 +277,9 @@ async def send_message(
         chat_history=history,
     )
 
-    # نمایش وضعیت فعلی داده‌ها به LLM برای جلوگیری از تکرار سوالات
     current_data_str = "هنوز داده‌ای استخراج نشده است."
     if current_summary_obj:
-        summary_dict = current_summary_obj.model_dump(exclude_none=True, exclude={'extracted_at'})
+        summary_dict = current_summary_obj.model_dump(exclude_none=True, exclude={"extracted_at"})
         current_data_str = json.dumps(summary_dict, ensure_ascii=False, indent=2)
 
     system_prompt = llm_service.get_system_prompt(
@@ -304,109 +288,67 @@ async def send_message(
         stage_instruction=stage_instruction,
     )
 
-    # -------------------------------------------------
-    # دریافت پاسخ از مدل
-    # -------------------------------------------------
-
     try:
         ai_response = await llm_service.chat(history, system_prompt=system_prompt)
     except Exception as e:
-        logger.error(f"LLM Chat Error: {str(e)}")
+        logger.error("LLM Chat Error: %s", str(e))
         ai_response = _build_fallback_question(current_stage)
-
-    # -------------------------------------------------
-    # ذخیره پاسخ مدل
-    # -------------------------------------------------
 
     try:
         assistant_message = Message(
             session_id=session_id,
             role="assistant",
-            content=ai_response
+            content=ai_response,
         )
-
         db.add(assistant_message)
-        db.commit()
-        db.refresh(assistant_message)
+        await db.commit()
+        await db.refresh(assistant_message)
     except Exception as e:
-        db.rollback()
-        logger.error(f"Error saving assistant message: {str(e)}")
-        # Note: We still have the AI response, but we couldn't save it.
-        # For better UX, we could return it without saving, but that would break history.
+        await db.rollback()
+        logger.error("Error saving assistant message: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="خطا در ذخیره پاسخ سیستم"
+            detail="خطا در ذخیره پاسخ سیستم",
         )
 
-    # -------------------------------------------------
-    # به‌روزرسانی خلاصه و استخراج داده (به صورت دوره‌ای یا در صورت تغییر مرحله)
-    # -------------------------------------------------
-    # برای بهینه‌سازی، فقط هر ۲ پیام یک بار یا در پیام‌های اول خلاصه را آپدیت می‌کنیم
-    # message_count + 1 برای در نظر گرفتن پیام اسیستنت که تازه اضافه شده است
     if (message_count + 1) % 2 == 0 or (message_count + 1) < 5:
         try:
-            # اضافه کردن پیام جدید به تاریخچه برای خلاصه سازی
             history.append({"role": "assistant", "content": ai_response})
             new_summary_data = await summary_builder.build_summary(history)
             if new_summary_data:
-                soap_note_content = None
-                # تولید SOAP Note فقط در صورت پیشرفت قابل توجه (مثلاً هر ۴ پیام)
-                # message_count + 1 برای در نظر گرفتن پیام اسیستنت که تازه اضافه شده است
-                if (message_count + 1) % 4 == 0:
-                    try:
-                        # تبدیل دیکشنری به مدل MedicalSummary برای SOAP
-                        med_sum = MedicalSummary(
-                            chief_complaint=new_summary_data.get("chief_complaint"),
-                            past_medical_history=[new_summary_data.get("past_medical_history")] if new_summary_data.get("past_medical_history") != "نامشخص" else [],
-                            current_medications=[new_summary_data.get("medications")] if new_summary_data.get("medications") != "نامشخص" else [],
-                            allergies=[new_summary_data.get("allergies")] if new_summary_data.get("allergies") != "نامشخص" else [],
-                            additional_notes=new_summary_data.get("history_present_illness"),
-                        )
-                        soap_note_result = await soap_generator.generate_soap_note(
-                            summary=med_sum,
-                            chat_history=history,
-                            file_analyses=[]
-                        )
-                        if soap_note_result and soap_note_result.get("status") == "success":
-                            soap_note_content = soap_note_result.get("soap_note")
-                    except Exception as soap_err:
-                        logger.error(f"SOAP generation error: {soap_err}")
-                save_summary(db, session_id, new_summary_data, soap_note=soap_note_content)
+                await save_summary(db, session_id, new_summary_data)
         except Exception as sum_err:
-            logger.error(f"Summary update error: {sum_err}")
+            logger.error("Summary update error: %s", sum_err)
 
     return assistant_message
 
 
-# ---------------------------------------------------------
-# Chat History
-# ---------------------------------------------------------
-
 @router.get("/{session_id}", response_model=ChatHistoryResponse)
-def get_chat_history(
+async def get_chat_history(
     session_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """دریافت تاریخچه کامل گفتگو"""
-
-    session = db.query(DBSession).filter(DBSession.id == session_id).first()
+    result = await db.execute(
+        select(DBSession).where(DBSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # بیمار فقط به تاریخچه چت خودش دسترسی دارد، اما پزشک و ادمین به همه دسترسی دارند
     if current_user.role == "patient" and session.patient_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    messages = (
-        db.query(Message)
-        .filter(Message.session_id == session_id)
+    msg_result = await db.execute(
+        select(Message)
+        .where(Message.session_id == session_id)
         .order_by(Message.created_at)
-        .all()
     )
+    messages = msg_result.scalars().all()
 
     return {
         "session": session,
-        "messages": messages
+        "messages": messages,
     }

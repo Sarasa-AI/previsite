@@ -29,9 +29,8 @@ def test_intake_four_layer_flow(tmp_path, monkeypatch) -> None:
 
     token = _register_and_login(
         client,
-        email="intake@example.com",
+        seed="Intake Patient",
         password="VeryStrongPassword123!",
-        full_name="Intake Patient",
     )
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -47,7 +46,7 @@ def test_intake_four_layer_flow(tmp_path, monkeypatch) -> None:
         json={
             "first_name": "علی",
             "last_name": "رضایی",
-            "national_id": "1234567890",
+            "national_id": "0499370899",
             "insurance_provider": "تأمین اجتماعی",
             "age": 34,
             "sex": "male",

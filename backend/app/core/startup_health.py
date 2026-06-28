@@ -16,7 +16,10 @@ async def verify_llm_connection() -> None:
         )
         return
 
-    http_client = httpx.AsyncClient(proxies=settings.HTTP_PROXY, timeout=30.0)
+    http_client_kwargs = {"timeout": 30.0}
+    if settings.HTTP_PROXY and settings.HTTP_PROXY.strip():
+        http_client_kwargs["proxies"] = settings.HTTP_PROXY
+    http_client = httpx.AsyncClient(**http_client_kwargs)
     client = AsyncOpenAI(
         base_url=settings.openrouter_base_url,
         api_key=settings.openrouter_api_key,

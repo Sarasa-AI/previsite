@@ -41,19 +41,21 @@ class InterviewController:
         summary_dict = summary.model_dump(exclude_none=True, exclude={"extracted_at"})
         return json.dumps(summary_dict, ensure_ascii=False, indent=2)
 
-    def _hpi_is_incomplete(self, summary: MedicalSummary) -> bool:
-        if not self._is_missing(summary.additional_notes):
-            note = summary.additional_notes.strip()
-            if len(note) > 30:
-                return False
+    def is_diagnostic_sufficient(self, summary: MedicalSummary) -> bool:
+        """
+        Check if HPI is sufficient (has onset, severity, and character)
+        """
+        has_onset = not self._is_missing(summary.symptom_onset)
+        has_severity = not self._is_missing(summary.symptom_severity)
+        has_character = not self._is_missing(summary.symptom_character)
+        return has_onset and has_severity and has_character
 
-        hpi_fields = [
-            summary.symptoms,
-            summary.symptom_duration,
-            summary.symptom_severity,
-        ]
-        populated = sum(1 for field in hpi_fields if not self._is_missing(field))
-        return populated < 2
+    def _hpi_is_incomplete(self, summary: MedicalSummary) -> bool:
+        """
+        بررسی ناقص بودن HPI.
+        Now uses is_diagnostic_sufficient instead of just is_hpi_complete flag.
+        """
+        return not self.is_diagnostic_sufficient(summary)
 
     def _social_history_incomplete(self, summary: MedicalSummary) -> bool:
         return (

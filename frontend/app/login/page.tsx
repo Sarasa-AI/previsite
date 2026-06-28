@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { extractApiError } from "@/lib/api";
+import { mapAuthError } from "@/lib/national-id";
 
 export default function LoginPage() {
-  const [name, setName] = useState("");
+  const [nationalId, setNationalId] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -23,7 +24,7 @@ export default function LoginPage() {
       res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password }),
+        body: JSON.stringify({ national_id: nationalId, password }),
       });
     } catch {
       setLoading(false);
@@ -42,13 +43,17 @@ export default function LoginPage() {
     setLoading(false);
 
     if (!res.ok) {
-      setError(extractApiError(data, "ورود ناموفق بود"));
+      const detail =
+        data && typeof data === "object" && "detail" in data && typeof (data as { detail: unknown }).detail === "string"
+          ? (data as { detail: string }).detail
+          : undefined;
+      setError(mapAuthError(detail, extractApiError(data, "ورود ناموفق بود")));
       return;
     }
     router.push("/dashboard");
   };
 
-  const onNameChange = (e: ChangeEvent<HTMLInputElement>) => setName(e.target.value);
+  const onNationalIdChange = (e: ChangeEvent<HTMLInputElement>) => setNationalId(e.target.value);
   const onPasswordChange = (e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value);
 
   return (
@@ -61,13 +66,15 @@ export default function LoginPage() {
         <form className="medical-card space-y-4" onSubmit={onSubmit}>
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-slate-800">ورود به عنوان بیمار</h2>
-            <p className="text-sm text-slate-500 mt-2">نام و رمز عبور خود را وارد کنید</p>
+            <p className="text-sm text-slate-500 mt-2">کد ملی و رمز عبور خود را وارد کنید</p>
           </div>
           <input
-            value={name}
-            onChange={onNameChange}
-            placeholder="نام"
+            value={nationalId}
+            onChange={onNationalIdChange}
+            placeholder="کد ملی (۱۰ رقم)"
             className="field-input"
+            pattern="\d{10}"
+            maxLength={10}
             required
           />
           <input

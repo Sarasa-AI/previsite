@@ -61,7 +61,10 @@ class OpenRouterService:
             )
             raise OpenRouterAuthenticationError("OPENROUTER_API_KEY is not configured.")
 
-        http_client = httpx.AsyncClient(proxies=settings.HTTP_PROXY, timeout=60.0)
+        http_client_kwargs = {"timeout": 60.0}
+        if settings.HTTP_PROXY and settings.HTTP_PROXY.strip():
+            http_client_kwargs["proxies"] = settings.HTTP_PROXY
+        http_client = httpx.AsyncClient(**http_client_kwargs)
         self.client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=settings.openrouter_api_key,
@@ -74,7 +77,13 @@ class OpenRouterService:
         )
         logger.info("OpenRouterService initialized base_url=%s", self.base_url)
 
-    async def generate_json(self, system_prompt: str, user_prompt: str) -> dict:
+    async def generate_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.2,
+    ) -> dict:
         """
         Call OpenRouter and return a parsed JSON dict.
 
@@ -98,6 +107,7 @@ class OpenRouterService:
                         messages,
                         model=model,
                         use_json_format=use_json_format,
+                        temperature=temperature,
                     )
                     if content and content.strip():
                         logger.info(
@@ -191,11 +201,12 @@ class OpenRouterService:
         *,
         model: str,
         use_json_format: bool,
+        temperature: float = 0.2,
     ) -> str:
         request_kwargs: dict = {
             "model": model,
             "messages": messages,
-            "temperature": 0.2,
+            "temperature": temperature,
             "max_tokens": 2000,
         }
 

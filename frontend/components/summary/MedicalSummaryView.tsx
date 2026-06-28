@@ -1,10 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, ChevronDown, FileText, Pill, ShieldAlert, Stethoscope, ImageIcon } from "lucide-react";
+import { AlertCircle, ChevronDown, FileText, Loader2, Pill, RefreshCw, ShieldAlert, Stethoscope, ImageIcon } from "lucide-react";
+
+type SoapStatus = "pending" | "generating" | "failed" | "ready";
 
 type SummaryPayload = {
   soap_note?: string | null;
+  soap_status?: SoapStatus;
+  soap_error_detail?: string | null;
   medical_data?: {
     chief_complaint?: string | null;
     history_present_illness?: string | null;
@@ -25,6 +29,8 @@ type FileItem = {
 type MedicalSummaryViewProps = {
   data: SummaryPayload;
   files?: FileItem[];
+  onRetrySoap?: () => void;
+  retryLoading?: boolean;
 };
 
 function parseList(value?: string | null) {
@@ -71,21 +77,92 @@ function soapSections(note?: string | null) {
     const raw = start >= 0 ? source.slice(start, end) : "";
     return {
       title: section.key,
-      content: raw.replace(/^[:\-\s#\*]+/, "").trim() || "هنوز محتوایی برای این بخش تولید نشده است.",
+      content: raw.replace(/^[:\-\s#\*]+/, "").trim(),
     };
   });
 }
 
-// نکته آموزشی:
-// این ویوِ تعاملی فقط برای Accordion سمت کاربر client است. خود route summary می‌تواند
-// داده را در سطح بالاتر بگیرد و UI پزشکی ساختاریافته را به این لایه بسپارد.
-export default function MedicalSummaryView({ data, files = [] }: MedicalSummaryViewProps) {
+function SoapSectionContent({
+  title,
+  content,
+  status,
+  errorDetail,
+  onRetry,
+  retryLoading,
+}: {
+  title: string;
+  content: string;
+  status: SoapStatus;
+  errorDetail?: string | null;
+  onRetry?: () => void;
+  retryLoading?: boolean;
+}) {
+  if (status === "generating") {
+    return (
+      <article className="glass-card min-h-[180px]">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-trust/75">{title}</p>
+        <div className="mt-6 flex items-center gap-3 text-slate-500">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span className="text-sm">در حال تولید خلاصه...</span>
+        </div>
+      </article>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <article className="glass-card min-h-[180px] border border-red-100">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-trust/75">{title}</p>
+        <p className="mt-3 text-sm text-red-600">
+          {errorDetail || "تولید SOAP ناموفق بود."}
+        </p>
+        {onRetry ? (
+          <button
+            type="button"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+            onClick={onRetry}
+            disabled={retryLoading}
+          >
+            <RefreshCw className={`h-4 w-4 ${retryLoading ? "animate-spin" : ""}`} />
+            تلاش دوباره
+          </button>
+        ) : null}
+      </article>
+    );
+  }
+
+  if (status === "ready" && content) {
+    return (
+      <article className="glass-card min-h-[180px]">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-trust/75">{title}</p>
+        <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{content}</p>
+      </article>
+    );
+  }
+
+  return (
+    <article className="glass-card min-h-[180px]">
+      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-trust/75">{title}</p>
+      <p className="mt-3 text-sm leading-7 text-slate-500">
+        هنوز محتوایی برای این بخش تولید نشده است
+      </p>
+    </article>
+  );
+}
+
+export default function MedicalSummaryView({
+  data,
+  files = [],
+  onRetrySoap,
+  retryLoading,
+}: MedicalSummaryViewProps) {
   const [pmhOpen, setPmhOpen] = useState(true);
   const meds = useMemo(() => parseList(data.medical_data?.medications), [data.medical_data?.medications]);
   const allergies = useMemo(() => parseList(data.medical_data?.allergies), [data.medical_data?.allergies]);
   const sections = useMemo(() => soapSections(data.soap_note), [data.soap_note]);
+  const soapStatus: SoapStatus = data.soap_status ?? (data.soap_note ? "ready" : "pending");
 
-  const images = useMemo(() => files.filter(f => f.mime_type.startsWith("image/")), [files]);
+  const images = useMemo(() => files.filter((f) => f.mime_type.startsWith("image/")), [files]);
 
   return (
     <section className="space-y-6">
@@ -161,10 +238,15 @@ export default function MedicalSummaryView({ data, files = [] }: MedicalSummaryV
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           {sections.map((section) => (
-            <article key={section.title} className="glass-card min-h-[180px]">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-trust/75">{section.title}</p>
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{section.content}</p>
-            </article>
+            <SoapSectionContent
+              key={section.title}
+              title={section.title}
+              content={section.content}
+              status={soapStatus}
+              errorDetail={data.soap_error_detail}
+              onRetry={onRetrySoap}
+              retryLoading={retryLoading}
+            />
           ))}
         </div>
       </div>
@@ -177,15 +259,15 @@ export default function MedicalSummaryView({ data, files = [] }: MedicalSummaryV
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {images.map((img) => (
-              <a 
-                key={img.id} 
-                href={`/api/proxy${img.url}`} 
-                target="_blank" 
+              <a
+                key={img.id}
+                href={`/api/proxy${img.url}`}
+                target="_blank"
                 rel="noreferrer"
                 className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 transition-all hover:shadow-md"
               >
-                <img 
-                  src={`/api/proxy${img.url}`} 
+                <img
+                  src={`/api/proxy${img.url}`}
                   alt={img.filename}
                   className="h-48 w-full rounded-xl object-cover"
                 />

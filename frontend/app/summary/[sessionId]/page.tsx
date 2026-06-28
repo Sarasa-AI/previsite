@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AxiosError } from "axios";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import MedicalSummaryView from "@/components/summary/MedicalSummaryView";
@@ -11,6 +11,8 @@ type SummaryData = {
   id: number;
   session_id: number;
   soap_note: string | null;
+  soap_status: "pending" | "generating" | "failed" | "ready";
+  soap_error_detail?: string | null;
   medical_data: {
     chief_complaint: string | null;
     history_present_illness: string | null;
@@ -24,28 +26,51 @@ type SummaryData = {
 export default function SummaryPage({ params }: { params: { sessionId: string } }) {
   const sessionId = params.sessionId;
   const [data, setData] = useState<SummaryData | null>(null);
-  const [files, setFiles] = useState<any[]>([]);
+  const [files, setFiles] = useState<Array<{ id: number; filename: string; size: number; mime_type: string; url: string }>>([]);
   const [error, setError] = useState("");
+  const [retryLoading, setRetryLoading] = useState(false);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [summaryRes, filesRes] = await Promise.all([
+        frontendApi.summary(sessionId),
+        frontendApi.listFiles(sessionId),
+      ]);
+      setData(summaryRes.data);
+      setFiles(filesRes.data);
+      setError("");
+    } catch (requestError) {
+      const payload = requestError instanceof AxiosError ? requestError.response?.data : undefined;
+      setError(extractApiError(payload, "دریافت اطلاعات ناموفق بود."));
+    }
+  }, [sessionId]);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [summaryRes, filesRes] = await Promise.all([
-          frontendApi.summary(sessionId),
-          frontendApi.listFiles(sessionId)
-        ]);
-        setData(summaryRes.data);
-        setFiles(filesRes.data);
-        setError("");
-      } catch (requestError) {
-        const payload = requestError instanceof AxiosError ? requestError.response?.data : undefined;
-        setError(extractApiError(payload, "دریافت اطلاعات ناموفق بود."));
-        setData(null);
-      }
-    };
-
     void loadData();
-  }, [sessionId]);
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!data || data.soap_status !== "generating") return;
+
+    const interval = setInterval(() => {
+      void loadData();
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [data?.soap_status, loadData]);
+
+  const handleRetrySoap = async () => {
+    setRetryLoading(true);
+    try {
+      await frontendApi.retrySoap(sessionId);
+      await loadData();
+    } catch (requestError) {
+      const payload = requestError instanceof AxiosError ? requestError.response?.data : undefined;
+      setError(extractApiError(payload, "تلاش مجدد ناموفق بود."));
+    } finally {
+      setRetryLoading(false);
+    }
+  };
 
   return (
     <ProtectedRoute>
@@ -59,7 +84,14 @@ export default function SummaryPage({ params }: { params: { sessionId: string } 
         </section>
 
         {error ? <div className="medical-card text-sm text-red-600">{error}</div> : null}
-        {data ? <MedicalSummaryView data={data} files={files} /> : null}
+        {data ? (
+          <MedicalSummaryView
+            data={data}
+            files={files}
+            onRetrySoap={handleRetrySoap}
+            retryLoading={retryLoading}
+          />
+        ) : null}
       </main>
     </ProtectedRoute>
   );

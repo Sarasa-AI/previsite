@@ -4,5 +4,6 @@ from .message import Message
 from .file import File
 from .summary import Summary
 from .intake import Intake
+from .medical_knowledge import MedicalKnowledge
 
-__all__ = ["User", "Session", "Message", "File", "Summary", "Intake"]
+__all__ = ["User", "Session", "Message", "File", "Summary", "Intake", "MedicalKnowledge"]

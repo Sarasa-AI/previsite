@@ -20,6 +20,7 @@ class MedicalSummaryBuilder:
             "medications": "نامشخص",
             "allergies": "نامشخص",
             "assessment": "اطلاعات اولیه بیمار ثبت شد و نیاز به بررسی پزشک دارد.",
+            "is_hpi_complete": False
         }
 
     async def build_summary(self, messages: List[dict]) -> Dict:
@@ -42,12 +43,14 @@ class MedicalSummaryBuilder:
 "past_medical_history": "",
 "medications": "",
 "allergies": "",
-"assessment": ""
+"assessment": "",
+"is_hpi_complete": false
 }}
 
 قوانین:
 - به فارسی بنویس
 - اگر اطلاعات ناقص است بنویس "نامشخص"
+- فیلد is_hpi_complete را زمانی true کن که شرح حال فعلی (HPI) از نظر بالینی برای تشخیص افتراقی کافی باشد (شامل جزئیات کافی از شروع، کیفیت، علائم همراه و رد فرضیات مهم).
 """
 
         try:

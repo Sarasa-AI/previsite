@@ -34,6 +34,13 @@ class MedicalSummary(BaseModel):
     symptoms: Optional[List[str]] = Field(default_factory=list, description="List of symptoms")
     symptom_duration: Optional[str] = Field(None, description="Duration of symptoms")
     symptom_severity: Optional[str] = Field(None, description="Severity: mild, moderate, severe")
+    symptom_onset: Optional[str] = Field(None, description="Onset of symptoms")
+    symptom_character: Optional[str] = Field(None, description="Character/quality of symptoms")
+    symptom_location: Optional[str] = Field(None, description="Location of symptoms")
+    symptom_aggravating_factors: Optional[List[str]] = Field(default_factory=list, description="Factors that aggravate symptoms")
+    symptom_relieving_factors: Optional[List[str]] = Field(default_factory=list, description="Factors that relieve symptoms")
+    symptom_radiation: Optional[str] = Field(None, description="Radiation of symptoms")
+    symptom_timing: Optional[str] = Field(None, description="Timing of symptoms")
     
     # Past Medical History
     past_medical_history: Optional[List[str]] = Field(default_factory=list, description="Previous diagnoses")
@@ -49,6 +56,7 @@ class MedicalSummary(BaseModel):
     
     # Additional Information
     additional_notes: Optional[str] = Field(None, description="Any other relevant information")
+    is_hpi_complete: bool = Field(False, description="Whether the History of Present Illness is clinically sufficient")
     
     # Metadata
     extracted_at: datetime = Field(default_factory=datetime.utcnow)

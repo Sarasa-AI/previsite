@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import auth
-from app.api import chat, summary, files, intake
+from app.api import chat, summary, files, intake, patients
 from app.core.config import settings, validate_startup_config
 from app.core.error_handler import register_exception_handlers
 from app.core.logging_config import setup_logging
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     """Initialize shared resources when the API starts."""
     validate_startup_config()
-    init_db()
+    await init_db()
     logger.info("Database initialized")
     if settings.SKIP_HEALTH_CHECK:
         logger.warning("Skipping mandatory LLM health check due to configuration.")
@@ -93,3 +93,4 @@ app.include_router(chat.router)
 app.include_router(summary.router)
 app.include_router(files.router)
 app.include_router(intake.router)
+app.include_router(patients.router)

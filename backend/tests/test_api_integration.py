@@ -13,21 +13,17 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from app.utils.national_id import validate_iranian_national_id
 from httpx import ASGITransport, AsyncClient, Response
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 import app.api.intake as intake_api
-import app.db.database as database_module
-import app.db.init_db as init_db_module
-from app.db.database import Base, get_db
 from app.main import app as fastapi_app
 from app.schemas.intake import ClinicalSummary, DemographicsInput, HPIQuestionsResponse
 from app.services.intake_llm import (
+    EXTRACTION_SYSTEM_PROMPT,
     LAYER2_SYSTEM_PROMPT,
-    LAYER3_SYSTEM_PROMPT,
+    _build_extraction_user_prompt,
     _build_layer2_user_prompt,
-    _build_layer3_user_prompt,
     _fallback_questions,
     intake_llm_service,
 )
@@ -41,7 +37,7 @@ from app.services.openrouter_service import OpenRouterServiceError, openrouter_s
 VALID_DEMOGRAPHICS: dict[str, Any] = {
     "first_name": "علی",
     "last_name": "رضایی",
-    "national_id": "1234567890",
+    "national_id": "0499370899",
     "insurance_provider": "تأمین اجتماعی",
     "age": 34,
     "sex": "male",
@@ -51,33 +47,24 @@ VALID_DEMOGRAPHICS: dict[str, Any] = {
 }
 
 
-def _setup_test_db(tmp_path, monkeypatch) -> None:
-    db_path = tmp_path / "test_api_integration.db"
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        connect_args={"check_same_thread": False},
-    )
-    testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from tests.conftest import setup_async_test_db, teardown_test_db
 
-    monkeypatch.setattr(database_module, "engine", engine)
-    monkeypatch.setattr(database_module, "SessionLocal", testing_session_local)
-    monkeypatch.setattr(init_db_module, "engine", engine)
+_test_engine = None
 
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
 
-    def override_get_db():
-        db = testing_session_local()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    fastapi_app.dependency_overrides[get_db] = override_get_db
+async def _setup_test_db(tmp_path, monkeypatch) -> None:
+    global _test_engine
+    _test_engine = await setup_async_test_db(tmp_path, monkeypatch)
 
 
 def _teardown() -> None:
-    fastapi_app.dependency_overrides.clear()
+    import asyncio
+
+    global _test_engine
+    teardown_test_db()
+    if _test_engine is not None:
+        asyncio.run(_test_engine.dispose())
+        _test_engine = None
 
 
 async def _async_client() -> AsyncClient:
@@ -88,13 +75,15 @@ async def _async_client() -> AsyncClient:
 async def _register_and_login_async(
     client: AsyncClient,
     *,
-    name: str,
-    password: str,
+    national_id: str | None = None,
+    password: str = "VeryStrongPassword123!",
+    seed: str = "default-patient",
 ) -> str:
+    resolved_national_id = national_id or _national_id_from_seed(seed)
     register = await client.post(
         "/api/auth/register",
         json={
-            "name": name,
+            "national_id": resolved_national_id,
             "password": password,
             "role": "patient",
         },
@@ -103,10 +92,20 @@ async def _register_and_login_async(
 
     login = await client.post(
         "/api/auth/login",
-        json={"name": name, "password": password},
+        json={"national_id": resolved_national_id, "password": password},
     )
     assert login.status_code == 200, login.text
     return login.json()["access_token"]
+
+
+def _national_id_from_seed(seed: str) -> str:
+    candidate = 1_000_000_000 + (abs(hash(seed)) % 900_000_000)
+    while candidate < 9_999_999_999:
+        national_id = str(candidate).zfill(10)
+        if validate_iranian_national_id(national_id):
+            return national_id
+        candidate += 1
+    return "0499370899"
 
 
 async def _create_session(
@@ -181,11 +180,11 @@ class TestLayer1DemographicsContract:
         self, tmp_path, monkeypatch, field_name, invalid_value, expected_status
     ) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name=f"Boundary Patient boundary-{field_name}-{abs(invalid_value)}",
+                    seed=f"Boundary Patient boundary-{field_name}-{abs(invalid_value)}",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -208,11 +207,11 @@ class TestLayer1DemographicsContract:
 
     def test_missing_required_fields_returns_422(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Missing Fields",
+                    seed="Missing Fields",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -232,11 +231,11 @@ class TestLayer1DemographicsContract:
 
     def test_valid_demographics_persists_and_advances_layer(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Valid Demo",
+                    seed="Valid Demo",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -261,11 +260,11 @@ class TestLayer1DemographicsContract:
     def test_age_zero_is_accepted_by_backend(self, tmp_path, monkeypatch) -> None:
         """Frontend Zod should allow ge=0 to match Pydantic Field(ge=0)."""
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Age Zero",
+                    seed="Age Zero",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -288,7 +287,7 @@ class TestLayer2HPIContract:
     def test_layer2_generate_builds_expected_llm_prompt(self, tmp_path, monkeypatch) -> None:
         captured: dict[str, str] = {}
 
-        async def spy_generate_json(*, system_prompt: str, user_prompt: str) -> dict:
+        async def spy_generate_json(*, system_prompt: str, user_prompt: str, **kwargs) -> dict:
             captured["system_prompt"] = system_prompt
             captured["user_prompt"] = user_prompt
             return {
@@ -304,13 +303,13 @@ class TestLayer2HPIContract:
             }
 
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             monkeypatch.setattr(openrouter_service, "generate_json", spy_generate_json)
 
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Prompt Spy",
+                    seed="Prompt Spy",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -350,7 +349,7 @@ class TestLayer2HPIContract:
             )
 
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             monkeypatch.setattr(
                 intake_api.intake_llm_service,
                 "generate_hpi_questions",
@@ -360,7 +359,7 @@ class TestLayer2HPIContract:
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Rapid HPI",
+                    seed="Rapid HPI",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -399,7 +398,7 @@ class TestLayer2HPIContract:
             )
 
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             monkeypatch.setattr(
                 intake_api.intake_llm_service,
                 "generate_hpi_questions",
@@ -409,7 +408,7 @@ class TestLayer2HPIContract:
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Reanswer",
+                    seed="Reanswer",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -434,11 +433,11 @@ class TestLayer2HPIContract:
 
     def test_layer2_generate_without_layer1_returns_400(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="No Layer1",
+                    seed="No Layer1",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -466,10 +465,21 @@ class TestLayer3ClinicalSummaryContract:
         )
         captured: dict[str, str] = {}
 
-        async def spy_generate_json(*, system_prompt: str, user_prompt: str) -> dict:
-            captured["system_prompt"] = system_prompt
-            captured["user_prompt"] = user_prompt
-            return llm_payload.model_dump()
+        async def spy_generate_json(*, system_prompt: str, user_prompt: str, **kwargs) -> dict:
+            if "Extract structured clinical data" in user_prompt:
+                captured["extraction_system_prompt"] = system_prompt
+                captured["extraction_user_prompt"] = user_prompt
+                return {
+                    "chief_complaint": "درد قفسه سینه",
+                    "pertinent_positives": ["درد قفسه سینه", "تنگی نفس"],
+                    "pertinent_negatives": ["تب", "سرفه"],
+                    "red_flags": ["درد منتشر به بازو"],
+                }
+            if "Write a fluent Persian hpi_summary narrative" in user_prompt:
+                captured["narration_system_prompt"] = system_prompt
+                captured["narration_user_prompt"] = user_prompt
+                return {"hpi_summary": "بیمار با درد قفسه سینه و تنگی نفس مراجعه کرده است."}
+            raise AssertionError(f"Unexpected user prompt: {user_prompt[:120]}")
 
         async def fake_generate_hpi_questions(_demographics):
             return HPIQuestionsResponse(
@@ -481,7 +491,7 @@ class TestLayer3ClinicalSummaryContract:
             )
 
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             monkeypatch.setattr(openrouter_service, "generate_json", spy_generate_json)
             monkeypatch.setattr(
                 intake_api.intake_llm_service,
@@ -492,7 +502,7 @@ class TestLayer3ClinicalSummaryContract:
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Layer3",
+                    seed="Layer3",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -508,7 +518,7 @@ class TestLayer3ClinicalSummaryContract:
                     )
 
                 demographics = DemographicsInput.model_validate(VALID_DEMOGRAPHICS)
-                expected_user = _build_layer3_user_prompt(demographics, hpi_answers)
+                expected_user = _build_extraction_user_prompt(demographics, hpi_answers)
 
                 response = await client.post(
                     f"/api/intake/{session_id}/layer3/generate",
@@ -516,8 +526,8 @@ class TestLayer3ClinicalSummaryContract:
                 )
                 assert response.status_code == 200, response.text
 
-                assert LAYER3_SYSTEM_PROMPT.splitlines()[0] in captured["system_prompt"]
-                assert captured["user_prompt"] == expected_user
+                assert EXTRACTION_SYSTEM_PROMPT.splitlines()[0] in captured["extraction_system_prompt"]
+                assert captured["extraction_user_prompt"] == expected_user
 
                 summary = ClinicalSummary.model_validate(response.json()["clinical_summary"])
                 assert summary.chief_complaint == "درد قفسه سینه"
@@ -533,11 +543,11 @@ class TestLayer3ClinicalSummaryContract:
 class TestLayer4MedicalHistoryContract:
     def test_nested_medical_history_arrays_persist(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Layer4",
+                    seed="Layer4",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -605,11 +615,11 @@ class TestLayer4MedicalHistoryContract:
 
     def test_medical_history_rejects_non_array_fields(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Layer4 Invalid",
+                    seed="Layer4 Invalid",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -633,11 +643,11 @@ class TestLayer4MedicalHistoryContract:
 
     def test_empty_medical_history_arrays_default_ok(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Layer4 Empty",
+                    seed="Layer4 Empty",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -668,19 +678,19 @@ class TestLLMResiliency:
         async def noop_sleep(_seconds: float) -> None:
             return None
 
-        async def slow_then_fail(*, system_prompt: str, user_prompt: str) -> dict:
+        async def slow_then_fail(*, system_prompt: str, user_prompt: str, **kwargs) -> dict:
             await asyncio.sleep(16)  # patched to no-op; simulates >15s LLM latency
             raise OpenRouterServiceError("Simulated timeout after 16s")
 
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             monkeypatch.setattr(asyncio, "sleep", noop_sleep)
             monkeypatch.setattr(openrouter_service, "generate_json", slow_then_fail)
 
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Timeout",
+                    seed="Timeout",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -705,17 +715,17 @@ class TestLLMResiliency:
         _teardown()
 
     def test_malformed_json_from_llm_triggers_layer2_fallback(self, tmp_path, monkeypatch) -> None:
-        async def return_unparseable(*, system_prompt: str, user_prompt: str) -> dict:
+        async def return_unparseable(*, system_prompt: str, user_prompt: str, **kwargs) -> dict:
             raise OpenRouterServiceError("Failed to parse JSON from OpenRouter response.")
 
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             monkeypatch.setattr(openrouter_service, "generate_json", return_unparseable)
 
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Malformed",
+                    seed="Malformed",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -747,17 +757,17 @@ class TestLLMResiliency:
             parse_llm_json("{not valid json}")
 
     def test_layer3_malformed_llm_triggers_clinical_summary_fallback(self, tmp_path, monkeypatch) -> None:
-        async def fail_generate(*, system_prompt: str, user_prompt: str) -> dict:
+        async def fail_generate(*, system_prompt: str, user_prompt: str, **kwargs) -> dict:
             raise OpenRouterServiceError("Failed to parse JSON from OpenRouter response.")
 
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             monkeypatch.setattr(openrouter_service, "generate_json", fail_generate)
 
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    name="Layer3 Fallback",
+                    seed="Layer3 Fallback",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
@@ -784,7 +794,7 @@ class TestLLMResiliency:
         _teardown()
 
     def test_intake_llm_service_direct_timeout_fallback(self, monkeypatch) -> None:
-        async def slow_fail(*, system_prompt: str, user_prompt: str) -> dict:
+        async def slow_fail(*, system_prompt: str, user_prompt: str, **kwargs) -> dict:
             await asyncio.sleep(0.05)
             raise OpenRouterServiceError("timeout")
 
@@ -817,7 +827,7 @@ class TestSessionIsolation:
     async def _owner_bootstrap(self, client: AsyncClient) -> tuple[int, dict[str, str], dict[str, str]]:
         owner_token = await _register_and_login_async(
             client,
-            name="Owner",
+            seed="Owner",
             password="VeryStrongPassword123!",
         )
         owner_headers = _auth_headers(owner_token)
@@ -827,13 +837,13 @@ class TestSessionIsolation:
 
     def test_patient_cannot_read_other_patients_intake(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 session_id, owner_headers, _ = await self._owner_bootstrap(client)
 
                 intruder_token = await _register_and_login_async(
                     client,
-                    name="Intruder read",
+                    seed="Intruder read",
                     password="VeryStrongPassword123!",
                 )
                 intruder_headers = _auth_headers(intruder_token)
@@ -859,13 +869,13 @@ class TestSessionIsolation:
         self, tmp_path, monkeypatch, method, suffix
     ) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 session_id, _, _ = await self._owner_bootstrap(client)
 
                 intruder_token = await _register_and_login_async(
                     client,
-                    name=f"Intruder intruder-{suffix.replace('/', '-')}",
+                    seed=f"Intruder intruder-{suffix.replace('/', '-')}",
                     password="VeryStrongPassword123!",
                 )
                 intruder_headers = _auth_headers(intruder_token)
@@ -891,13 +901,13 @@ class TestSessionIsolation:
 
     def test_intruder_cannot_overwrite_owner_demographics(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
-            _setup_test_db(tmp_path, monkeypatch)
+            await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 session_id, owner_headers, _ = await self._owner_bootstrap(client)
 
                 intruder_token = await _register_and_login_async(
                     client,
-                    name="Intruder overwrite",
+                    seed="Intruder overwrite",
                     password="VeryStrongPassword123!",
                 )
                 intruder_headers = _auth_headers(intruder_token)

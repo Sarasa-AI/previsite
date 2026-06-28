@@ -132,7 +132,10 @@ class MedicalFileAnalyzer:
         cache_dir: Optional[Union[str, Path]] = None,
         timeout: int = 30,
     ) -> None:
-        http_client = httpx.AsyncClient(proxies=settings.HTTP_PROXY, timeout=timeout)
+        http_client_kwargs = {"timeout": timeout}
+        if settings.HTTP_PROXY and settings.HTTP_PROXY.strip():
+            http_client_kwargs["proxies"] = settings.HTTP_PROXY
+        http_client = httpx.AsyncClient(**http_client_kwargs)
 
         resolved_openrouter_key = openrouter_api_key or settings.openrouter_api_key
         resolved_openrouter_base_url = openrouter_base_url or settings.openrouter_base_url

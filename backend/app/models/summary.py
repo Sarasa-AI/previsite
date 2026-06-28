@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -15,6 +15,7 @@ class Summary(Base):
     medications = Column(Text, nullable=True)
     allergies = Column(Text, nullable=True)
     assessment = Column(Text, nullable=True)
+    is_hpi_complete = Column(Boolean, default=False)
     soap_note = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

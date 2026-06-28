@@ -11,15 +11,18 @@ import Layer4MedicalHistory from "@/components/intake/Layer4MedicalHistory";
 import { extractApiError } from "@/lib/api";
 import { frontendApi } from "@/lib/client";
 import type { Demographics, HPIQuestion, IntakeData, MedicalHistory } from "@/lib/intake";
+import { usePatientProfile } from "@/src/hooks/usePatientProfile";
 
 const LAYER_LABELS = ["اطلاعات اولیه", "شرح حال", "خلاصه بالینی", "سوابق پزشکی", "ارسال"];
 
 export default function IntakePage({ params }: { params: { sessionId: string } }) {
   const sessionId = params.sessionId;
   const [intake, setIntake] = useState<IntakeData | null>(null);
+  const [intakeLoadFailed, setIntakeLoadFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const { data: profile, error: profileQueryError } = usePatientProfile();
 
   const currentLayer = intake?.current_layer ?? 1;
 
@@ -27,14 +30,22 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
     try {
       const res = await frontendApi.getIntake(sessionId);
       setIntake(res.data);
+      setIntakeLoadFailed(false);
       setError("");
     } catch (requestError) {
       if (requestError instanceof AxiosError && requestError.response?.status === 404) {
         setIntake(null);
+        setIntakeLoadFailed(false);
         return;
       }
+      setIntakeLoadFailed(true);
       const payload = requestError instanceof AxiosError ? requestError.response?.data : undefined;
-      setError(extractApiError(payload, "بارگذاری اطلاعات ناموفق بود."));
+      setError(
+        extractApiError(
+          payload,
+          "بارگذاری اطلاعات ناموفق بود — اطلاعات شما در همین صفحه ذخیره است، نگران نباشید.",
+        ),
+      );
     }
   }, [sessionId]);
 
@@ -177,6 +188,12 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
           {currentLayer <= 1 && (
             <Layer1Demographics
               initial={intake?.demographics}
+              profile={profile ?? null}
+              profileError={
+                profileQueryError
+                  ? "بارگذاری پروفایل ناموفق بود — می‌توانید اطلاعات را دستی وارد کنید."
+                  : undefined
+              }
               onSubmit={handleLayer1}
               loading={loading}
             />

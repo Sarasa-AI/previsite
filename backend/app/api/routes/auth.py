@@ -1,16 +1,18 @@
 import logging
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
-from sqlalchemy.orm import Session
 from datetime import timedelta
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.schemas import Token, UserLogin, UserRegister, UserResponse
+from app.auth.security import create_access_token, get_password_hash, verify_password
+from app.core.config import settings
 from app.db.database import get_db
 from app.models.user import User, UserRole
-from app.auth.schemas import UserRegister, UserLogin, Token, UserResponse
-from app.auth.security import get_password_hash, verify_password, create_access_token
-from app.core.config import settings
+from app.utils.national_id import validate_iranian_national_id
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -19,98 +21,101 @@ DOCTOR_LOGIN_USERNAME = "bagherzade"
 DOCTOR_LOGIN_PASSWORD = "0808"
 
 
-def _internal_email(name: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9]+", "_", name.strip().lower()).strip("_") or "user"
-    return f"{slug}@patient.local"
+def _internal_email(national_id: str) -> str:
+    return f"patient_{national_id}@patient.local"
 
 
-def _find_user_by_login_name(db: Session, name: str) -> User | None:
-    trimmed = name.strip()
+async def _find_user_by_login(db: AsyncSession, login_id: str) -> User | None:
+    trimmed = login_id.strip()
     normalized = trimmed.lower()
 
-    user = (
-        db.query(User)
-        .filter(func.lower(User.full_name) == normalized)
-        .first()
+    if validate_iranian_national_id(trimmed):
+        result = await db.execute(select(User).where(User.national_id == trimmed))
+        user = result.scalar_one_or_none()
+        if user:
+            return user
+
+    result = await db.execute(
+        select(User).where(func.lower(User.full_name) == normalized)
     )
+    user = result.scalar_one_or_none()
     if user:
         return user
 
-    user = (
-        db.query(User)
-        .filter(func.lower(User.email) == normalized)
-        .first()
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == normalized)
     )
+    user = result.scalar_one_or_none()
     if user:
         return user
 
     internal_email = _internal_email(trimmed)
-    return db.query(User).filter(func.lower(User.email) == internal_email.lower()).first()
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == internal_email.lower())
+    )
+    return result.scalar_one_or_none()
 
 
 @router.post("/register", response_model=UserResponse)
-def register(user_data: UserRegister, db: Session = Depends(get_db)):
-    """Register a new user account for the MVP flow."""
-    name = user_data.name.strip()
-    existing_user = (
-        db.query(User)
-        .filter(func.lower(User.full_name) == name.lower())
-        .first()
-    )
-    if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Name already registered"
-        )
+async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
+    """Register a new patient account keyed by national ID."""
+    national_id = user_data.national_id.strip()
 
-    internal_email = _internal_email(name)
-    if db.query(User).filter(User.email == internal_email).first():
-        raise HTTPException(
-            status_code=400,
-            detail="Name already registered"
-        )
+    result = await db.execute(select(User).where(User.national_id == national_id))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="USER_EXISTS")
 
+    internal_email = _internal_email(national_id)
+    result = await db.execute(select(User).where(User.email == internal_email))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="USER_EXISTS")
+
+    display_name = (user_data.display_name or f"بیمار {national_id[-4:]}").strip()
     hashed_password = get_password_hash(user_data.password)
 
     user = User(
         email=internal_email,
-        full_name=name,
+        full_name=display_name,
+        national_id=national_id,
         hashed_password=hashed_password,
         role=user_data.role,
-        is_active=True
+        is_active=True,
     )
 
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
 
     return user
 
 
 @router.post("/login", response_model=Token)
-def login(user_data: UserLogin, db: Session = Depends(get_db)):
+async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     """Authenticate a user and return an access token."""
-    name = user_data.name.strip()
-    user = _find_user_by_login_name(db, name)
+    login_id = user_data.national_id.strip()
+    user = await _find_user_by_login(db, login_id)
 
     if user:
         logger.info(
-            "Login lookup succeeded name=%r user_id=%s stored_full_name=%r email=%r role=%s",
-            name,
+            "Login lookup succeeded login_id=%r user_id=%s stored_full_name=%r email=%r role=%s",
+            login_id,
             user.id,
             user.full_name,
             user.email,
             user.role.value,
         )
     else:
-        logger.info("Login lookup failed: no user found for name=%r", name)
+        logger.info("Login lookup failed: no user found for login_id=%r", login_id)
 
     if (
-        name.lower() == DOCTOR_LOGIN_USERNAME
+        login_id.lower() == DOCTOR_LOGIN_USERNAME
         and user_data.password == DOCTOR_LOGIN_PASSWORD
         and (not user or user.role != UserRole.DOCTOR)
     ):
-        user = db.query(User).filter(User.email == f"{DOCTOR_LOGIN_USERNAME}@doctor.com").first()
+        result = await db.execute(
+            select(User).where(User.email == f"{DOCTOR_LOGIN_USERNAME}@doctor.com")
+        )
+        user = result.scalar_one_or_none()
         if not user:
             user = User(
                 email=f"{DOCTOR_LOGIN_USERNAME}@doctor.com",
@@ -120,8 +125,8 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
                 is_active=True,
             )
             db.add(user)
-            db.commit()
-            db.refresh(user)
+            await db.commit()
+            await db.refresh(user)
             logger.info(
                 "Login auto-provisioned doctor account user_id=%s email=%r",
                 user.id,
@@ -130,30 +135,30 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
 
     hashed = getattr(user, "hashed_password", None) if user else None
     if not user:
-        logger.warning("Login rejected: user not found for name=%r", name)
+        logger.warning("Login rejected: user not found for login_id=%r", login_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid name or password",
+            detail="Invalid credentials",
         )
     if not hashed:
         logger.warning(
-            "Login rejected: missing hashed_password for user_id=%s name=%r",
+            "Login rejected: missing hashed_password for user_id=%s login_id=%r",
             user.id,
             user.full_name,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid name or password",
+            detail="Invalid credentials",
         )
     if not verify_password(user_data.password, hashed):
         logger.warning(
-            "Login rejected: password verification failed for user_id=%s name=%r",
+            "Login rejected: password verification failed for user_id=%s login_id=%r",
             user.id,
             user.full_name,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid name or password",
+            detail="Invalid credentials",
         )
 
     if not user.is_active:
@@ -162,9 +167,7 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
             detail="User account is inactive",
         )
 
-    access_token_expires = timedelta(
-        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-    )
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
     access_token = create_access_token(
         data={"sub": str(user.id), "email": user.email},
@@ -173,5 +176,5 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
 
     return {
         "access_token": access_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
     }
