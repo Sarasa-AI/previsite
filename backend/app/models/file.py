@@ -9,9 +9,9 @@ class File(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
     filename = Column(String, nullable=False)
-    file_path = Column(String, nullable=False)
-    file_size = Column(Integer, nullable=False)
-    mime_type = Column(String, nullable=True)
+    s3_key = Column(String, nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    content_type = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     session = relationship("Session", back_populates="files")

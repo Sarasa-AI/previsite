@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { getBackendApiUrl } from "@/lib/backend-config";
 
 // Bypass system proxies for local requests
 process.env.NO_PROXY = "localhost,127.0.0.1";
 process.env.no_proxy = "localhost,127.0.0.1";
 
-const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:8000";
+const BACKEND_API_URL = getBackendApiUrl();
 
 async function readJsonFromResponse(response: Response): Promise<unknown> {
   const text = await response.text();

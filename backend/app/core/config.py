@@ -73,7 +73,13 @@ class Settings(BaseSettings):
 
     # CORS / Runtime
     app_env: str = "development"
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_origins: str = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
+        "http://localhost:3001,"
+        "http://127.0.0.1:3001,"
+        "https://sarasa-ai.liara.run"
+    )
     log_level: str = "INFO"
     skip_health_check: bool = False
 

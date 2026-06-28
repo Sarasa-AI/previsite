@@ -84,8 +84,7 @@ def read_root():
 def health_check():
     """بررسی سلامت سرور"""
     return {
-        "status": "healthy",
-        "service": "PreVisit MVP"
+        "status": "ok"
     }
 
 # ─────────── Include Routers ───────────
