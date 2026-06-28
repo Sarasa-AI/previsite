@@ -1,6 +1,9 @@
 import logging
 import httpx
-from typing import Dict, Any, List, Optional
+import re
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from typing import Dict, Any, List, Optional, Set
 from datetime import datetime
 from enum import Enum
 
@@ -8,10 +11,20 @@ from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.schemas.medical import MedicalSummary, SoapNote
+from app.schemas.medical import MedicalSummary, SoapNote, VerificationStatus
 from app.services.rag_service import RagService, rag_service as default_rag_service
 
 logger = logging.getLogger(__name__)
+
+CITATION_SIMILARITY_THRESHOLD = 0.35
+_CITATION_MARKER_RE = re.compile(r"\[(\d+)\]")
+
+
+@dataclass
+class CitationVerificationResult:
+    content: str
+    citations: List[dict]
+    verification_status: VerificationStatus
 
 
 class LLMProvider(str, Enum):

@@ -1,6 +1,8 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
+
+VerificationStatus = Literal["verified", "partially_verified", "unverified"]
 
 
 class MedicalSummary(BaseModel):
@@ -67,4 +69,8 @@ class SoapNote(BaseModel):
     """Structured SOAP note with RAG evidence citations."""
     content: str = Field(..., description="Generated SOAP note markdown")
     citations: list[dict] = Field(default_factory=list, description="RAG evidence citations")
+    verification_status: VerificationStatus = Field(
+        default="verified",
+        description="Aggregate citation verification outcome",
+    )
 
