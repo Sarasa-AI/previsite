@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -18,6 +18,8 @@ class Intake(Base):
     question_strategy = Column(Text, nullable=True)
     clinical_summary_json = Column(Text, nullable=True)
     medical_history_json = Column(Text, nullable=True)
+    llm_fallback_used = Column(Boolean, default=False, nullable=False)
+    llm_error_message = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

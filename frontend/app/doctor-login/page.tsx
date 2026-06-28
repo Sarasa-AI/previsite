@@ -23,7 +23,7 @@ export default function DoctorLoginPage() {
       res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: username, password }),
+        body: JSON.stringify({ national_id: username, password }),
       });
     } catch {
       setLoading(false);

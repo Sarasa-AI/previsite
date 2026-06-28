@@ -84,6 +84,8 @@ def _to_response(intake: Intake) -> IntakeResponse:
         hpi_answers=hpi_answers if isinstance(hpi_answers, dict) else None,
         clinical_summary=ClinicalSummary.model_validate(clinical_summary) if clinical_summary else None,
         medical_history=MedicalHistoryInput.model_validate(medical_history) if medical_history else None,
+        llm_fallback_used=bool(getattr(intake, "llm_fallback_used", False)),
+        llm_error_message=getattr(intake, "llm_error_message", None),
         created_at=intake.created_at,
         updated_at=intake.updated_at,
     )
@@ -166,11 +168,16 @@ async def generate_layer2_questions(
         raise HTTPException(status_code=400, detail="Layer 1 demographics must be completed first")
 
     demographics = DemographicsInput.model_validate_json(intake.demographics_json)
-    questions = await intake_llm_service.generate_hpi_questions(demographics)
+    result = await intake_llm_service.generate_hpi_questions(
+        demographics,
+        session_id=session_id,
+    )
 
-    intake.hpi_questions_json = questions.model_dump_json()
-    intake.question_strategy = questions.question_strategy
+    intake.hpi_questions_json = result.questions.model_dump_json()
+    intake.question_strategy = result.questions.question_strategy
     intake.hpi_answers_json = json.dumps({})
+    intake.llm_fallback_used = result.llm_fallback_used
+    intake.llm_error_message = result.llm_error_message
     intake.current_layer = 2
     await db.commit()
     await db.refresh(intake)
@@ -220,8 +227,15 @@ async def generate_layer3_summary(
     demographics = DemographicsInput.model_validate_json(intake.demographics_json)
     hpi_answers = _load_json(intake.hpi_answers_json) or {}
 
-    summary = await intake_llm_service.generate_clinical_summary(demographics, hpi_answers)
-    intake.clinical_summary_json = summary.model_dump_json()
+    result = await intake_llm_service.generate_clinical_summary(
+        demographics,
+        hpi_answers,
+        session_id=session_id,
+    )
+    intake.clinical_summary_json = result.summary.model_dump_json()
+    if result.llm_fallback_used:
+        intake.llm_fallback_used = True
+        intake.llm_error_message = result.llm_error_message
     intake.current_layer = 4
     await db.commit()
     await db.refresh(intake)

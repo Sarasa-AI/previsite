@@ -117,6 +117,8 @@ fi
 source ../.venv/bin/activate
 echo -e "${YELLOW}Installing dependencies...${NC}"
 pip install -q -r requirements.txt
+echo -e "${YELLOW}Running database migrations...${NC}"
+PYTHONPATH=. alembic upgrade head
 echo -e "${YELLOW}Starting backend server...${NC}"
 if [ "$FAST_START" = true ]; then
     export SKIP_HEALTH_CHECK=true

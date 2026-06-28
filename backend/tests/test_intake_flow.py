@@ -1,27 +1,32 @@
 import app.api.intake as intake_api
 from app.schemas.intake import ClinicalSummary, HPIQuestionsResponse
+from app.services.intake_llm import ClinicalSummaryResult, Layer2GenerationResult
 from tests.test_mvp_flow import _create_client, _register_and_login
 
 
 def test_intake_four_layer_flow(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
 
-    async def fake_generate_hpi_questions(demographics):
-        return HPIQuestionsResponse(
+    async def fake_generate_hpi_questions(demographics, **kwargs):
+        return Layer2GenerationResult(
+            questions=HPIQuestionsResponse(
             question_strategy="Acute symptom workflow",
             questions=[
                 {"id": "onset", "question": "از چه زمانی شروع شده؟", "priority": 1, "red_flag_related": False},
                 {"id": "severity", "question": "شدت را از ۰ تا ۱۰ چقدر می‌دانید؟", "priority": 2, "red_flag_related": False},
             ],
+            )
         )
 
-    async def fake_generate_clinical_summary(demographics, hpi_answers):
-        return ClinicalSummary(
+    async def fake_generate_clinical_summary(demographics, hpi_answers, **kwargs):
+        return ClinicalSummaryResult(
+            summary=ClinicalSummary(
             chief_complaint="درد شکم",
             hpi_summary="بیمار با درد شکم مراجعه کرده است.",
             pertinent_positives=["درد شکم"],
             pertinent_negatives=[],
             red_flags=[],
+            )
         )
 
     monkeypatch.setattr(intake_api.intake_llm_service, "generate_hpi_questions", fake_generate_hpi_questions)

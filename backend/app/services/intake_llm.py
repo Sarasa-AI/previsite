@@ -1,9 +1,11 @@
 import logging
 import asyncio
 import json
+from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
 from app.schemas.intake import ClinicalSummary, DemographicsInput, HPIQuestionsResponse
 from app.services.narrative_utils import (
     build_hpi_narrative_fallback,
@@ -13,6 +15,9 @@ from app.services.narrative_utils import (
 from app.services.openrouter_service import OpenRouterServiceError, openrouter_service
 
 logger = logging.getLogger(__name__)
+
+INTAKE_LLM_TIMEOUT = settings.intake_llm_timeout_seconds
+INTAKE_MAX_TOKENS = 1200
 
 LAYER2_SYSTEM_PROMPT = """You are a medical intake assistant for a Persian-speaking clinic and telemedicine platform.
 Your task is to generate the most relevant Present Illness questions based on the patient's: Age, Sex, Chief Complaint.
@@ -134,6 +139,74 @@ class HpiNarration(BaseModel):
     hpi_summary: str
 
 
+@dataclass
+class Layer2GenerationResult:
+    questions: HPIQuestionsResponse
+    llm_fallback_used: bool = False
+    llm_error_message: str | None = None
+
+
+@dataclass
+class ClinicalSummaryResult:
+    summary: ClinicalSummary
+    llm_fallback_used: bool = False
+    llm_error_message: str | None = None
+
+
+def _classify_llm_error(exc: Exception) -> str:
+    if isinstance(exc, TimeoutError):
+        return f"Timeout: LLM response exceeded {INTAKE_LLM_TIMEOUT:g}s SLA"
+    message = str(exc).strip() or type(exc).__name__
+    lowered = message.lower()
+    if "authentication" in lowered or "401" in lowered:
+        return "Authentication error"
+    if "connection" in lowered:
+        return "Connection error"
+    return message
+
+
+def _log_layer2_fallback(
+    *,
+    session_id: int | None,
+    chief_complaint: str,
+    exc: Exception,
+) -> str:
+    error_message = _classify_llm_error(exc)
+    logger.warning("Layer 2 LLM fallback triggered: %s", error_message)
+    logger.error(
+        "Intake Layer 2 fallback active | session_id=%s chief_complaint=%r error_type=%s detail=%s",
+        session_id,
+        chief_complaint,
+        type(exc).__name__,
+        error_message,
+    )
+    return error_message
+
+
+def _log_layer3_fallback(
+    *,
+    session_id: int | None,
+    chief_complaint: str,
+    stage: str,
+    exc: Exception,
+) -> str:
+    error_message = _classify_llm_error(exc)
+    logger.warning("Layer 3 %s fallback triggered: %s", stage, error_message)
+    logger.error(
+        "Intake Layer 3 fallback active | session_id=%s stage=%s chief_complaint=%r error_type=%s detail=%s",
+        session_id,
+        stage,
+        chief_complaint,
+        type(exc).__name__,
+        error_message,
+    )
+    return error_message
+
+
+def _complaint_matches(complaint: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword in complaint for keyword in keywords)
+
+
 def _build_layer2_user_prompt(demographics: DemographicsInput) -> str:
     sex_fa = sex_label_fa(demographics.sex)
     return f"""Patient Information
@@ -174,10 +247,10 @@ Write a fluent Persian hpi_summary narrative."""
 
 
 def _fallback_questions(demographics: DemographicsInput) -> HPIQuestionsResponse:
-    """Deterministic fallback when LLM is unavailable."""
-    complaint = demographics.chief_complaint.lower()
+    """Deterministic diagnostic fallback when LLM is unavailable."""
+    complaint = demographics.chief_complaint.strip().lower()
 
-    if any(kw in complaint for kw in ("دیابت", "فشار خون", "قلب", "دوره‌ای", "پیگیری")):
+    if _complaint_matches(complaint, ("دیابت", "فشار خون", "قلب", "دوره‌ای", "پیگیری")):
         return HPIQuestionsResponse(
             question_strategy="Chronic disease follow-up workflow focused on current status, symptom burden, and reason for follow-up.",
             questions=[
@@ -190,7 +263,7 @@ def _fallback_questions(demographics: DemographicsInput) -> HPIQuestionsResponse
             ],
         )
 
-    if any(kw in complaint for kw in ("آزمایش", "چکاپ", "نتیجه", "خون")):
+    if _complaint_matches(complaint, ("آزمایش", "چکاپ", "نتیجه", "خون")):
         return HPIQuestionsResponse(
             question_strategy="Laboratory result review workflow focused on context, symptoms, and urgency assessment.",
             questions=[
@@ -202,14 +275,79 @@ def _fallback_questions(demographics: DemographicsInput) -> HPIQuestionsResponse
             ],
         )
 
+    if _complaint_matches(complaint, ("قفسه سینه", "سینه", "تنگی نفس", "درد قلبی", "فشار سینه")):
+        return HPIQuestionsResponse(
+            question_strategy="Chest pain / dyspnea diagnostic workflow focused on cardiac and pulmonary red flags.",
+            questions=[
+                {"id": "chest_location", "question": "درد یا فشار دقیقاً کجای قفسه سینه احساس می‌شود؟", "priority": 1, "red_flag_related": False},
+                {"id": "radiation", "question": "آیا درد به بازو، فک، گردن یا پشت منتشر می‌شود؟", "priority": 2, "red_flag_related": True},
+                {"id": "exertion", "question": "آیا با فعالیت یا استرس بدتر می‌شود و با استراحت بهتر می‌شود؟", "priority": 3, "red_flag_related": True},
+                {"id": "associated", "question": "آیا تعریق، تهوع، استفراغ یا تپش قلب همراه آن دارید؟", "priority": 4, "red_flag_related": True},
+                {"id": "breathing", "question": "آیا همراه با تنگی نفس یا احساس خفگی است؟", "priority": 5, "red_flag_related": True},
+                {"id": "severity", "question": "شدت درد یا فشار را از ۰ تا ۱۰ چقدر ارزیابی می‌کنید؟", "priority": 6, "red_flag_related": False},
+            ],
+        )
+
+    if _complaint_matches(complaint, ("دل", "شکم", "دل‌درد", "درد شکم", "دل درد")):
+        return HPIQuestionsResponse(
+            question_strategy="Abdominal pain diagnostic workflow focused on location, character, and associated GI symptoms.",
+            questions=[
+                {"id": "abd_location", "question": "درد دقیقاً کجای شکم است؟ (بالا، پایین، راست، چپ)", "priority": 1, "red_flag_related": False},
+                {"id": "abd_character", "question": "نوع درد چگونه است؟ (سوزش، گرفتگی، تیرکش، مداوم)", "priority": 2, "red_flag_related": False},
+                {"id": "abd_onset", "question": "از چه زمانی شروع شده و تدریجی بوده یا ناگهانی؟", "priority": 3, "red_flag_related": False},
+                {"id": "nausea_vomiting", "question": "آیا تهوع، استفراغ یا بی‌اشتهایی دارید؟", "priority": 4, "red_flag_related": False},
+                {"id": "bowel", "question": "آیا تغییر در مدفوع، یبوست، اسهال یا خون در مدفوع داشته‌اید؟", "priority": 5, "red_flag_related": True},
+                {"id": "abd_redflag", "question": "آیا تب، استفراغ خونی یا درد آنقدر شدید است که نتوانید راحت حرکت کنید؟", "priority": 6, "red_flag_related": True},
+            ],
+        )
+
+    if _complaint_matches(complaint, ("سردرد", "سر درد", "میگرن")):
+        return HPIQuestionsResponse(
+            question_strategy="Headache diagnostic workflow focused on onset pattern, severity, and neurological red flags.",
+            questions=[
+                {"id": "headache_onset", "question": "سردرد ناگهانی و شدید بوده یا تدریجی شروع شده است؟", "priority": 1, "red_flag_related": True},
+                {"id": "worst_ever", "question": "آیا شدیدترین سردردی است که تا به حال داشته‌اید؟", "priority": 2, "red_flag_related": True},
+                {"id": "headache_location", "question": "درد در کدام قسمت سر است و یک طرفه است یا هر دو طرف؟", "priority": 3, "red_flag_related": False},
+                {"id": "neuro_symptoms", "question": "آیا تاری دید، دوبینی، گیجی، ضعف اندام یا اختلال تکلم دارید؟", "priority": 4, "red_flag_related": True},
+                {"id": "meningeal", "question": "آیا تب، گردن سفت یا حساس به نور دارید؟", "priority": 5, "red_flag_related": True},
+                {"id": "headache_severity", "question": "شدت سردرد را از ۰ تا ۱۰ چقدر ارزیابی می‌کنید؟", "priority": 6, "red_flag_related": False},
+            ],
+        )
+
+    if _complaint_matches(complaint, ("کاهش وزن", "لاغری", "کم شدن وزن", "افزایش وزن", "چاقی")):
+        return HPIQuestionsResponse(
+            question_strategy="Weight change diagnostic workflow focused on amount, timeline, appetite, and red flags.",
+            questions=[
+                {"id": "weight_amount", "question": "تقریباً چند کیلوگرم وزن کم یا زیاد کرده‌اید و در چه مدت؟", "priority": 1, "red_flag_related": False},
+                {"id": "intentional", "question": "آیا عمداً رژیم، ورزش یا تغییر سبک زندگی داشته‌اید؟", "priority": 2, "red_flag_related": False},
+                {"id": "appetite", "question": "اشتهای شما در این مدت چگونه بوده است؟", "priority": 3, "red_flag_related": False},
+                {"id": "night_sweats", "question": "آیا تعریق شبانه یا تب خفیف داشته‌اید؟", "priority": 4, "red_flag_related": True},
+                {"id": "gi_symptoms", "question": "آیا تهوع، استفراغ، درد شکم یا تغییر در مدفوع دارید؟", "priority": 5, "red_flag_related": True},
+                {"id": "fatigue_bleeding", "question": "آیا خستگی شدید، خونریزی غیرطبیعی یا زردی چشم دارید؟", "priority": 6, "red_flag_related": True},
+            ],
+        )
+
+    if _complaint_matches(complaint, ("سرفه", "تب", "لرز", "سرماخورد", "گلو")):
+        return HPIQuestionsResponse(
+            question_strategy="Respiratory / infectious symptom workflow focused on duration, severity, and red flags.",
+            questions=[
+                {"id": "onset_duration", "question": "علامت از چه زمانی شروع شده و چند روز است ادامه دارد؟", "priority": 1, "red_flag_related": False},
+                {"id": "fever_pattern", "question": "آیا تب دارید؟ بالاترین دما چقدر بوده است؟", "priority": 2, "red_flag_related": False},
+                {"id": "cough_character", "question": "سرفه خشک است یا همراه با خلط؟ اگر خلط دارید رنگ آن چیست؟", "priority": 3, "red_flag_related": True},
+                {"id": "breathing", "question": "آیا تنگی نفس یا درد قفسه سینه با نفس کشیدن دارید؟", "priority": 4, "red_flag_related": True},
+                {"id": "associated", "question": "آیا گلودرد، آبریزش بینی، بدن‌درد یا از دست دادن بویایی دارید؟", "priority": 5, "red_flag_related": False},
+                {"id": "redflag_severe", "question": "آیا تنفس سخت شده، لب‌ها کبود شده یا خیلی ضعیف و گیج شده‌اید؟", "priority": 6, "red_flag_related": True},
+            ],
+        )
+
     return HPIQuestionsResponse(
-        question_strategy="Acute symptom workflow focused on location, timing, severity, associated symptoms, and red flags.",
+        question_strategy="Acute symptom workflow focused on location, timing, progression, modifiers, associated symptoms, and red flags.",
         questions=[
-            {"id": "onset", "question": "این مشکل از چه زمانی شروع شده است؟", "priority": 1, "red_flag_related": False},
-            {"id": "course", "question": "وضعیت از زمان شروع بهتر شده، بدتر شده یا تغییری نکرده است؟", "priority": 2, "red_flag_related": False},
-            {"id": "severity", "question": "شدت علامت را از ۰ تا ۱۰ چقدر ارزیابی می‌کنید؟", "priority": 3, "red_flag_related": False},
-            {"id": "associated", "question": "آیا علامت دیگری همراه با آن دارید؟", "priority": 4, "red_flag_related": False},
-            {"id": "fever", "question": "آیا تب یا لرز داشته‌اید؟", "priority": 5, "red_flag_related": False},
+            {"id": "location", "question": "محل دقیق علامت کجاست؟", "priority": 1, "red_flag_related": False},
+            {"id": "onset", "question": "این مشکل از چه زمانی شروع شده است؟", "priority": 2, "red_flag_related": False},
+            {"id": "course", "question": "وضعیت از زمان شروع بهتر شده، بدتر شده یا تغییری نکرده است؟", "priority": 3, "red_flag_related": False},
+            {"id": "aggravating", "question": "چه چیزی علامت را بدتر می‌کند؟", "priority": 4, "red_flag_related": False},
+            {"id": "associated", "question": "آیا علامت دیگری همراه با آن دارید؟", "priority": 5, "red_flag_related": False},
             {"id": "redflag_severe", "question": "آیا علامت آنقدر شدید است که انجام فعالیت‌های روزمره را مختل کرده باشد؟", "priority": 6, "red_flag_related": True},
         ],
     )
@@ -250,7 +388,12 @@ def _fallback_clinical_summary(
 
 
 class IntakeLLMService:
-    async def generate_hpi_questions(self, demographics: DemographicsInput) -> HPIQuestionsResponse:
+    async def generate_hpi_questions(
+        self,
+        demographics: DemographicsInput,
+        *,
+        session_id: int | None = None,
+    ) -> Layer2GenerationResult:
         user_prompt = _build_layer2_user_prompt(demographics)
 
         try:
@@ -259,24 +402,33 @@ class IntakeLLMService:
                     system_prompt=LAYER2_SYSTEM_PROMPT,
                     user_prompt=user_prompt,
                     temperature=0.0,
+                    models=openrouter_service.intake_model_candidates(),
+                    max_tokens=INTAKE_MAX_TOKENS,
                 ),
-                timeout=15.0,
+                timeout=INTAKE_LLM_TIMEOUT,
             )
             result = HPIQuestionsResponse.model_validate(parsed)
             result.questions.sort(key=lambda q: q.priority)
-            return result
+            return Layer2GenerationResult(questions=result)
         except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
-            if isinstance(exc, TimeoutError):
-                logger.warning("Layer 2 LLM fallback triggered: LLM response exceeded 15s SLA")
-            else:
-                logger.warning("Layer 2 LLM fallback triggered: %s", exc)
-            return _fallback_questions(demographics)
+            error_message = _log_layer2_fallback(
+                session_id=session_id,
+                chief_complaint=demographics.chief_complaint,
+                exc=exc,
+            )
+            return Layer2GenerationResult(
+                questions=_fallback_questions(demographics),
+                llm_fallback_used=True,
+                llm_error_message=error_message,
+            )
 
     async def _extract_clinical_data(
         self,
         demographics: DemographicsInput,
         hpi_answers: dict[str, str],
-    ) -> ClinicalExtraction:
+        *,
+        session_id: int | None = None,
+    ) -> tuple[ClinicalExtraction, bool, str | None]:
         user_prompt = _build_extraction_user_prompt(demographics, hpi_answers)
         try:
             parsed = await asyncio.wait_for(
@@ -284,22 +436,32 @@ class IntakeLLMService:
                     system_prompt=EXTRACTION_SYSTEM_PROMPT,
                     user_prompt=user_prompt,
                     temperature=0.0,
+                    models=openrouter_service.intake_model_candidates(),
+                    max_tokens=INTAKE_MAX_TOKENS,
                 ),
-                timeout=15.0,
+                timeout=INTAKE_LLM_TIMEOUT,
             )
-            return ClinicalExtraction.model_validate(parsed)
+            return ClinicalExtraction.model_validate(parsed), False, None
         except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
-            logger.warning("Clinical extraction fallback triggered: %s", exc)
-            return _fallback_extraction(demographics, hpi_answers)
+            error_message = _log_layer3_fallback(
+                session_id=session_id,
+                chief_complaint=demographics.chief_complaint,
+                stage="clinical extraction",
+                exc=exc,
+            )
+            return _fallback_extraction(demographics, hpi_answers), True, error_message
 
     async def _generate_hpi_narration(
         self,
         demographics: DemographicsInput,
         hpi_answers: dict[str, str],
         extracted: ClinicalExtraction,
-    ) -> str:
+        *,
+        session_id: int | None = None,
+    ) -> tuple[str, bool, str | None]:
         user_prompt = _build_narration_user_prompt(demographics, hpi_answers, extracted)
         max_attempts = 2
+        last_error: str | None = None
 
         for attempt in range(max_attempts):
             try:
@@ -308,51 +470,83 @@ class IntakeLLMService:
                         system_prompt=NARRATION_SYSTEM_PROMPT,
                         user_prompt=user_prompt,
                         temperature=0.3,
+                        models=openrouter_service.intake_model_candidates(),
+                        max_tokens=INTAKE_MAX_TOKENS,
                     ),
-                    timeout=15.0,
+                    timeout=INTAKE_LLM_TIMEOUT,
                 )
                 narration = HpiNarration.model_validate(parsed)
                 if validate_narrative(narration.hpi_summary):
-                    return narration.hpi_summary
+                    return narration.hpi_summary, False, None
                 logger.warning(
                     "HPI narration failed validation (attempt %s/%s)",
                     attempt + 1,
                     max_attempts,
                 )
             except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
-                logger.warning(
-                    "HPI narration LLM error (attempt %s/%s): %s",
-                    attempt + 1,
-                    max_attempts,
-                    exc,
+                last_error = _log_layer3_fallback(
+                    session_id=session_id,
+                    chief_complaint=demographics.chief_complaint,
+                    stage=f"HPI narration attempt {attempt + 1}/{max_attempts}",
+                    exc=exc,
                 )
 
-        return build_hpi_narrative_fallback(
-            age=demographics.age,
-            sex=demographics.sex,
-            chief_complaint=extracted.chief_complaint,
-            hpi_answers=hpi_answers,
+        return (
+            build_hpi_narrative_fallback(
+                age=demographics.age,
+                sex=demographics.sex,
+                chief_complaint=extracted.chief_complaint,
+                hpi_answers=hpi_answers,
+            ),
+            True,
+            last_error,
         )
 
     async def generate_clinical_summary(
         self,
         demographics: DemographicsInput,
         hpi_answers: dict[str, str],
-    ) -> ClinicalSummary:
-        extracted = await self._extract_clinical_data(demographics, hpi_answers)
+        *,
+        session_id: int | None = None,
+    ) -> ClinicalSummaryResult:
+        extracted, extraction_fallback, extraction_error = await self._extract_clinical_data(
+            demographics,
+            hpi_answers,
+            session_id=session_id,
+        )
 
         try:
-            hpi_summary = await self._generate_hpi_narration(demographics, hpi_answers, extracted)
-            return ClinicalSummary(
-                chief_complaint=extracted.chief_complaint,
-                hpi_summary=hpi_summary,
-                pertinent_positives=extracted.pertinent_positives,
-                pertinent_negatives=extracted.pertinent_negatives,
-                red_flags=extracted.red_flags,
+            hpi_summary, narration_fallback, narration_error = await self._generate_hpi_narration(
+                demographics,
+                hpi_answers,
+                extracted,
+                session_id=session_id,
+            )
+            fallback_used = extraction_fallback or narration_fallback
+            error_message = extraction_error or narration_error
+            return ClinicalSummaryResult(
+                summary=ClinicalSummary(
+                    chief_complaint=extracted.chief_complaint,
+                    hpi_summary=hpi_summary,
+                    pertinent_positives=extracted.pertinent_positives,
+                    pertinent_negatives=extracted.pertinent_negatives,
+                    red_flags=extracted.red_flags,
+                ),
+                llm_fallback_used=fallback_used,
+                llm_error_message=error_message if fallback_used else None,
             )
         except Exception as exc:
-            logger.warning("Clinical summary assembly fallback triggered: %s", exc)
-            return _fallback_clinical_summary(demographics, hpi_answers, extracted)
+            error_message = _log_layer3_fallback(
+                session_id=session_id,
+                chief_complaint=demographics.chief_complaint,
+                stage="clinical summary assembly",
+                exc=exc,
+            )
+            return ClinicalSummaryResult(
+                summary=_fallback_clinical_summary(demographics, hpi_answers, extracted),
+                llm_fallback_used=True,
+                llm_error_message=error_message,
+            )
 
 
 intake_llm_service = IntakeLLMService()

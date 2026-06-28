@@ -67,6 +67,8 @@ class IntakeResponse(BaseModel):
     hpi_answers: Optional[dict[str, str]] = None
     clinical_summary: Optional[ClinicalSummary] = None
     medical_history: Optional[MedicalHistoryInput] = None
+    llm_fallback_used: bool = False
+    llm_error_message: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

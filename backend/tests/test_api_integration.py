@@ -22,6 +22,8 @@ from app.schemas.intake import ClinicalSummary, DemographicsInput, HPIQuestionsR
 from app.services.intake_llm import (
     EXTRACTION_SYSTEM_PROMPT,
     LAYER2_SYSTEM_PROMPT,
+    ClinicalSummaryResult,
+    Layer2GenerationResult,
     _build_extraction_user_prompt,
     _build_layer2_user_prompt,
     _fallback_questions,
@@ -29,6 +31,27 @@ from app.services.intake_llm import (
 )
 from app.services.json_parser import parse_llm_json
 from app.services.openrouter_service import OpenRouterServiceError, openrouter_service
+
+
+def _layer2_result(
+    questions: HPIQuestionsResponse,
+    *,
+    fallback: bool = False,
+    error: str | None = None,
+) -> Layer2GenerationResult:
+    return Layer2GenerationResult(
+        questions=questions,
+        llm_fallback_used=fallback,
+        llm_error_message=error,
+    )
+
+
+def _clinical_summary_result(summary: ClinicalSummary, *, fallback: bool = False, error: str | None = None) -> ClinicalSummaryResult:
+    return ClinicalSummaryResult(
+        summary=summary,
+        llm_fallback_used=fallback,
+        llm_error_message=error,
+    )
 
 # ---------------------------------------------------------------------------
 # Fixtures & helpers
@@ -338,14 +361,16 @@ class TestLayer2HPIContract:
         _teardown()
 
     def test_rapid_answer_submission_persists_all_answers(self, tmp_path, monkeypatch) -> None:
-        async def fake_generate_hpi_questions(demographics):
-            return HPIQuestionsResponse(
+        async def fake_generate_hpi_questions(demographics, **kwargs):
+            return _layer2_result(
+                HPIQuestionsResponse(
                 question_strategy="Acute",
                 questions=[
                     {"id": "onset", "question": "Q1", "priority": 1, "red_flag_related": False},
                     {"id": "severity", "question": "Q2", "priority": 2, "red_flag_related": False},
                     {"id": "fever", "question": "Q3", "priority": 3, "red_flag_related": True},
                 ],
+                )
             )
 
         async def _run() -> None:
@@ -388,13 +413,15 @@ class TestLayer2HPIContract:
         _teardown()
 
     def test_re_answer_overwrites_same_question_id(self, tmp_path, monkeypatch) -> None:
-        async def fake_generate_hpi_questions(_demographics):
-            return HPIQuestionsResponse(
+        async def fake_generate_hpi_questions(_demographics, **kwargs):
+            return _layer2_result(
+                HPIQuestionsResponse(
                 question_strategy="Acute",
                 questions=[
                     {"id": "onset", "question": "Q1", "priority": 1, "red_flag_related": False},
                     {"id": "severity", "question": "Q2", "priority": 2, "red_flag_related": False},
                 ],
+                )
             )
 
         async def _run() -> None:
@@ -481,13 +508,15 @@ class TestLayer3ClinicalSummaryContract:
                 return {"hpi_summary": "بیمار با درد قفسه سینه و تنگی نفس مراجعه کرده است."}
             raise AssertionError(f"Unexpected user prompt: {user_prompt[:120]}")
 
-        async def fake_generate_hpi_questions(_demographics):
-            return HPIQuestionsResponse(
+        async def fake_generate_hpi_questions(_demographics, **kwargs):
+            return _layer2_result(
+                HPIQuestionsResponse(
                 question_strategy="Acute",
                 questions=[
                     {"id": "onset", "question": "Q1", "priority": 1, "red_flag_related": False},
                     {"id": "severity", "question": "Q2", "priority": 2, "red_flag_related": False},
                 ],
+                )
             )
 
         async def _run() -> None:
@@ -558,7 +587,8 @@ class TestLayer4MedicalHistoryContract:
                     intake_api.intake_llm_service,
                     "generate_hpi_questions",
                     AsyncMock(
-                        return_value=HPIQuestionsResponse(
+                        return_value=_layer2_result(
+                            HPIQuestionsResponse(
                             question_strategy="Acute",
                             questions=[
                                 {
@@ -568,6 +598,7 @@ class TestLayer4MedicalHistoryContract:
                                     "red_flag_related": False,
                                 }
                             ],
+                            )
                         )
                     ),
                 )
@@ -575,12 +606,14 @@ class TestLayer4MedicalHistoryContract:
                     intake_api.intake_llm_service,
                     "generate_clinical_summary",
                     AsyncMock(
-                        return_value=ClinicalSummary(
+                        return_value=_clinical_summary_result(
+                            ClinicalSummary(
                             chief_complaint="دل درد",
                             hpi_summary="خلاصه",
                             pertinent_positives=[],
                             pertinent_negatives=[],
                             red_flags=[],
+                            )
                         )
                     ),
                 )
@@ -669,6 +702,40 @@ class TestLayer4MedicalHistoryContract:
 
 
 # ---------------------------------------------------------------------------
+# Fallback question categories
+# ---------------------------------------------------------------------------
+
+
+class TestFallbackQuestionCategories:
+    @pytest.mark.parametrize(
+        ("complaint", "expected_strategy_fragment", "expected_question_id"),
+        [
+            ("درد قفسه سینه", "Chest pain", "chest_location"),
+            ("دل درد", "Abdominal pain", "abd_location"),
+            ("سردرد شدید", "Headache", "headache_onset"),
+            ("کاهش وزن شدید", "Weight change", "weight_amount"),
+            ("سرفه و تب", "Respiratory", "onset_duration"),
+            ("دیابت - پیگیری", "Chronic disease", "followup_reason"),
+            ("نتیجه آزمایش خون", "Laboratory result", "reason_for_testing"),
+            ("درد مفصل", "Acute symptom", "location"),
+        ],
+    )
+    def test_fallback_questions_match_complaint_category(
+        self,
+        complaint: str,
+        expected_strategy_fragment: str,
+        expected_question_id: str,
+    ) -> None:
+        demographics = DemographicsInput.model_validate(
+            {**VALID_DEMOGRAPHICS, "chief_complaint": complaint}
+        )
+        result = _fallback_questions(demographics)
+        assert expected_strategy_fragment in result.question_strategy
+        assert any(q.id == expected_question_id for q in result.questions)
+        assert len(result.questions) >= 5
+
+
+# ---------------------------------------------------------------------------
 # Phase 2 — LLM resiliency & timeout simulation
 # ---------------------------------------------------------------------------
 
@@ -710,6 +777,8 @@ class TestLLMResiliency:
                 body = response.json()
                 assert body["hpi_questions"]["question_strategy"] == expected.question_strategy
                 assert len(body["hpi_questions"]["questions"]) == len(expected.questions)
+                assert body["llm_fallback_used"] is True
+                assert body["llm_error_message"]
 
         asyncio.run(_run())
         _teardown()
@@ -789,6 +858,7 @@ class TestLLMResiliency:
                 assert summary["chief_complaint"] == VALID_DEMOGRAPHICS["chief_complaint"]
                 assert summary["pertinent_positives"]
                 assert summary["red_flags"] == []
+                assert response.json()["llm_fallback_used"] is True
 
         asyncio.run(_run())
         _teardown()
@@ -801,12 +871,13 @@ class TestLLMResiliency:
         monkeypatch.setattr(openrouter_service, "generate_json", slow_fail)
         demographics = DemographicsInput.model_validate(VALID_DEMOGRAPHICS)
 
-        async def _run() -> HPIQuestionsResponse:
+        async def _run() -> Layer2GenerationResult:
             return await intake_llm_service.generate_hpi_questions(demographics)
 
         result = asyncio.run(_run())
-        assert result.question_strategy
-        assert len(result.questions) >= 5
+        assert result.questions.question_strategy
+        assert len(result.questions.questions) >= 5
+        assert result.llm_fallback_used is True
 
 
 # ---------------------------------------------------------------------------

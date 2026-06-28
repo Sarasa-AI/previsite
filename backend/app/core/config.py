@@ -84,7 +84,7 @@ class Settings(BaseSettings):
 
     # LLM Configuration
     llm_provider: str = "openrouter"
-    llm_model: str = "qwen/qwen-2.5-72b-instruct"
+    llm_model: str = "google/gemini-2.5-flash-lite"
     
     # OpenAI
     openai_api_key: Optional[str] = None
@@ -103,7 +103,7 @@ class Settings(BaseSettings):
     openrouter_api_key: Optional[str] = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_default_model: str = Field(
-        default="qwen/qwen-2.5-72b-instruct",
+        default="google/gemini-2.5-flash-lite",
         validation_alias=AliasChoices(
             "openrouter_default_model",
             "OPENROUTER_DEFAULT_MODEL",
@@ -112,6 +112,8 @@ class Settings(BaseSettings):
     )
     openrouter_http_referer: str = "http://localhost:3000"
     openrouter_app_title: str = "PreVisit MVP"
+    intake_llm_model: str = "google/gemini-2.5-flash-lite"
+    intake_llm_timeout_seconds: float = 20.0
 
     # Outbound HTTP proxy for LLM API calls
     http_proxy: Optional[str] = None

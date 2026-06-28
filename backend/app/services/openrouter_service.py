@@ -21,9 +21,9 @@ JSON_ONLY_SUFFIX = (
 )
 
 FREE_MODEL_FALLBACKS = [
-    "google/gemini-2.0-flash-lite-preview-02-05:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "mistralai/mistral-7b-instruct:free",
+    "google/gemini-2.5-flash-lite",
+    "google/gemini-2.5-flash",
+    "qwen/qwen-2.5-7b-instruct",
 ]
 
 
@@ -42,11 +42,22 @@ class OpenRouterService:
         self.client: AsyncOpenAI | None = None
         self.base_url = settings.openrouter_base_url
 
-    def _model_candidates(self) -> list[str]:
+    def _model_candidates(self, models: list[str] | None = None) -> list[str]:
+        if models:
+            return models
         configured = settings.openrouter_default_model
         candidates = [configured]
         for model in FREE_MODEL_FALLBACKS:
             if model not in candidates:
+                candidates.append(model)
+        return candidates
+
+    def intake_model_candidates(self) -> list[str]:
+        """Fast Gemini-first model chain for latency-sensitive intake generation."""
+        primary = settings.intake_llm_model.strip()
+        candidates: list[str] = []
+        for model in (primary, *FREE_MODEL_FALLBACKS):
+            if model and model not in candidates:
                 candidates.append(model)
         return candidates
 
@@ -83,6 +94,8 @@ class OpenRouterService:
         user_prompt: str,
         *,
         temperature: float = 0.2,
+        models: list[str] | None = None,
+        max_tokens: int = 2000,
     ) -> dict:
         """
         Call OpenRouter and return a parsed JSON dict.
@@ -100,7 +113,7 @@ class OpenRouterService:
         content: str | None = None
         last_error: Exception | None = None
 
-        for model in self._model_candidates():
+        for model in self._model_candidates(models):
             for use_json_format in (True, False):
                 try:
                     content = await self._complete(
@@ -108,6 +121,7 @@ class OpenRouterService:
                         model=model,
                         use_json_format=use_json_format,
                         temperature=temperature,
+                        max_tokens=max_tokens,
                     )
                     if content and content.strip():
                         logger.info(
@@ -202,12 +216,13 @@ class OpenRouterService:
         model: str,
         use_json_format: bool,
         temperature: float = 0.2,
+        max_tokens: int = 2000,
     ) -> str:
         request_kwargs: dict = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": 2000,
+            "max_tokens": max_tokens,
         }
 
         if use_json_format:

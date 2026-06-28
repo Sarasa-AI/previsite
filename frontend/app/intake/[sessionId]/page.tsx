@@ -230,6 +230,12 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
           )}
 
           {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+
+          {intake?.llm_fallback_used && (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              سرویس هوش مصنوعی موقتاً در دسترس نیست. سوالات عمومی تشخیصی نمایش داده می‌شود.
+            </div>
+          )}
         </section>
       </main>
     </ProtectedRoute>
