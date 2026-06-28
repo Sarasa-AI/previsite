@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: previsit-db
     restart: unless-stopped
     environment:
@@ -13,6 +13,54 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  minio:
+    image: minio/minio
+    container_name: previsit-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  minio-createbucket:
+    image: minio/mc
+    container_name: previsit-minio-createbucket
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb local/previsit-files --ignore-existing &&
+      exit 0
+      "
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: previsit_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
 
   backend:
     build:
@@ -21,13 +69,27 @@ services:
     container_name: previsit-backend
     restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      minio-createbucket:
+        condition: service_completed_successfully
+      ollama:
+        condition: service_started
     env_file:
       - ./backend/.env.example
     environment:
-      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/previsit
+      DB_HOST: db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: previsit
       APP_ENV: production
       CORS_ORIGINS: http://localhost:3000
+      OLLAMA_HOST: http://ollama:11434
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET_NAME: previsit-files
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_USE_SSL: "false"
     ports:
       - "8000:8000"
     command: >
@@ -51,3 +113,5 @@ services:
 
 volumes:
   postgres_data:
+  minio_data:
+  ollama_data:

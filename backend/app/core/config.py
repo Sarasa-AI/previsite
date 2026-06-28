@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,57 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/previsit"
+    db_user: str = "postgres"
+    db_password: str = "postgres"
+    db_host: str = "localhost"
+    db_port: str = "5432"
+    db_name: str = "previsit"
+    database_url: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("database_url", "DATABASE_URL")
+    )
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def sanitize_database_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return v
+        # Strip all whitespaces, invisible newline characters (\n, \r), 
+        # and explicit string quotes (" or ')
+        sanitized = v.strip().replace("\n", "").replace("\r", "").strip("'\"")
+        
+        # Normalize to asyncpg driver for the application runtime
+        if sanitized.startswith("postgres://"):
+            sanitized = sanitized.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif sanitized.startswith("postgresql+psycopg2://"):
+            sanitized = sanitized.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+        elif sanitized.startswith("postgresql://") and "+asyncpg" not in sanitized:
+            sanitized = sanitized.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        logger.debug(f"Sanitized DATABASE_URL (length: {len(sanitized)})")
+        return sanitized
+
+    @property
+    def DATABASE_URL(self) -> str:
+        if self.database_url:
+            return self.database_url
+        return (
+            f"postgresql+asyncpg://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
+    @property
+    def DATABASE_URL_SYNC(self) -> str:
+        """Sync URL for Alembic migrations (psycopg2)."""
+        if self.database_url:
+            url = self.database_url
+            return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+        return (
+            f"postgresql+psycopg2://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
 
     # Security
     secret_key: str = "change-me-in-production"
@@ -67,9 +117,15 @@ class Settings(BaseSettings):
     http_proxy: Optional[str] = None
 
     # File Upload
-    upload_dir: str = "uploads"
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     allowed_extensions: list[str] = ["pdf", "jpg", "jpeg", "png", "doc", "docx", "txt"]
+
+    # S3-compatible object storage
+    s3_endpoint: Optional[str] = "http://localhost:9000"
+    s3_bucket_name: str = "previsit-files"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+    s3_use_ssl: bool = False
 
     # CORS / Runtime
     app_env: str = "development"
@@ -88,11 +144,6 @@ class Settings(BaseSettings):
     chat_rate_limit_window_seconds: int = 60
     llm_rate_limit_requests: int = 60
     llm_rate_limit_window_seconds: int = 60
-
-    # Compatibility aliases for existing code that references uppercase attrs
-    @property
-    def DATABASE_URL(self) -> str:
-        return self.database_url
 
     @property
     def SECRET_KEY(self) -> str:

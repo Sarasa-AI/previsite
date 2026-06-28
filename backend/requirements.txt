@@ -44,6 +44,8 @@ platformdirs==4.9.2
 prompt_toolkit==3.0.52
 psutil==7.2.2
 psycopg2-binary==2.9.9
+asyncpg==0.29.0
+aiosqlite==0.20.0
 ptyprocess==0.7.0
 pure_eval==0.2.3
 pyasn1==0.6.3
@@ -79,10 +81,20 @@ uvloop==0.22.1
 watchfiles==1.1.1
 wcwidth==0.6.0
 websockets==16.0
-pypdf==4.0.1
+pypdf>=4.2.0
 
 pillow==10.2.0
 
 pdf2image==1.17.0
 email-validator==2.1.0.post1
 pytest==8.3.3
+pytest-asyncio==0.24.0
+pgvector>=0.2.5
+
+# Phase 2 RAG & embeddings
+ollama>=0.1.9
+sentence-transformers>=2.7.0
+numpy>=1.26.0
+
+# Object storage (S3 / MinIO)
+aioboto3>=13.0.0

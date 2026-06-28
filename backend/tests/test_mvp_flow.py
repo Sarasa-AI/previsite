@@ -1,61 +1,64 @@
 from io import BytesIO
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 import app.api.chat as chat_api
-import app.db.database as database_module
-import app.db.init_db as init_db_module
-from app.db.database import Base, get_db
 from app.main import app as fastapi_app
-import app.models.summary
 
 
-def _create_client(tmp_path, monkeypatch) -> TestClient:
-    db_path = tmp_path / "test_mvp.db"
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        connect_args={"check_same_thread": False},
-    )
-    testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+def _create_client(tmp_path, monkeypatch):
+    import asyncio
 
-    monkeypatch.setattr(database_module, "engine", engine)
-    monkeypatch.setattr(database_module, "SessionLocal", testing_session_local)
-    monkeypatch.setattr(init_db_module, "engine", engine)
+    from tests.conftest import setup_async_test_db, teardown_test_db
 
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-
-    def override_get_db():
-        db = testing_session_local()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    fastapi_app.dependency_overrides[get_db] = override_get_db
-
+    engine = asyncio.run(setup_async_test_db(tmp_path, monkeypatch))
     client = TestClient(fastapi_app)
+
+    def cleanup():
+        teardown_test_db()
+        asyncio.run(engine.dispose())
+        client.close()
+
+    client._async_cleanup = cleanup  # type: ignore[attr-defined]
     return client
 
 
-def _register_and_login(client: TestClient, *, name: str, password: str) -> str:
+from app.utils.national_id import validate_iranian_national_id
+
+
+def _national_id_from_seed(seed: str) -> str:
+    candidate = 1_000_000_000 + (abs(hash(seed)) % 900_000_000)
+    while candidate < 9_999_999_999:
+        national_id = str(candidate).zfill(10)
+        if validate_iranian_national_id(national_id):
+            return national_id
+        candidate += 1
+    return "0499370899"
+
+
+def _register_and_login(
+    client: TestClient,
+    *,
+    national_id: str | None = None,
+    password: str = "VeryStrongPassword123!",
+    seed: str = "default-patient",
+) -> str:
+    resolved_national_id = national_id or _national_id_from_seed(seed)
     register_response = client.post(
         "/api/auth/register",
         json={
-            "name": name,
+            "national_id": resolved_national_id,
             "password": password,
             "role": "patient",
         },
     )
-    assert register_response.status_code == 200
+    assert register_response.status_code == 200, register_response.text
 
     login_response = client.post(
         "/api/auth/login",
-        json={"name": name, "password": password},
+        json={"national_id": resolved_national_id, "password": password},
     )
-    assert login_response.status_code == 200
+    assert login_response.status_code == 200, login_response.text
     return login_response.json()["access_token"]
 
 
@@ -65,15 +68,14 @@ def test_register_rejects_invalid_role(tmp_path, monkeypatch) -> None:
     response = client.post(
         "/api/auth/register",
         json={
-            "name": "Bad Role",
+            "national_id": "0499370899",
             "password": "VeryStrongPassword123!",
             "role": "visitor",
         },
     )
 
     assert response.status_code == 422
-    fastapi_app.dependency_overrides.clear()
-    client.close()
+    client._async_cleanup()
 
 
 def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> None:
@@ -109,21 +111,31 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
             return "ممنون از همکاری شما. اطلاعات کافی جمع‌آوری شد."
         return "پاسخ پیش‌فرض"
 
-    async def fake_generate_soap_note(**_kwargs):
-        return {
-            "status": "success",
-            "provider": "test",
-            "soap_note": "# SOAP\n\nS: سردرد شدید\n\nA: نیاز به ارزیابی پزشک",
-        }
+    async def fake_run_soap_generation(session_id: int) -> None:
+        from sqlalchemy import select
 
-    monkeypatch.setattr(chat_api.medical_extractor, "extract", fake_extract)
+        from app.db.database import get_async_session
+        from app.models import Summary as SummaryModel
+
+        async with get_async_session() as db:
+            result = await db.execute(
+                select(SummaryModel).where(SummaryModel.session_id == session_id)
+            )
+            summary = result.scalar_one_or_none()
+            soap = "# SOAP\n\nS: سردرد شدید\n\nA: نیاز به ارزیابی پزشک"
+            if summary:
+                summary.soap_note = soap
+            else:
+                db.add(SummaryModel(session_id=session_id, soap_note=soap))
+            await db.commit()
+
     monkeypatch.setattr(chat_api.summary_builder, "build_summary", fake_build_summary)
     monkeypatch.setattr(chat_api.llm_service, "chat", fake_chat)
-    monkeypatch.setattr(chat_api.soap_generator, "generate_soap_note", fake_generate_soap_note)
+    monkeypatch.setattr(chat_api, "run_soap_generation", fake_run_soap_generation)
 
     token = _register_and_login(
         client,
-        name="Patient One",
+        seed="Patient One",
         password="VeryStrongPassword123!",
     )
     headers = {"Authorization": f"Bearer {token}"}
@@ -182,7 +194,18 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
         headers=headers,
     )
     assert upload_response.status_code == 200
-    assert upload_response.json()["filename"] == "report.txt"
+    upload_body = upload_response.json()
+    assert upload_body["filename"] == "report.txt"
+    assert upload_body["file_path"].startswith(f"{session_id}/")
+
+    file_id = upload_body["id"]
+    download_response = client.get(
+        f"/api/files/download/{file_id}",
+        headers=headers,
+        follow_redirects=False,
+    )
+    assert download_response.status_code == 307
+    assert "fake-storage.example" in download_response.headers["location"]
 
     summary_exists_response = client.get(
         f"/api/summary/session/{session_id}/exists",
@@ -191,21 +214,23 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
     assert summary_exists_response.status_code == 200
     assert summary_exists_response.json() == {"exists": True}
 
+    submit_response = client.post(f"/api/chat/{session_id}/submit", headers=headers)
+    assert submit_response.status_code == 200
+
     summary_response = client.get(f"/api/summary/{session_id}", headers=headers)
     assert summary_response.status_code == 200
     body = summary_response.json()
     assert body["medical_data"]["past_medical_history"] == "میگرن"
     assert body["soap_note"].startswith("# SOAP")
 
-    fastapi_app.dependency_overrides.clear()
-    client.close()
+    client._async_cleanup()
 
 
 def test_upload_invalid_extension_returns_400(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
     token = _register_and_login(
         client,
-        name="Upload User",
+        seed="Upload User",
         password="VeryStrongPassword123!",
     )
     headers = {"Authorization": f"Bearer {token}"}
@@ -226,8 +251,7 @@ def test_upload_invalid_extension_returns_400(tmp_path, monkeypatch) -> None:
     assert response.status_code == 400
     assert "فرمت فایل مجاز نیست" in response.json()["detail"]
 
-    fastapi_app.dependency_overrides.clear()
-    client.close()
+    client._async_cleanup()
 
 
 def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> None:
@@ -251,7 +275,7 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
 
     owner_token = _register_and_login(
         client,
-        name="Owner",
+        seed="Owner",
         password="VeryStrongPassword123!",
     )
     owner_headers = {"Authorization": f"Bearer {owner_token}"}
@@ -271,7 +295,7 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
 
     other_token = _register_and_login(
         client,
-        name="Other User",
+        seed="Other User",
         password="VeryStrongPassword123!",
     )
     other_headers = {"Authorization": f"Bearer {other_token}"}
@@ -283,5 +307,4 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
 
     assert response.status_code == 403
 
-    fastapi_app.dependency_overrides.clear()
-    client.close()
+    client._async_cleanup()

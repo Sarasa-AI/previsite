@@ -1,17 +1,21 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 from typing import Dict, List
-import os
 
-from app.db.database import get_db
-from app.services.file_service import file_service
-from app.models import File as FileModel, Session as SessionModel, User
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import RedirectResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.auth.dependencies import get_current_user
+from app.db.database import get_db
+from app.models import File as FileModel
+from app.models import Session as SessionModel
+from app.models import User
+from app.services.file_processor import file_processor
+from app.services.storage_service import storage_service
 
 router = APIRouter(
     prefix="/api/files",
-    tags=["files"]
+    tags=["files"],
 )
 
 
@@ -19,114 +23,114 @@ router = APIRouter(
 async def upload_file(
     session_id: int,
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Dict:
-    """
-    آپلود فایل برای یک session
-    """
-
-    # ✅ بررسی مالکیت session
-    session = db.query(SessionModel).filter(
-        SessionModel.id == session_id,
-        SessionModel.patient_id == current_user.id
-    ).first()
+    """آپلود فایل برای یک session"""
+    result = await db.execute(
+        select(SessionModel).where(
+            SessionModel.id == session_id,
+            SessionModel.patient_id == current_user.id,
+        )
+    )
+    session = result.scalar_one_or_none()
 
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found or access denied"
+            detail="Session not found or access denied",
         )
 
     try:
-        # ✅ ذخیره فایل روی دیسک
-        file_data = await file_service.save_file(file, session_id)
+        file_data = await file_processor.save_file(file, session_id)
 
-        # ✅ ثبت در دیتابیس
         db_file = FileModel(
             session_id=session_id,
             filename=file_data["filename"],
-            file_path=file_data["file_path"],
-            file_size=file_data["file_size"],
-            mime_type=file_data["mime_type"]
+            s3_key=file_data["s3_key"],
+            size_bytes=file_data["file_size"],
+            content_type=file_data["mime_type"],
         )
 
         db.add(db_file)
-        db.commit()
-        db.refresh(db_file)
+        await db.commit()
+        await db.refresh(db_file)
 
         return {
             "id": db_file.id,
             "filename": db_file.filename,
-            "file_path": db_file.file_path,
-            "size": db_file.file_size,
-            "mime_type": db_file.mime_type
+            "file_path": db_file.s3_key,
+            "size": db_file.size_bytes,
+            "mime_type": db_file.content_type,
         }
 
     except HTTPException:
-        db.rollback()
+        await db.rollback()
         raise
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Upload failed: {str(e)}"
+            detail=f"Upload failed: {str(e)}",
         )
 
 
 @router.get("/{session_id}/list", response_model=List[Dict])
-def list_files(
+async def list_files(
     session_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """لیست فایل‌های یک جلسه"""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    result = await db.execute(
+        select(SessionModel).where(SessionModel.id == session_id)
+    )
+    session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    
-    # اجازه دسترسی به بیمار یا پزشک (اگر پزشک اختصاص داده شده باشد)
+
     if session.patient_id != current_user.id and session.doctor_id != current_user.id:
-         # اگر یوزر پزشک است ولی هنوز اختصاص داده نشده، در MVP اجازه می‌دهیم لیست را ببیند
-         if current_user.role != "doctor":
+        if current_user.role != "doctor":
             raise HTTPException(status_code=403, detail="Access denied")
 
-    files = db.query(FileModel).filter(FileModel.session_id == session_id).all()
+    files_result = await db.execute(
+        select(FileModel).where(FileModel.session_id == session_id)
+    )
+    files = files_result.scalars().all()
     return [
         {
             "id": f.id,
             "filename": f.filename,
-            "size": f.file_size,
-            "mime_type": f.mime_type,
-            "url": f"/api/files/download/{f.id}"
+            "size": f.size_bytes,
+            "mime_type": f.content_type,
+            "url": f"/api/files/download/{f.id}",
         }
         for f in files
     ]
 
 
 @router.get("/download/{file_id}")
-def download_file(
+async def download_file(
     file_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """دانلود/مشاهده فایل"""
-    db_file = db.query(FileModel).filter(FileModel.id == file_id).first()
+    file_result = await db.execute(
+        select(FileModel).where(FileModel.id == file_id)
+    )
+    db_file = file_result.scalar_one_or_none()
     if not db_file:
         raise HTTPException(status_code=404, detail="File not found")
-    
-    session = db.query(SessionModel).filter(SessionModel.id == db_file.session_id).first()
-    
-    # اجازه دسترسی به بیمار یا پزشک
+
+    session_result = await db.execute(
+        select(SessionModel).where(SessionModel.id == db_file.session_id)
+    )
+    session = session_result.scalar_one_or_none()
+
     if session.patient_id != current_user.id and session.doctor_id != current_user.id:
         if current_user.role != "doctor":
             raise HTTPException(status_code=403, detail="Access denied")
 
-    if not os.path.exists(db_file.file_path):
-        raise HTTPException(status_code=404, detail="File not found on disk")
-
-    return FileResponse(
-        path=db_file.file_path,
-        filename=db_file.filename,
-        media_type=db_file.mime_type
-    )
+    url = await storage_service.get_presigned_url(db_file.s3_key)
+    return RedirectResponse(url=url, status_code=307)
