@@ -70,11 +70,19 @@ async def get_summary(
 
     soap_status = session.soap_status.value if session.soap_status else "pending"
 
+    soap_citations = []
+    if summary.soap_citations_json:
+        try:
+            soap_citations = json.loads(summary.soap_citations_json)
+        except json.JSONDecodeError:
+            soap_citations = []
+
     try:
         return {
             "id": summary.id,
             "session_id": summary.session_id,
             "soap_note": summary.soap_note,
+            "soap_citations": soap_citations,
             "soap_status": soap_status,
             "soap_error_detail": session.soap_error_detail,
             "medical_data": {

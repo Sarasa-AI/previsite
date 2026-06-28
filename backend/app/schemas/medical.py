@@ -61,4 +61,10 @@ class MedicalSummary(BaseModel):
     # Metadata
     extracted_at: datetime = Field(default_factory=datetime.utcnow)
     confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Extraction confidence")
-    
+
+
+class SoapNote(BaseModel):
+    """Structured SOAP note with RAG evidence citations."""
+    content: str = Field(..., description="Generated SOAP note markdown")
+    citations: list[dict] = Field(default_factory=list, description="RAG evidence citations")
+

@@ -5,9 +5,11 @@ from datetime import datetime
 from enum import Enum
 
 from openai import AsyncOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.schemas.medical import MedicalSummary
+from app.schemas.medical import MedicalSummary, SoapNote
+from app.services.rag_service import RagService, rag_service as default_rag_service
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +30,9 @@ class SOAPNoteGenerator:
     - مدیریت خطا و logging پیشرفته
     """
 
-    def __init__(self):
+    def __init__(self, rag_service: RagService | None = None):
         """راه‌اندازی کلاینت‌های LLM"""
+        self.rag_service = rag_service or default_rag_service
         self.openrouter_client = None
 
         http_client_kwargs = {"timeout": 60.0}
@@ -51,6 +54,60 @@ class SOAPNoteGenerator:
 
         if not self.openrouter_client:
             logger.warning("No LLM provider configured")
+
+    def _extract_patient_hpi(self, summary: MedicalSummary) -> str:
+        if summary.additional_notes and summary.additional_notes.strip():
+            return summary.additional_notes.strip()
+
+        parts: List[str] = []
+        if summary.chief_complaint:
+            parts.append(summary.chief_complaint.strip())
+        if summary.symptoms:
+            parts.append(", ".join(summary.symptoms))
+        for field in (
+            summary.symptom_duration,
+            summary.symptom_severity,
+            summary.symptom_onset,
+            summary.symptom_character,
+            summary.symptom_location,
+            summary.symptom_radiation,
+            summary.symptom_timing,
+        ):
+            if field:
+                parts.append(field.strip())
+
+        if parts:
+            return ". ".join(parts)
+
+        if summary.chief_complaint:
+            return summary.chief_complaint.strip()
+
+        return "general clinical presentation"
+
+    def _format_medical_evidence(self, results: List[dict]) -> str:
+        if not results:
+            return ""
+
+        lines = ["### Medical Evidence:"]
+        for index, result in enumerate(results, start=1):
+            source = result.get("source") or "Unknown source"
+            content = result.get("content", "")
+            lines.append(f"[{index}] {source}: {content}")
+
+        return "\n".join(lines)
+
+    def _build_citations(self, results: List[dict]) -> List[dict]:
+        citations: List[dict] = []
+        for index, result in enumerate(results, start=1):
+            citations.append(
+                {
+                    "index": index,
+                    "source": result.get("source") or "Unknown source",
+                    "content": result.get("content", ""),
+                    "confidence": result.get("confidence"),
+                }
+            )
+        return citations
 
     def _get_system_prompt(self) -> str:
         """
@@ -91,6 +148,12 @@ class SOAPNoteGenerator:
 - برنامه پیگیری (Follow-up Plan)
 - ارجاع به متخصص (Referrals)
 
+**Medical Evidence (الزامی در صورت ارائه)**
+Use the following retrieved clinical evidence to support your assessment. You MUST cite sources using [1], [2], etc., where numbers correspond to the evidence list provided below.
+- Apply retrieved evidence primarily in Assessment and Plan sections.
+- Only cite evidence that appears in the Medical Evidence block of the user message.
+- If no Medical Evidence block is provided, do not include citation markers.
+
 **قوانین:**
 1. از اصطلاحات پزشکی استاندارد استفاده کنید
 2. مختصر و دقیق باشید
@@ -113,7 +176,6 @@ class SOAPNoteGenerator:
         Args:
             summary: خلاصه اطلاعات پزشکی استخراج شده
             chat_history: تاریخچه مکالمه با بیمار
-            chat_history: تاریخچه مکالمه
             file_analyses: نتایج تحلیل فایل‌های پزشکی
         
         Returns:
@@ -189,8 +251,6 @@ class SOAPNoteGenerator:
 
         return "\n".join(sections)
 
-
-
     async def _generate_with_openrouter(self, context: str) -> str:
         """تولید SOAP با OpenRouter"""
 
@@ -206,11 +266,10 @@ class SOAPNoteGenerator:
 
         return response.choices[0].message.content.strip()
 
-
-
     async def generate_soap_note(
         self,
         summary: MedicalSummary,
+        db: AsyncSession,
         chat_history: Optional[List[Dict[str, str]]] = None,
         file_analyses: Optional[List[Dict[str, Any]]] = None,
         preferred_provider: Optional[LLMProvider] = None,
@@ -222,15 +281,32 @@ class SOAPNoteGenerator:
             Dict شامل:
             - status
             - soap_note
+            - citations
             - provider
             - generated_at
             - confidence_score
         """
 
         try:
-            context = self._build_context(summary, chat_history, file_analyses)
+            patient_hpi = self._extract_patient_hpi(summary)
+            knowledge_results: List[dict] = []
 
-            # انتخاب provider
+            try:
+                knowledge_results = await self.rag_service.search_similar_knowledge(
+                    db, query=patient_hpi
+                )
+            except Exception:
+                logger.warning(
+                    "RAG retrieval failed for SOAP generation; continuing without evidence",
+                    exc_info=True,
+                )
+
+            citations = self._build_citations(knowledge_results)
+            context = self._build_context(summary, chat_history, file_analyses)
+            evidence_block = self._format_medical_evidence(knowledge_results)
+            if evidence_block:
+                context = f"{context}\n\n{evidence_block}"
+
             provider = None
             note = None
 
@@ -240,10 +316,13 @@ class SOAPNoteGenerator:
             else:
                 raise ValueError("No LLM provider configured")
 
+            soap = SoapNote(content=note, citations=citations)
+
             return {
                 "status": "success",
                 "provider": provider.value,
-                "soap_note": note,
+                "soap_note": soap.content,
+                "citations": soap.citations,
                 "confidence_score": summary.confidence_score,
                 "generated_at": datetime.utcnow().isoformat(),
             }

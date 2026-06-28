@@ -17,6 +17,7 @@ class Summary(Base):
     assessment = Column(Text, nullable=True)
     is_hpi_complete = Column(Boolean, default=False)
     soap_note = Column(Text, nullable=True)
+    soap_citations_json = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
