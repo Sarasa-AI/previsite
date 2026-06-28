@@ -83,6 +83,7 @@ async def get_summary(
             "session_id": summary.session_id,
             "soap_note": summary.soap_note,
             "soap_citations": soap_citations,
+            "soap_verification_status": summary.soap_verification_status,
             "soap_status": soap_status,
             "soap_error_detail": session.soap_error_detail,
             "medical_data": {

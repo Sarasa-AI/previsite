@@ -115,7 +115,7 @@ async def test_generate_soap_note_includes_evidence_and_citations():
     async def fake_create(**kwargs):
         captured_messages["messages"] = kwargs["messages"]
         response = MagicMock()
-        response.choices = [MagicMock(message=MagicMock(content="# SOAP\n\nA: ACS suspected [1]"))]
+        response.choices = [MagicMock(message=MagicMock(content="# SOAP\n\nA: Acute coronary syndrome may present with substernal chest pain [1]"))]
         return response
 
     generator.openrouter_client.chat.completions.create = AsyncMock(side_effect=fake_create)
@@ -129,6 +129,8 @@ async def test_generate_soap_note_includes_evidence_and_citations():
     assert result["soap_note"].startswith("# SOAP")
     assert len(result["citations"]) == 3
     assert result["citations"][0]["index"] == 1
+    assert result["verification_status"] == "verified"
+    assert result["citations"][0]["verification_status"] == "verified"
 
     user_content = captured_messages["messages"][1]["content"]
     assert "### Medical Evidence:" in user_content
@@ -161,4 +163,109 @@ async def test_generate_soap_note_gracefully_degrades_when_rag_fails():
 
     assert result["status"] == "success"
     assert result["citations"] == []
+    assert result["verification_status"] == "verified"
     assert "### Medical Evidence:" not in captured_messages["messages"][1]["content"]
+
+
+def _build_citations_from_rag() -> list[dict]:
+    generator = SOAPNoteGenerator(rag_service=MagicMock())
+    return generator._build_citations(_rag_results())
+
+
+class TestCitationVerification:
+    @pytest.mark.asyncio
+    async def test_verify_citations_valid_marker(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Acute coronary syndrome may present with substernal chest pain [1]"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert result.verification_status == "verified"
+        assert result.citations[0]["verification_status"] == "verified"
+        assert "[1]" in result.content
+
+    @pytest.mark.asyncio
+    async def test_verify_citations_invalid_index_stripped(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Unsupported claim [9]"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert result.verification_status == "unverified"
+        assert "[9]" not in result.content
+        hallucinated = next(c for c in result.citations if c["index"] == 9)
+        assert hallucinated["verification_status"] == "unverified"
+
+    @pytest.mark.asyncio
+    async def test_verify_citations_low_similarity(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Patient should start daily yoga and meditation [1]"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert result.citations[0]["verification_status"] == "unverified"
+        assert "[1]" not in result.content
+        assert result.verification_status in {"partially_verified", "unverified"}
+
+    @pytest.mark.asyncio
+    async def test_verify_citations_unused_evidence(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Clinical impression without citations"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert result.verification_status == "verified"
+        assert all(c["verification_status"] == "unused" for c in result.citations)
+
+    @pytest.mark.asyncio
+    async def test_icd10_not_treated_as_citation(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Diagnosis [ICD-10: I21.9] acute MI"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert "[ICD-10: I21.9]" in result.content
+        assert result.verification_status == "verified"
+
+    @pytest.mark.asyncio
+    async def test_verify_citations_strips_markers_when_no_rag_evidence(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        note = "A: Hallucinated reference [1]"
+
+        result = await generator._apply_citation_verification(note, [])
+
+        assert result.verification_status == "unverified"
+        assert "[1]" not in result.content
+
+
+@pytest.mark.asyncio
+async def test_generate_soap_note_returns_verification_status():
+    mock_rag = MagicMock()
+    mock_rag.search_similar_knowledge = AsyncMock(return_value=_rag_results())
+
+    generator = SOAPNoteGenerator(rag_service=mock_rag)
+    generator.openrouter_client = MagicMock()
+
+    async def fake_create(**kwargs):
+        response = MagicMock()
+        response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content="# SOAP\n\nA: Acute coronary syndrome may present with substernal chest pain [1]"
+                )
+            )
+        ]
+        return response
+
+    generator.openrouter_client.chat.completions.create = AsyncMock(side_effect=fake_create)
+
+    result = await generator.generate_soap_note(summary=_sample_summary(), db=MagicMock())
+
+    assert result["status"] == "success"
+    assert result["verification_status"] == "verified"
+    assert "[1]" in result["soap_note"]

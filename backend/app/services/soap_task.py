@@ -103,14 +103,17 @@ async def run_soap_generation(session_id: int) -> None:
             if soap_note_result.get("status") == "success":
                 soap_note_content = soap_note_result.get("soap_note")
                 citations = soap_note_result.get("citations") or []
+                verification_status = soap_note_result.get("verification_status")
                 if summary:
                     summary.soap_note = soap_note_content
                     summary.soap_citations_json = json.dumps(citations, ensure_ascii=False)
+                    summary.soap_verification_status = verification_status
                 else:
                     summary = Summary(
                         session_id=session_id,
                         soap_note=soap_note_content,
                         soap_citations_json=json.dumps(citations, ensure_ascii=False),
+                        soap_verification_status=verification_status,
                     )
                     db.add(summary)
                 session.soap_status = "ready"

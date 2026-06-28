@@ -122,6 +122,157 @@ class SOAPNoteGenerator:
             )
         return citations
 
+    @staticmethod
+    def _normalize_for_similarity(text: str) -> str:
+        normalized = text.lower()
+        normalized = re.sub(r"[^\w\s]", " ", normalized)
+        return re.sub(r"\s+", " ", normalized).strip()
+
+    @staticmethod
+    def _content_similarity(sentence: str, chunk: str) -> float:
+        normalized_sentence = SOAPNoteGenerator._normalize_for_similarity(sentence)
+        normalized_chunk = SOAPNoteGenerator._normalize_for_similarity(chunk)
+        if not normalized_sentence or not normalized_chunk:
+            return 0.0
+
+        ratio = SequenceMatcher(None, normalized_sentence, normalized_chunk).ratio()
+        sentence_tokens = set(normalized_sentence.split())
+        chunk_tokens = set(normalized_chunk.split())
+        overlap = (
+            len(sentence_tokens & chunk_tokens) / len(sentence_tokens)
+            if sentence_tokens
+            else 0.0
+        )
+        return max(ratio, overlap)
+
+    @staticmethod
+    def _extract_citation_indices(text: str) -> Set[int]:
+        return {int(match) for match in _CITATION_MARKER_RE.findall(text)}
+
+    @staticmethod
+    def _extract_citing_context(text: str, index: int) -> str:
+        marker = f"[{index}]"
+        segments = re.split(r"(?<=[.!?\n])", text)
+        for segment in segments:
+            if marker in segment:
+                return segment.replace(marker, "").strip()
+        return text.replace(marker, "").strip()
+
+    @staticmethod
+    def _strip_citation_markers(text: str, indices: Set[int]) -> str:
+        cleaned = text
+        for index in sorted(indices, reverse=True):
+            cleaned = cleaned.replace(f"[{index}]", "")
+        return re.sub(r"  +", " ", cleaned)
+
+    def _compute_aggregate_verification_status(
+        self,
+        annotated_citations: List[dict],
+        used_indices: Set[int],
+        has_citations: bool,
+    ) -> VerificationStatus:
+        if not used_indices and not has_citations:
+            return "verified"
+
+        if used_indices and not has_citations:
+            return "unverified"
+
+        used_statuses = [
+            citation["verification_status"]
+            for citation in annotated_citations
+            if citation.get("index") in used_indices
+        ]
+
+        if not used_indices:
+            return "verified"
+
+        if all(status == "verified" for status in used_statuses):
+            return "verified"
+        if any(status == "verified" for status in used_statuses):
+            return "partially_verified"
+        return "unverified"
+
+    async def verify_citations(
+        self, soap_note_text: str, citations: List[dict]
+    ) -> List[dict]:
+        """
+        Verify citation markers in the SOAP note against retrieved evidence.
+
+        Returns annotated citations with per-entry verification_status.
+        """
+        result = await self._apply_citation_verification(soap_note_text, citations)
+        return result.citations
+
+    async def _apply_citation_verification(
+        self, soap_note_text: str, citations: List[dict]
+    ) -> CitationVerificationResult:
+        citation_map = {citation["index"]: citation for citation in citations}
+        used_indices = self._extract_citation_indices(soap_note_text)
+        annotated_citations: List[dict] = []
+        indices_to_strip: Set[int] = set()
+        similarity_scores: Dict[int, float] = {}
+
+        for citation in citations:
+            index = citation["index"]
+            annotated = {**citation}
+
+            if index not in used_indices:
+                annotated["verification_status"] = "unused"
+                annotated_citations.append(annotated)
+                continue
+
+            citing_context = self._extract_citing_context(soap_note_text, index)
+            chunk_content = citation.get("content", "")
+            similarity = self._content_similarity(citing_context, chunk_content)
+            similarity_scores[index] = similarity
+
+            if similarity >= CITATION_SIMILARITY_THRESHOLD:
+                annotated["verification_status"] = "verified"
+            else:
+                annotated["verification_status"] = "unverified"
+                indices_to_strip.add(index)
+                logger.warning(
+                    "Citation [%s] failed similarity check (score=%.2f)",
+                    index,
+                    similarity,
+                )
+
+            annotated_citations.append(annotated)
+
+        for index in used_indices:
+            if index in citation_map:
+                continue
+
+            annotated_citations.append(
+                {
+                    "index": index,
+                    "source": None,
+                    "content": "",
+                    "confidence": None,
+                    "verification_status": "unverified",
+                }
+            )
+            indices_to_strip.add(index)
+            logger.warning("Citation [%s] references index not in retrieved evidence", index)
+
+        verification_status = self._compute_aggregate_verification_status(
+            annotated_citations,
+            used_indices,
+            has_citations=bool(citations),
+        )
+
+        cleaned_content = soap_note_text
+        if indices_to_strip:
+            cleaned_content = self._strip_citation_markers(soap_note_text, indices_to_strip)
+        elif used_indices and not citations:
+            cleaned_content = self._strip_citation_markers(soap_note_text, used_indices)
+
+        return CitationVerificationResult(
+            content=cleaned_content,
+            citations=annotated_citations,
+            verification_status=verification_status,
+        )
+
     def _get_system_prompt(self) -> str:
         """
         پرامپت سیستمی برای تولید SOAP note
@@ -329,13 +480,19 @@ Use the following retrieved clinical evidence to support your assessment. You MU
             else:
                 raise ValueError("No LLM provider configured")
 
-            soap = SoapNote(content=note, citations=citations)
+            verification = await self._apply_citation_verification(note, citations)
+            soap = SoapNote(
+                content=verification.content,
+                citations=verification.citations,
+                verification_status=verification.verification_status,
+            )
 
             return {
                 "status": "success",
                 "provider": provider.value,
                 "soap_note": soap.content,
                 "citations": soap.citations,
+                "verification_status": soap.verification_status,
                 "confidence_score": summary.confidence_score,
                 "generated_at": datetime.utcnow().isoformat(),
             }
