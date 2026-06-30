@@ -98,3 +98,4 @@ numpy>=1.26.0
 
 # Object storage (S3 / MinIO)
 aioboto3>=13.0.0
+aiofiles==24.1.0

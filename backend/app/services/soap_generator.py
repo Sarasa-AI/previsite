@@ -332,7 +332,8 @@ Use the following retrieved clinical evidence to support your assessment. You MU
         self,
         summary: MedicalSummary,
         chat_history: Optional[List[Dict[str, str]]] = None,
-        file_analyses: Optional[List[Dict[str, Any]]] = None
+        file_analyses: Optional[List[Dict[str, Any]]] = None,
+        pmh_context: str | None = None,
     ) -> str:
         """
         ساخت context جامع برای تولید SOAP
@@ -380,6 +381,11 @@ Use the following retrieved clinical evidence to support your assessment. You MU
                 sections.append(f"- {system}: {findings}")
 
         sections.append("")
+
+        if pmh_context:
+            sections.append("### Patient Past Medical History (From Questionnaire):")
+            sections.append(pmh_context)
+            sections.append("")
 
         # ─────────── Chat History ───────────
         if chat_history:
@@ -437,6 +443,7 @@ Use the following retrieved clinical evidence to support your assessment. You MU
         chat_history: Optional[List[Dict[str, str]]] = None,
         file_analyses: Optional[List[Dict[str, Any]]] = None,
         preferred_provider: Optional[LLMProvider] = None,
+        pmh_context: str | None = None,
     ) -> Dict[str, Any]:
         """
         اینترفیس اصلی تولید SOAP
@@ -466,7 +473,9 @@ Use the following retrieved clinical evidence to support your assessment. You MU
                 )
 
             citations = self._build_citations(knowledge_results)
-            context = self._build_context(summary, chat_history, file_analyses)
+            context = self._build_context(
+                summary, chat_history, file_analyses, pmh_context=pmh_context
+            )
             evidence_block = self._format_medical_evidence(knowledge_results)
             if evidence_block:
                 context = f"{context}\n\n{evidence_block}"

@@ -5,5 +5,15 @@ from .file import File
 from .summary import Summary
 from .intake import Intake
 from .medical_knowledge import MedicalKnowledge
+from .pmh import PatientPMH
 
-__all__ = ["User", "Session", "Message", "File", "Summary", "Intake", "MedicalKnowledge"]
+__all__ = [
+    "User",
+    "Session",
+    "Message",
+    "File",
+    "Summary",
+    "Intake",
+    "MedicalKnowledge",
+    "PatientPMH",
+]

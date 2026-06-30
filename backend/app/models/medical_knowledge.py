@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Index, Integer, String, Text, func
+from sqlalchemy import DateTime, Index, Integer, JSON, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,7 +22,7 @@ class MedicalKnowledge(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str | None] = mapped_column(String(512), nullable=True)
     document_metadata: Mapped[dict[str, Any] | None] = mapped_column(
-        "metadata", JSONB, nullable=True
+        "metadata", JSON().with_variant(JSONB, "postgresql"), nullable=True
     )
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(settings.embedding_dimensions), nullable=True

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_async_session
 from app.models import Intake, Message, Session as DBSession, Summary
 from app.schemas.medical import MedicalSummary
+from app.services.pmh_service import format_pmh_for_prompt, get_patient_pmh
 from app.services.soap_generator import soap_generator
 
 logger = logging.getLogger(__name__)
@@ -93,11 +94,30 @@ async def run_soap_generation(session_id: int) -> None:
                 await db.commit()
                 return
 
+            pmh_data = await get_patient_pmh(db, session.patient_id)
+            if pmh_data is None:
+                logger.warning(
+                    "PMH_MISSING: Patient %s (session %s) has no PMH record. SOAP generated without history context.",
+                    session.patient_id,
+                    session.id,
+                )
+                pmh_context = None
+            else:
+                pmh_context = format_pmh_for_prompt(pmh_data)
+                if not pmh_context:
+                    logger.info(
+                        "PMH_EMPTY: Patient %s (session %s) has a PMH record but no selected conditions.",
+                        session.patient_id,
+                        session.id,
+                    )
+                    pmh_context = None
+
             soap_note_result = await soap_generator.generate_soap_note(
                 summary=med_sum,
                 db=db,
                 chat_history=chat_history,
                 file_analyses=[],
+                pmh_context=pmh_context,
             )
 
             if soap_note_result.get("status") == "success":
