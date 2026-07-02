@@ -12,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.schemas.medical import MedicalSummary, SoapNote, VerificationStatus
+from app.schemas.pmh import PMHAnswer
+from app.services.clinical_conflict import format_discrepancy_alert, validate_and_format_conflicts
+from app.services.pmh_service import build_pmh_assertion_registry
 from app.services.rag_service import RagService, rag_service as default_rag_service
 
 logger = logging.getLogger(__name__)
@@ -326,6 +329,36 @@ Use the following retrieved clinical evidence to support your assessment. You MU
 5. از جداول برای داده‌های ساختاریافته استفاده کنید
 6. کدهای ICD-10 را با فرمت `[ICD-10: X00.0]` بنویسید
 7. اولویت‌بندی در Plan: فوری → کوتاه‌مدت → بلندمدت
+
+**Clinical Conflict Detection (required when PMH Assertion Registry is provided)**
+
+Before writing the SOAP note, compare patient statements in CONSULTATION DIALOGUE against the PMH ASSERTION REGISTRY.
+
+Extract Clinical Assertions from dialogue:
+- Only statements made BY THE PATIENT (not the clinician).
+- Classify each as AFFIRM or DENY of a specific clinical condition, medication, allergy, or procedure.
+- Map colloquial language to the nearest registry concept/subcategory.
+
+Flag a conflict ONLY when:
+1. PMH shows PRESENT for a concept AND the patient DENIES that same active condition in dialogue, OR
+2. PMH shows CATEGORY_DENIED AND the patient AFFIRMS any condition belonging to that category.
+
+Do NOT flag:
+- New conditions mentioned in chat that are absent from PMH (record in SOAP S-section instead).
+- Symptoms of present illness (chief complaint, HPI) unless they explicitly contradict a PMH denial.
+- Family history (\"my father had...\").
+- Uncertain or conditional language (\"maybe\", \"I think\", \"شاید\", \"ممکنه\").
+- Historical/resolved conditions clearly in the past (\"I used to have X but not anymore\").
+- Elaboration or added detail that does not contradict PMH (e.g., PMH says CAD, chat mentions stent year).
+
+Output format:
+1. Write the complete SOAP note first (S/O/A/P markdown, per existing rules).
+2. On the very last lines, append ONLY this machine block (no other text after it):
+<<<CLINICAL_CONFLICTS>>>
+[{\"pmh_assertion_id\":\"...\",\"chat_polarity\":\"affirm|deny\",\"chat_quote\":\"exact patient quote\",\"concept\":\"...\",\"confidence\":\"high|low\"}]
+<<<END_CLINICAL_CONFLICTS>>>
+Use confidence \"high\" only for unambiguous, direct contradictions. Use \"low\" for anything uncertain — low-confidence entries will be discarded.
+If no conflicts: <<<CLINICAL_CONFLICTS>>>[]<<<END_CLINICAL_CONFLICTS>>>
 """
 
     def _build_context(
@@ -334,6 +367,7 @@ Use the following retrieved clinical evidence to support your assessment. You MU
         chat_history: Optional[List[Dict[str, str]]] = None,
         file_analyses: Optional[List[Dict[str, Any]]] = None,
         pmh_context: str | None = None,
+        pmh_assertion_registry: str | None = None,
     ) -> str:
         """
         ساخت context جامع برای تولید SOAP
@@ -387,6 +421,11 @@ Use the following retrieved clinical evidence to support your assessment. You MU
             sections.append(pmh_context)
             sections.append("")
 
+        if pmh_assertion_registry:
+            sections.append("=== PMH ASSERTION REGISTRY (for conflict detection) ===")
+            sections.append(pmh_assertion_registry)
+            sections.append("")
+
         # ─────────── Chat History ───────────
         if chat_history:
             sections.append("=== CONSULTATION DIALOGUE (Last 20 Messages) ===")
@@ -427,7 +466,7 @@ Use the following retrieved clinical evidence to support your assessment. You MU
         response = await self.openrouter_client.chat.completions.create(
             model=settings.openrouter_default_model,
             temperature=0.2,
-            max_tokens=2500,
+            max_tokens=3000,
             messages=[
                 {"role": "system", "content": self._get_system_prompt()},
                 {"role": "user", "content": context},
@@ -444,6 +483,7 @@ Use the following retrieved clinical evidence to support your assessment. You MU
         file_analyses: Optional[List[Dict[str, Any]]] = None,
         preferred_provider: Optional[LLMProvider] = None,
         pmh_context: str | None = None,
+        pmh_answers: list[PMHAnswer] | None = None,
     ) -> Dict[str, Any]:
         """
         اینترفیس اصلی تولید SOAP
@@ -473,8 +513,25 @@ Use the following retrieved clinical evidence to support your assessment. You MU
                 )
 
             citations = self._build_citations(knowledge_results)
+            pmh_registry = build_pmh_assertion_registry(pmh_answers or []) if pmh_answers else []
+            pmh_registry_lines = ""
+            if pmh_registry:
+                formatted: list[str] = []
+                for a in pmh_registry:
+                    if a.polarity == "present":
+                        subcat = f" | subcategory={a.subcategory}" if a.subcategory else ""
+                        detail = f" | detail={a.detail}" if a.detail else ""
+                        formatted.append(f"[{a.assertion_id}] PRESENT | {a.concept}{subcat}{detail}")
+                    else:
+                        formatted.append(f"[{a.assertion_id}] CATEGORY_DENIED | {a.category_id}")
+                pmh_registry_lines = "\n".join(formatted)
+
             context = self._build_context(
-                summary, chat_history, file_analyses, pmh_context=pmh_context
+                summary,
+                chat_history,
+                file_analyses,
+                pmh_context=pmh_context,
+                pmh_assertion_registry=pmh_registry_lines or None,
             )
             evidence_block = self._format_medical_evidence(knowledge_results)
             if evidence_block:
@@ -490,8 +547,17 @@ Use the following retrieved clinical evidence to support your assessment. You MU
                 raise ValueError("No LLM provider configured")
 
             verification = await self._apply_citation_verification(note, citations)
+            soap_body, discrepancies = validate_and_format_conflicts(
+                llm_output=verification.content,
+                pmh_registry=pmh_registry,
+                chat_history=chat_history or [],
+            )
+            final_note = soap_body
+            if discrepancies:
+                final_note = final_note.rstrip() + "\n\n" + format_discrepancy_alert(discrepancies)
+
             soap = SoapNote(
-                content=verification.content,
+                content=final_note,
                 citations=verification.citations,
                 verification_status=verification.verification_status,
             )

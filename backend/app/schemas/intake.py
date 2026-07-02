@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.utils.national_id import validate_iranian_national_id
 
@@ -51,11 +51,49 @@ class ClinicalSummary(BaseModel):
     red_flags: list[str]
 
 
-class MedicalHistoryInput(BaseModel):
-    allergy_history: list[str] = Field(default_factory=list)
-    past_medical_history: list[str] = Field(default_factory=list)
-    past_surgical_history: list[str] = Field(default_factory=list)
-    family_history: list[str] = Field(default_factory=list)
+class ChronicCondition(BaseModel):
+    id: str = Field(min_length=1, max_length=36)
+    name: str = Field(min_length=1)
+    duration: str = ""
+
+
+class MedicalOverview(BaseModel):
+    allergies: str = ""
+    surgical_history: str = ""
+    family_history: str = ""
+    chronic_conditions: list[ChronicCondition] = Field(default_factory=list)
+    current_medications: list[str] = Field(default_factory=list)
+    file_condition_map: dict[int, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_unique_condition_ids(self) -> "MedicalOverview":
+        ids = [c.id for c in self.chronic_conditions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("chronic_conditions must have unique ids")
+        return self
+
+
+class ConditionFileRef(BaseModel):
+    id: int
+    filename: str
+    mime_type: str | None
+    url: str
+    size_bytes: int
+    condition_id: str | None = None
+
+
+class ChronicConditionWithFiles(ChronicCondition):
+    files: list[ConditionFileRef] = Field(default_factory=list)
+
+
+class ClinicalOverviewResponse(BaseModel):
+    hpi: str | None
+    drug_history: list[str]
+    allergies: str
+    surgical_history: str
+    family_history: str
+    chronic_conditions: list[ChronicConditionWithFiles]
+    unlinked_files: list[ConditionFileRef]
 
 
 class IntakeResponse(BaseModel):
@@ -66,10 +104,14 @@ class IntakeResponse(BaseModel):
     hpi_questions: Optional[HPIQuestionsResponse] = None
     hpi_answers: Optional[dict[str, str]] = None
     clinical_summary: Optional[ClinicalSummary] = None
-    medical_history: Optional[MedicalHistoryInput] = None
+    medical_overview: Optional[MedicalOverview] = None
     llm_fallback_used: bool = False
     llm_error_message: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class FileConditionLink(BaseModel):
+    condition_id: str | None = None

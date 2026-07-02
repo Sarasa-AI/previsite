@@ -1,0 +1,293 @@
+{
+  "timestamp": "20260630T182036Z",
+  "config": {
+    "models": [
+      "google/gemini-2.5-flash-lite",
+      "google/gemini-2.5-flash",
+      "qwen/qwen-2.5-7b-instruct",
+      "deepseek/deepseek-v4-flash",
+      "meta-llama/llama-3.1-8b-instruct"
+    ],
+    "runs_per_model": 3,
+    "timeout_seconds": 2.5,
+    "temperature": 0.2,
+    "max_tokens": 2500
+  },
+  "aggregates": [
+    {
+      "model": "google/gemini-2.5-flash-lite",
+      "median_ttft_ms": null,
+      "median_total_ms": 1010.1,
+      "median_tps": null,
+      "accuracy_pass_rate": 0.0,
+      "within_timeout_rate": 0.0,
+      "runs": [
+        {
+          "model": "google/gemini-2.5-flash-lite",
+          "run_index": 1,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 1695.4,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        },
+        {
+          "model": "google/gemini-2.5-flash-lite",
+          "run_index": 2,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 1002.5,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        },
+        {
+          "model": "google/gemini-2.5-flash-lite",
+          "run_index": 3,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 1010.1,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        }
+      ]
+    },
+    {
+      "model": "google/gemini-2.5-flash",
+      "median_ttft_ms": null,
+      "median_total_ms": 2285.8,
+      "median_tps": null,
+      "accuracy_pass_rate": 0.0,
+      "within_timeout_rate": 0.0,
+      "runs": [
+        {
+          "model": "google/gemini-2.5-flash",
+          "run_index": 1,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 2285.8,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        },
+        {
+          "model": "google/gemini-2.5-flash",
+          "run_index": 2,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 1070.3,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        },
+        {
+          "model": "google/gemini-2.5-flash",
+          "run_index": 3,
+          "status": "timeout",
+          "ttft_ms": null,
+          "total_ms": 2501.6,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "Exceeded 2.5s timeout",
+          "output_preview": ""
+        }
+      ]
+    },
+    {
+      "model": "qwen/qwen-2.5-7b-instruct",
+      "median_ttft_ms": null,
+      "median_total_ms": 2501.7,
+      "median_tps": null,
+      "accuracy_pass_rate": 0.0,
+      "within_timeout_rate": 0.0,
+      "runs": [
+        {
+          "model": "qwen/qwen-2.5-7b-instruct",
+          "run_index": 1,
+          "status": "timeout",
+          "ttft_ms": null,
+          "total_ms": 2502.8,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "Exceeded 2.5s timeout",
+          "output_preview": ""
+        },
+        {
+          "model": "qwen/qwen-2.5-7b-instruct",
+          "run_index": 2,
+          "status": "timeout",
+          "ttft_ms": null,
+          "total_ms": 2501.2,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "Exceeded 2.5s timeout",
+          "output_preview": ""
+        },
+        {
+          "model": "qwen/qwen-2.5-7b-instruct",
+          "run_index": 3,
+          "status": "timeout",
+          "ttft_ms": null,
+          "total_ms": 2501.7,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "Exceeded 2.5s timeout",
+          "output_preview": ""
+        }
+      ]
+    },
+    {
+      "model": "deepseek/deepseek-v4-flash",
+      "median_ttft_ms": null,
+      "median_total_ms": 2265.8,
+      "median_tps": null,
+      "accuracy_pass_rate": 0.0,
+      "within_timeout_rate": 0.0,
+      "runs": [
+        {
+          "model": "deepseek/deepseek-v4-flash",
+          "run_index": 1,
+          "status": "timeout",
+          "ttft_ms": null,
+          "total_ms": 2501.7,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "Exceeded 2.5s timeout",
+          "output_preview": ""
+        },
+        {
+          "model": "deepseek/deepseek-v4-flash",
+          "run_index": 2,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 883.1,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        },
+        {
+          "model": "deepseek/deepseek-v4-flash",
+          "run_index": 3,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 2265.8,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        }
+      ]
+    },
+    {
+      "model": "meta-llama/llama-3.1-8b-instruct",
+      "median_ttft_ms": null,
+      "median_total_ms": 1325.0,
+      "median_tps": null,
+      "accuracy_pass_rate": 0.0,
+      "within_timeout_rate": 0.0,
+      "runs": [
+        {
+          "model": "meta-llama/llama-3.1-8b-instruct",
+          "run_index": 1,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 1916.2,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        },
+        {
+          "model": "meta-llama/llama-3.1-8b-instruct",
+          "run_index": 2,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 1142.0,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        },
+        {
+          "model": "meta-llama/llama-3.1-8b-instruct",
+          "run_index": 3,
+          "status": "error",
+          "ttft_ms": null,
+          "total_ms": 1325.0,
+          "tps": null,
+          "completion_tokens": null,
+          "output_chars": 0,
+          "has_mi_history": false,
+          "has_date_of_event": false,
+          "accuracy_score": 0,
+          "error": "'ChatCompletionChunk' object has no attribute 'usage'",
+          "output_preview": ""
+        }
+      ]
+    }
+  ]
+}

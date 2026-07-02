@@ -12,6 +12,7 @@ class File(Base):
     s3_key = Column(String, nullable=False)
     size_bytes = Column(Integer, nullable=False)
     content_type = Column(String, nullable=True)
+    condition_id = Column(String(36), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     session = relationship("Session", back_populates="files")

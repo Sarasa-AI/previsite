@@ -1,7 +1,8 @@
 "use client";
 
 import { AlertTriangle, CheckCircle, FileText, Stethoscope, User, XCircle } from "lucide-react";
-import type { ClinicalSummary, Demographics, IntakeData, MedicalHistory } from "@/lib/intake";
+import type { ClinicalSummary, Demographics, IntakeData } from "@/lib/intake";
+import type { MedicalOverview } from "@/lib/pmh/types";
 import { SEX_OPTIONS } from "@/lib/intake";
 
 type ClinicianDashboardProps = {
@@ -101,14 +102,16 @@ function ClinicalSummaryCard({ summary }: { summary: ClinicalSummary }) {
   );
 }
 
-function MedicalHistoryCard({ history }: { history: MedicalHistory }) {
-  const sections = [
-    { label: "حساسیت‌ها", items: history.allergy_history },
-    { label: "سوابق بیماری", items: history.past_medical_history },
-    { label: "سوابق جراحی", items: history.past_surgical_history },
-    { label: "سابقه خانوادگی", items: history.family_history },
-  ];
+function TextSection({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+      <p className="mb-2 text-sm font-semibold text-trust">{label}</p>
+      <p className="text-sm leading-relaxed text-slate-700">{value.trim() || "ثبت نشده"}</p>
+    </div>
+  );
+}
 
+function MedicalOverviewCard({ overview }: { overview: MedicalOverview }) {
   return (
     <div className="medical-card space-y-4">
       <div className="flex items-center gap-2 text-trust">
@@ -116,12 +119,28 @@ function MedicalHistoryCard({ history }: { history: MedicalHistory }) {
         <h3 className="text-lg font-bold">سوابق پزشکی (لایه ۴)</h3>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        {sections.map((section) => (
-          <div key={section.label} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-            <p className="mb-2 text-sm font-semibold text-trust">{section.label}</p>
-            <TagList items={section.items} variant="neutral" />
-          </div>
-        ))}
+        <TextSection label="حساسیت‌ها" value={overview.allergies} />
+        <TextSection label="سوابق جراحی" value={overview.surgical_history} />
+        <TextSection label="سابقه خانوادگی" value={overview.family_history} />
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:col-span-2">
+          <p className="mb-2 text-sm font-semibold text-trust">بیماری‌های مزمن</p>
+          {overview.chronic_conditions.length === 0 ? (
+            <span className="text-sm text-slate-500">ثبت نشده</span>
+          ) : (
+            <ul className="space-y-2 text-sm text-slate-700">
+              {overview.chronic_conditions.map((condition) => (
+                <li key={condition.id}>
+                  {condition.name}
+                  {condition.duration ? ` — ${condition.duration}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:col-span-2">
+          <p className="mb-2 text-sm font-semibold text-trust">داروهای فعلی</p>
+          <TagList items={overview.current_medications} variant="neutral" />
+        </div>
       </div>
     </div>
   );
@@ -132,7 +151,7 @@ export default function ClinicianDashboard({ intake }: ClinicianDashboardProps) 
     <section className="space-y-6">
       {intake.demographics && <DemographicsCard data={intake.demographics} />}
       {intake.clinical_summary && <ClinicalSummaryCard summary={intake.clinical_summary} />}
-      {intake.medical_history && <MedicalHistoryCard history={intake.medical_history} />}
+      {intake.medical_overview && <MedicalOverviewCard overview={intake.medical_overview} />}
     </section>
   );
 }

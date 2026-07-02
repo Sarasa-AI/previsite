@@ -1,7 +1,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,10 +15,16 @@ from app.schemas.intake import (
     HPIAnswerInput,
     HPIQuestionsResponse,
     IntakeResponse,
-    MedicalHistoryInput,
+    MedicalOverview,
 )
 from app.services.intake_llm import intake_llm_service
-from app.services.soap_task import trigger_soap_generation
+from app.services.medical_overview_service import (
+    format_conditions_for_summary,
+    link_files_to_conditions,
+    load_medical_overview_from_intake,
+    overview_for_storage,
+)
+from app.services.pmh_service import upsert_patient_overview
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +79,7 @@ def _to_response(intake: Intake) -> IntakeResponse:
     hpi_questions = _load_json(intake.hpi_questions_json)
     hpi_answers = _load_json(intake.hpi_answers_json)
     clinical_summary = _load_json(intake.clinical_summary_json)
-    medical_history = _load_json(intake.medical_history_json)
+    medical_overview = load_medical_overview_from_intake(intake)
 
     return IntakeResponse(
         id=intake.id,
@@ -83,7 +89,7 @@ def _to_response(intake: Intake) -> IntakeResponse:
         hpi_questions=HPIQuestionsResponse.model_validate(hpi_questions) if hpi_questions else None,
         hpi_answers=hpi_answers if isinstance(hpi_answers, dict) else None,
         clinical_summary=ClinicalSummary.model_validate(clinical_summary) if clinical_summary else None,
-        medical_history=MedicalHistoryInput.model_validate(medical_history) if medical_history else None,
+        medical_overview=medical_overview,
         llm_fallback_used=bool(getattr(intake, "llm_fallback_used", False)),
         llm_error_message=getattr(intake, "llm_error_message", None),
         created_at=intake.created_at,
@@ -94,10 +100,10 @@ def _to_response(intake: Intake) -> IntakeResponse:
 async def _save_summary_from_intake(
     db: AsyncSession, session_id: int, intake: Intake
 ) -> None:
-    """Persist intake data into the legacy Summary table for clinician access."""
+    """Persist intake data into the Summary table for clinician access."""
     demographics = _load_json(intake.demographics_json) or {}
     clinical = _load_json(intake.clinical_summary_json) or {}
-    history = _load_json(intake.medical_history_json) or {}
+    overview = load_medical_overview_from_intake(intake) or MedicalOverview()
 
     result = await db.execute(select(Summary).where(Summary.session_id == session_id))
     summary = result.scalar_one_or_none()
@@ -107,15 +113,21 @@ async def _save_summary_from_intake(
 
     summary.chief_complaint = clinical.get("chief_complaint") or demographics.get("chief_complaint")
     summary.history_present_illness = clinical.get("hpi_summary")
-    summary.past_medical_history = "، ".join(history.get("past_medical_history", [])) or None
-    summary.allergies = "، ".join(history.get("allergy_history", [])) or None
+    summary.past_medical_history = format_conditions_for_summary(overview.chronic_conditions)
+    summary.allergies = overview.allergies or None
+    summary.medications = (
+        "، ".join(overview.current_medications) if overview.current_medications else None
+    )
     summary.assessment = json.dumps(
         {
             "pertinent_positives": clinical.get("pertinent_positives", []),
             "pertinent_negatives": clinical.get("pertinent_negatives", []),
             "red_flags": clinical.get("red_flags", []),
-            "past_surgical_history": history.get("past_surgical_history", []),
-            "family_history": history.get("family_history", []),
+            "surgical_history": overview.surgical_history,
+            "family_history": overview.family_history,
+            "chronic_conditions": [
+                c.model_dump() for c in overview.chronic_conditions
+            ],
             "demographics": demographics,
         },
         ensure_ascii=False,
@@ -245,7 +257,7 @@ async def generate_layer3_summary(
 @router.post("/{session_id}/layer4", response_model=IntakeResponse)
 async def save_layer4(
     session_id: int,
-    data: MedicalHistoryInput,
+    data: MedicalOverview,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -255,8 +267,13 @@ async def save_layer4(
     if not intake:
         raise HTTPException(status_code=400, detail="Intake not started")
 
-    intake.medical_history_json = data.model_dump_json()
+    file_condition_map = dict(data.file_condition_map)
+    intake.medical_history_json = json.dumps(
+        overview_for_storage(data),
+        ensure_ascii=False,
+    )
     intake.current_layer = 5
+    await link_files_to_conditions(db, session_id, data, file_condition_map)
     await db.commit()
     await db.refresh(intake)
     return _to_response(intake)
@@ -265,7 +282,6 @@ async def save_layer4(
 @router.post("/{session_id}/submit", response_model=IntakeResponse)
 async def submit_intake(
     session_id: int,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -278,13 +294,16 @@ async def submit_intake(
     if not intake.medical_history_json or not intake.clinical_summary_json:
         raise HTTPException(status_code=400, detail="All intake layers must be completed before submission")
 
+    overview = load_medical_overview_from_intake(intake)
+    if overview is None:
+        raise HTTPException(status_code=400, detail="Medical overview is required before submission")
+
     await _save_summary_from_intake(db, session_id, intake)
+    await upsert_patient_overview(db, session.patient_id, overview)
     session.status = "pending_review"
-    session.soap_status = "generating"
+    session.soap_status = "pending"
     session.soap_error_detail = None
     await db.commit()
-
-    trigger_soap_generation(background_tasks, session_id)
 
     await db.refresh(intake)
     return _to_response(intake)

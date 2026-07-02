@@ -1,29 +1,27 @@
 from fastapi.testclient import TestClient
 
 from app.schemas.pmh import PMHAnswer
-from app.services.pmh_service import format_pmh_for_prompt, get_patient_pmh
-from tests.conftest import setup_async_test_db, teardown_test_db
+from app.services.pmh_service import (
+    format_pmh_for_prompt,
+    get_patient_overview,
+    get_patient_pmh,
+)
 from tests.test_mvp_flow import _create_client, _national_id_from_seed
 
 
-def _sample_submission(patient_id: int) -> dict:
+def _sample_overview_submission(patient_id: int) -> dict:
     return {
         "patient_id": patient_id,
-        "answers": [
-            {
-                "category_id": "cat_cardio",
-                "is_selected": True,
-                "question_responses": {
-                    "pmh_cardio_cad_001": True,
-                    "pmh_cardio_cad_001_followup_stent": "2020",
-                },
-            },
-            {
-                "category_id": "cat_pulm",
-                "is_selected": False,
-                "question_responses": {},
-            },
-        ],
+        "overview": {
+            "allergies": "پنی‌سیلین",
+            "surgical_history": "آپاندکتومی ۱۳۹۵",
+            "family_history": "فشار خون (پدر)",
+            "chronic_conditions": [
+                {"id": "cond-diabetes", "name": "دیابت نوع ۲", "duration": "۵ سال"},
+                {"id": "cond-htn", "name": "فشار خون", "duration": "۱۰ سال"},
+            ],
+            "current_medications": ["متفورمین ۵۰۰mg"],
+        },
     }
 
 
@@ -57,14 +55,14 @@ def test_patient_can_submit_pmh(tmp_path, monkeypatch) -> None:
 
     response = client.post(
         "/api/pmh/submit",
-        json=_sample_submission(patient_id),
+        json=_sample_overview_submission(patient_id),
         headers=headers,
     )
 
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["patient_id"] == patient_id
-    assert body["answer_count"] == 2
+    assert body["overview"]["chronic_conditions"][0]["name"] == "دیابت نوع ۲"
     assert body["last_updated"] is not None
     client._async_cleanup()
 
@@ -82,7 +80,7 @@ def test_doctor_cannot_submit_pmh(tmp_path, monkeypatch) -> None:
 
     response = client.post(
         "/api/pmh/submit",
-        json=_sample_submission(patient_id=1),
+        json=_sample_overview_submission(patient_id=1),
         headers=headers,
     )
 
@@ -98,7 +96,7 @@ def test_patient_cannot_submit_for_other_patient(tmp_path, monkeypatch) -> None:
 
     response = client.post(
         "/api/pmh/submit",
-        json=_sample_submission(other_patient_id),
+        json=_sample_overview_submission(other_patient_id),
         headers=headers,
     )
 
@@ -113,13 +111,13 @@ def test_pmh_submit_upserts_existing_row(tmp_path, monkeypatch) -> None:
 
     first = client.post(
         "/api/pmh/submit",
-        json=_sample_submission(patient_id),
+        json=_sample_overview_submission(patient_id),
         headers=headers,
     )
     assert first.status_code == 200, first.text
 
-    updated_payload = _sample_submission(patient_id)
-    updated_payload["answers"] = updated_payload["answers"][:1]
+    updated_payload = _sample_overview_submission(patient_id)
+    updated_payload["overview"]["chronic_conditions"] = updated_payload["overview"]["chronic_conditions"][:1]
 
     second = client.post(
         "/api/pmh/submit",
@@ -127,21 +125,45 @@ def test_pmh_submit_upserts_existing_row(tmp_path, monkeypatch) -> None:
         headers=headers,
     )
     assert second.status_code == 200, second.text
-    assert second.json()["answer_count"] == 1
+    assert len(second.json()["overview"]["chronic_conditions"]) == 1
     assert second.json()["last_updated"] >= first.json()["last_updated"]
     client._async_cleanup()
 
 
-async def test_get_patient_pmh_returns_none_when_missing(tmp_path, monkeypatch) -> None:
-    engine = await setup_async_test_db(tmp_path, monkeypatch)
-    from app.db.database import AsyncSessionLocal
+def test_patient_can_get_own_overview(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    token, patient_id = _register_patient(client, seed="pmh-get-overview")
+    headers = {"Authorization": f"Bearer {token}"}
 
-    async with AsyncSessionLocal() as db:
-        result = await get_patient_pmh(db, patient_id=99999)
-        assert result is None
+    submit = client.post(
+        "/api/pmh/submit",
+        json=_sample_overview_submission(patient_id),
+        headers=headers,
+    )
+    assert submit.status_code == 200, submit.text
 
-    teardown_test_db()
-    await engine.dispose()
+    response = client.get(f"/api/pmh/overview/{patient_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["overview"]["allergies"] == "پنی‌سیلین"
+    client._async_cleanup()
+
+
+def test_pmh_schema_is_deprecated(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    response = client.get("/api/pmh/schema")
+    assert response.status_code == 410
+    client._async_cleanup()
+
+
+async def test_get_patient_pmh_returns_none_when_missing(db) -> None:
+    result = await get_patient_pmh(db, patient_id=99999)
+    assert result is None
+
+
+async def test_get_patient_overview_returns_none_when_missing(db) -> None:
+    result = await get_patient_overview(db, patient_id=99999)
+    assert result is None
 
 
 def test_format_pmh_for_prompt_includes_selected_only() -> None:
@@ -149,7 +171,10 @@ def test_format_pmh_for_prompt_includes_selected_only() -> None:
         PMHAnswer(
             category_id="cat_cardio",
             is_selected=True,
-            question_responses={"pmh_cardio_cad_001": True, "followup": "2020"},
+            question_responses={
+                "pmh_cardio_cad_001": True,
+                "pmh_cardio_cad_001_date": "1398",
+            },
         ),
         PMHAnswer(
             category_id="cat_pulm",
@@ -160,7 +185,23 @@ def test_format_pmh_for_prompt_includes_selected_only() -> None:
 
     text = format_pmh_for_prompt(answers)
 
-    assert "cat_cardio" in text
-    assert "pmh_cardio_cad_001" in text
-    assert "2020" in text
+    assert "[cat_cardio]" in text
+    assert "History of Myocardial Infarction / Coronary Artery Disease" in text
+    assert "Date of Event: 1398" in text
     assert "cat_pulm" not in text
+    assert "pmh_cardio_cad_001" not in text
+
+
+def test_format_pmh_for_prompt_falls_back_to_id_for_unknown_questions() -> None:
+    answers = [
+        PMHAnswer(
+            category_id="cat_cardio",
+            is_selected=True,
+            question_responses={"unknown_question_id": True, "unknown_followup": "2020"},
+        ),
+    ]
+
+    text = format_pmh_for_prompt(answers)
+
+    assert "- unknown_question_id: positive" in text
+    assert "- unknown_followup: 2020" in text

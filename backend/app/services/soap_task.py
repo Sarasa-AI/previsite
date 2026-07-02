@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_async_session
 from app.models import Intake, Message, Session as DBSession, Summary
 from app.schemas.medical import MedicalSummary
-from app.services.pmh_service import format_pmh_for_prompt, get_patient_pmh
+from app.services.medical_overview_service import (
+    format_conditions_for_summary,
+    load_medical_overview_from_intake,
+)
 from app.services.soap_generator import soap_generator
 
 logger = logging.getLogger(__name__)
@@ -19,19 +23,33 @@ def _summary_text_field(value: str | None) -> list[str]:
     return [value.strip()]
 
 
+def _overview_allergies_list(allergies: str) -> list[str]:
+    if not allergies or not allergies.strip():
+        return []
+    return [part.strip() for part in allergies.split("،") if part.strip()]
+
+
 def _build_medical_summary_from_intake(intake: Intake) -> MedicalSummary | None:
     demographics = json.loads(intake.demographics_json) if intake.demographics_json else {}
     clinical = json.loads(intake.clinical_summary_json) if intake.clinical_summary_json else {}
-    history = json.loads(intake.medical_history_json) if intake.medical_history_json else {}
+    overview = load_medical_overview_from_intake(intake)
 
     if not clinical:
         return None
 
+    past_medical_history = (
+        _summary_text_field(
+            format_conditions_for_summary(overview.chronic_conditions)
+        )
+        if overview
+        else []
+    )
+
     return MedicalSummary(
         chief_complaint=clinical.get("chief_complaint") or demographics.get("chief_complaint"),
-        past_medical_history=history.get("past_medical_history", []),
-        current_medications=[],
-        allergies=history.get("allergy_history", []),
+        past_medical_history=past_medical_history,
+        current_medications=list(overview.current_medications) if overview else [],
+        allergies=_overview_allergies_list(overview.allergies) if overview else [],
         additional_notes=clinical.get("hpi_summary"),
         is_hpi_complete=True,
     )
@@ -46,6 +64,19 @@ def _build_medical_summary_from_chat(summary: Summary) -> MedicalSummary:
         additional_notes=summary.history_present_illness,
         is_hpi_complete=getattr(summary, "is_hpi_complete", False) or False,
     )
+
+
+def _archive_soap_to_legacy(summary: Summary, soap_note: str, citations: list, verification_status: str | None) -> None:
+    payload = {
+        "soap_note": soap_note,
+        "soap_citations": citations,
+        "soap_verification_status": verification_status,
+        "archived_at": datetime.now(timezone.utc).isoformat(),
+    }
+    summary.legacy_soap_json = json.dumps(payload, ensure_ascii=False)
+    summary.soap_note = soap_note
+    summary.soap_citations_json = json.dumps(citations, ensure_ascii=False)
+    summary.soap_verification_status = verification_status
 
 
 async def run_soap_generation(session_id: int) -> None:
@@ -94,30 +125,13 @@ async def run_soap_generation(session_id: int) -> None:
                 await db.commit()
                 return
 
-            pmh_data = await get_patient_pmh(db, session.patient_id)
-            if pmh_data is None:
-                logger.warning(
-                    "PMH_MISSING: Patient %s (session %s) has no PMH record. SOAP generated without history context.",
-                    session.patient_id,
-                    session.id,
-                )
-                pmh_context = None
-            else:
-                pmh_context = format_pmh_for_prompt(pmh_data)
-                if not pmh_context:
-                    logger.info(
-                        "PMH_EMPTY: Patient %s (session %s) has a PMH record but no selected conditions.",
-                        session.patient_id,
-                        session.id,
-                    )
-                    pmh_context = None
-
             soap_note_result = await soap_generator.generate_soap_note(
                 summary=med_sum,
                 db=db,
                 chat_history=chat_history,
                 file_analyses=[],
-                pmh_context=pmh_context,
+                pmh_context=None,
+                pmh_answers=None,
             )
 
             if soap_note_result.get("status") == "success":
@@ -125,15 +139,19 @@ async def run_soap_generation(session_id: int) -> None:
                 citations = soap_note_result.get("citations") or []
                 verification_status = soap_note_result.get("verification_status")
                 if summary:
-                    summary.soap_note = soap_note_content
-                    summary.soap_citations_json = json.dumps(citations, ensure_ascii=False)
-                    summary.soap_verification_status = verification_status
+                    _archive_soap_to_legacy(
+                        summary,
+                        soap_note_content,
+                        citations,
+                        verification_status,
+                    )
                 else:
-                    summary = Summary(
-                        session_id=session_id,
-                        soap_note=soap_note_content,
-                        soap_citations_json=json.dumps(citations, ensure_ascii=False),
-                        soap_verification_status=verification_status,
+                    summary = Summary(session_id=session_id)
+                    _archive_soap_to_legacy(
+                        summary,
+                        soap_note_content,
+                        citations,
+                        verification_status,
                     )
                     db.add(summary)
                 session.soap_status = "ready"

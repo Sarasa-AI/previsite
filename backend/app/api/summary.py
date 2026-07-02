@@ -8,8 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.db.database import get_db
+from app.models import File as FileModel
 from app.models import Intake, Summary, User
 from app.models import Session as SessionModel
+from app.services.medical_overview_service import (
+    build_clinical_overview,
+    load_medical_overview_from_intake,
+    parse_legacy_soap,
+)
 from app.services.soap_task import trigger_soap_generation
 
 logger = logging.getLogger(__name__)
@@ -77,6 +83,17 @@ async def get_summary(
         except json.JSONDecodeError:
             soap_citations = []
 
+    files_result = await db.execute(
+        select(FileModel).where(FileModel.session_id == session_id)
+    )
+    files = list(files_result.scalars().all())
+    overview = load_medical_overview_from_intake(intake)
+    clinical_overview = build_clinical_overview(
+        hpi=summary.history_present_illness,
+        overview=overview,
+        files=files,
+    )
+
     try:
         return {
             "id": summary.id,
@@ -86,6 +103,7 @@ async def get_summary(
             "soap_verification_status": summary.soap_verification_status,
             "soap_status": soap_status,
             "soap_error_detail": session.soap_error_detail,
+            "legacy_soap": parse_legacy_soap(summary),
             "medical_data": {
                 "chief_complaint": summary.chief_complaint,
                 "history_present_illness": summary.history_present_illness,
@@ -93,6 +111,7 @@ async def get_summary(
                 "medications": summary.medications,
                 "allergies": summary.allergies,
             },
+            "clinical_overview": clinical_overview.model_dump(),
             "assessment_data": assessment_data,
             "intake": intake_data,
             "created_at": summary.created_at.isoformat() if summary.created_at else None,

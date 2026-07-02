@@ -1,82 +1,66 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { AxiosError } from "axios";
 import { FileText } from "lucide-react";
-import type { MedicalHistory } from "@/lib/intake";
-import {
-  ALLERGY_OPTIONS,
-  FAMILY_HISTORY_OPTIONS,
-  PMH_OPTIONS,
-  SURGICAL_OPTIONS,
-} from "@/lib/intake";
+import { MedicalOverviewCard, sanitizeMedicalOverview } from "@/components/intake/MedicalOverviewCard";
+import { extractApiError } from "@/lib/api";
+import { frontendApi } from "@/lib/client";
+import { normalizeMedicalOverview } from "@/lib/intake";
+import type { ConditionFile, MedicalOverview } from "@/lib/pmh/types";
 
 type Layer4Props = {
-  initial?: MedicalHistory | null;
-  onSubmit: (data: MedicalHistory) => Promise<void>;
+  sessionId: string;
+  initial?: MedicalOverview | null;
+  onSubmit: (data: MedicalOverview) => Promise<void>;
   loading?: boolean;
 };
 
-const emptyHistory: MedicalHistory = {
-  allergy_history: [],
-  past_medical_history: [],
-  past_surgical_history: [],
-  family_history: [],
-};
-
-type MultiSelectFieldProps = {
-  label: string;
-  options: string[];
-  selected: string[];
-  onChange: (values: string[]) => void;
-};
-
-function MultiSelectField({ label, options, selected, onChange }: MultiSelectFieldProps) {
-  const toggle = (value: string) => {
-    if (value === "هیچ‌کدام") {
-      onChange(["هیچ‌کدام"]);
-      return;
+function buildConditionFileMap(files: ConditionFile[]): Record<string, ConditionFile> {
+  const map: Record<string, ConditionFile> = {};
+  for (const file of files) {
+    if (file.condition_id) {
+      map[file.condition_id] = file;
     }
-    const without = selected.filter((v) => v !== "هیچ‌کدام");
-    if (without.includes(value)) {
-      onChange(without.filter((v) => v !== value));
-    } else {
-      onChange([...without, value]);
-    }
-  };
-
-  return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-slate-700">{label}</label>
-      <div className="flex flex-wrap gap-2">
-        {options.map((opt) => (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => toggle(opt)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
-              selected.includes(opt)
-                ? "border-trust bg-trust text-white"
-                : "border-slate-200 bg-white text-slate-600 hover:border-trust/40"
-            }`}
-          >
-            {opt}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+  }
+  return map;
 }
 
-export default function Layer4MedicalHistory({ initial, onSubmit, loading }: Layer4Props) {
-  const [form, setForm] = useState<MedicalHistory>(initial ?? emptyHistory);
+export default function Layer4MedicalHistory({ sessionId, initial, onSubmit, loading }: Layer4Props) {
+  const [form, setForm] = useState<MedicalOverview>(() => normalizeMedicalOverview(initial));
+  const [conditionFiles, setConditionFiles] = useState<Record<string, ConditionFile>>({});
+  const [filesError, setFilesError] = useState("");
 
-  const update = (field: keyof MedicalHistory, values: string[]) => {
-    setForm((prev) => ({ ...prev, [field]: values }));
-  };
+  useEffect(() => {
+    const loadFiles = async () => {
+      try {
+        const response = await frontendApi.listFiles(sessionId);
+        setConditionFiles(buildConditionFileMap(response.data as ConditionFile[]));
+        setFilesError("");
+      } catch (requestError) {
+        const payload = requestError instanceof AxiosError ? requestError.response?.data : undefined;
+        setFilesError(extractApiError(payload, "بارگذاری فایل‌ها ناموفق بود."));
+      }
+    };
+
+    void loadFiles();
+  }, [sessionId]);
+
+  const handleConditionFileChange = useCallback((conditionId: string, file: ConditionFile | null) => {
+    setConditionFiles((prev) => {
+      const next = { ...prev };
+      if (file) {
+        next[conditionId] = file;
+      } else {
+        delete next[conditionId];
+      }
+      return next;
+    });
+  }, []);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    await onSubmit(form);
+    await onSubmit(sanitizeMedicalOverview(form));
   };
 
   return (
@@ -89,29 +73,15 @@ export default function Layer4MedicalHistory({ initial, onSubmit, loading }: Lay
         </div>
       </div>
 
-      <MultiSelectField
-        label="سابقه حساسیت"
-        options={ALLERGY_OPTIONS}
-        selected={form.allergy_history}
-        onChange={(v) => update("allergy_history", v)}
-      />
-      <MultiSelectField
-        label="سابقه بیماری"
-        options={PMH_OPTIONS}
-        selected={form.past_medical_history}
-        onChange={(v) => update("past_medical_history", v)}
-      />
-      <MultiSelectField
-        label="سابقه جراحی"
-        options={SURGICAL_OPTIONS}
-        selected={form.past_surgical_history}
-        onChange={(v) => update("past_surgical_history", v)}
-      />
-      <MultiSelectField
-        label="سابقه خانوادگی"
-        options={FAMILY_HISTORY_OPTIONS}
-        selected={form.family_history}
-        onChange={(v) => update("family_history", v)}
+      {filesError ? <p className="text-sm text-red-600">{filesError}</p> : null}
+
+      <MedicalOverviewCard
+        value={form}
+        onChange={setForm}
+        sessionId={sessionId}
+        conditionFiles={conditionFiles}
+        onConditionFileChange={handleConditionFileChange}
+        disabled={loading}
       />
 
       <button className="primary-button w-full sm:w-auto" type="submit" disabled={loading}>

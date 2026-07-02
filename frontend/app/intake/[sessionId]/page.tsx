@@ -10,7 +10,8 @@ import Layer2HPIQuestions from "@/components/intake/Layer2HPIQuestions";
 import Layer4MedicalHistory from "@/components/intake/Layer4MedicalHistory";
 import { extractApiError } from "@/lib/api";
 import { frontendApi } from "@/lib/client";
-import type { Demographics, HPIQuestion, IntakeData, MedicalHistory } from "@/lib/intake";
+import type { Demographics, HPIQuestion, IntakeData } from "@/lib/intake";
+import type { MedicalOverview } from "@/lib/pmh/types";
 import { usePatientProfile } from "@/src/hooks/usePatientProfile";
 
 const LAYER_LABELS = ["اطلاعات اولیه", "شرح حال", "خلاصه بالینی", "سوابق پزشکی", "ارسال"];
@@ -110,11 +111,11 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
     }
   };
 
-  const handleLayer4 = async (data: MedicalHistory) => {
+  const handleLayer4 = async (overview: MedicalOverview) => {
     setLoading(true);
     setError("");
     try {
-      await frontendApi.saveLayer4(sessionId, data);
+      await frontendApi.saveLayer4(sessionId, overview);
       await frontendApi.submitIntake(sessionId);
       setSubmitted(true);
       await loadIntake();
@@ -222,7 +223,8 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
                 <p className="text-sm leading-relaxed text-slate-700">{intake.clinical_summary.hpi_summary}</p>
               </div>
               <Layer4MedicalHistory
-                initial={intake.medical_history}
+                sessionId={sessionId}
+                initial={intake.medical_overview}
                 onSubmit={handleLayer4}
                 loading={loading}
               />

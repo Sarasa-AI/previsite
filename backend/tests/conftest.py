@@ -7,6 +7,8 @@ import os
 # Override .env proxy so httpx.AsyncClient init succeeds in tests (httpx 0.28+ uses `proxy`).
 os.environ["HTTP_PROXY"] = ""
 os.environ["http_proxy"] = ""
+# Ensure startup health check skips OpenRouter during tests.
+os.environ["OPENROUTER_API_KEY"] = ""
 
 from collections.abc import AsyncGenerator
 
@@ -105,10 +107,24 @@ def client(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-async def async_client(tmp_path, monkeypatch):
+async def test_db_engine(tmp_path, monkeypatch):
     engine = await setup_async_test_db(tmp_path, monkeypatch)
+    yield engine
+    teardown_test_db()
+    await engine.dispose()
+
+
+@pytest.fixture
+async def async_client(test_db_engine):
     transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-    teardown_test_db()
-    await engine.dispose()
+
+
+@pytest.fixture
+async def db(test_db_engine):
+    from app.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        yield session
+        await session.rollback()

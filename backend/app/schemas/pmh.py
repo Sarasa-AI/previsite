@@ -1,6 +1,9 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, RootModel
+
+from app.schemas.intake import MedicalOverview
 
 
 class PhysicianMetadata(BaseModel):
@@ -53,3 +56,33 @@ class PMHSubmissionResponse(BaseModel):
     patient_id: int
     last_updated: datetime
     answer_count: int
+
+
+class PatientOverviewSubmission(BaseModel):
+    patient_id: int
+    overview: MedicalOverview
+
+
+class PatientOverviewResponse(BaseModel):
+    patient_id: int
+    overview: MedicalOverview | None
+    last_updated: datetime | None
+
+
+class PMHAssertion(BaseModel):
+    assertion_id: str
+    concept: str
+    subcategory: str | None = None
+    category_id: str
+    polarity: Literal["present", "category_denied"]
+    source: Literal["questionnaire"] = "questionnaire"
+    detail: str | None = None
+
+
+class ClinicalDiscrepancy(BaseModel):
+    pmh_assertion_id: str
+    concept: str
+    pmh_polarity: Literal["present", "category_denied"]
+    chat_polarity: Literal["affirm", "deny"]
+    chat_quote: str
+    confidence: Literal["high", "low"]

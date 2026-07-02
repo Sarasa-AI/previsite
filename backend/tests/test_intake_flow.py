@@ -90,10 +90,13 @@ def test_intake_four_layer_flow(tmp_path, monkeypatch) -> None:
     layer4 = client.post(
         f"/api/intake/{session_id}/layer4",
         json={
-            "allergy_history": ["پنی‌سیلین"],
-            "past_medical_history": ["دیابت"],
-            "past_surgical_history": ["هیچ‌کدام"],
-            "family_history": ["فشار خون"],
+            "allergies": "پنی‌سیلین",
+            "chronic_conditions": [
+                {"id": "cond-1", "name": "دیابت", "duration": "۳ سال"},
+            ],
+            "surgical_history": "هیچ‌کدام",
+            "family_history": "فشار خون",
+            "current_medications": ["متفورمین"],
         },
         headers=headers,
     )

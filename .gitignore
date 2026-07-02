@@ -61,3 +61,6 @@ frontend/.env
 frontend/.env.local
 .env.local
 *.env.local
+
+# Local API test scripts (may contain tokens)
+api_gemini.py

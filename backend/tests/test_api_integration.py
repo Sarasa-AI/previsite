@@ -626,27 +626,32 @@ class TestLayer4MedicalHistoryContract:
                 )
                 await client.post(f"/api/intake/{session_id}/layer3/generate", headers=headers)
 
-                history_payload = {
-                    "allergy_history": ["پنی‌سیلین", "آسپرین"],
-                    "past_medical_history": ["دیابت نوع ۲", "فشار خون"],
-                    "past_surgical_history": ["آپاندکتومی ۱۳۹۵", "هیچ‌کدام"],
-                    "family_history": ["سرطان پستان (مادر)", "فشار خون (پدر)"],
+                overview_payload = {
+                    "allergies": "پنی‌سیلین، آسپرین",
+                    "surgical_history": "آپاندکتومی ۱۳۹۵",
+                    "family_history": "سرطان پستان (مادر)، فشار خون (پدر)",
+                    "chronic_conditions": [
+                        {"id": "cond-dm", "name": "دیابت نوع ۲", "duration": "۵ سال"},
+                        {"id": "cond-htn", "name": "فشار خون", "duration": "۱۰ سال"},
+                    ],
+                    "current_medications": ["لوزارتان"],
                 }
 
                 response = await client.post(
                     f"/api/intake/{session_id}/layer4",
-                    json=history_payload,
+                    json=overview_payload,
                     headers=headers,
                 )
                 assert response.status_code == 200, response.text
                 body = response.json()
                 assert body["current_layer"] == 5
-                assert body["medical_history"] == history_payload
+                assert body["medical_overview"]["allergies"] == overview_payload["allergies"]
+                assert len(body["medical_overview"]["chronic_conditions"]) == 2
 
         asyncio.run(_run())
         _teardown()
 
-    def test_medical_history_rejects_non_array_fields(self, tmp_path, monkeypatch) -> None:
+    def test_medical_overview_rejects_duplicate_condition_ids(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
             await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
@@ -662,10 +667,11 @@ class TestLayer4MedicalHistoryContract:
                 response = await client.post(
                     f"/api/intake/{session_id}/layer4",
                     json={
-                        "allergy_history": "پنی‌سیلین",
-                        "past_medical_history": [],
-                        "past_surgical_history": [],
-                        "family_history": [],
+                        "allergies": "پنی‌سیلین",
+                        "chronic_conditions": [
+                            {"id": "dup", "name": "دیابت", "duration": ""},
+                            {"id": "dup", "name": "فشار خون", "duration": ""},
+                        ],
                     },
                     headers=headers,
                 )
@@ -674,7 +680,7 @@ class TestLayer4MedicalHistoryContract:
         asyncio.run(_run())
         _teardown()
 
-    def test_empty_medical_history_arrays_default_ok(self, tmp_path, monkeypatch) -> None:
+    def test_empty_medical_overview_defaults_ok(self, tmp_path, monkeypatch) -> None:
         async def _run() -> None:
             await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
@@ -693,9 +699,9 @@ class TestLayer4MedicalHistoryContract:
                     headers=headers,
                 )
                 assert response.status_code == 200
-                history = response.json()["medical_history"]
-                assert history["allergy_history"] == []
-                assert history["past_medical_history"] == []
+                overview = response.json()["medical_overview"]
+                assert overview["allergies"] == ""
+                assert overview["chronic_conditions"] == []
 
         asyncio.run(_run())
         _teardown()
@@ -958,7 +964,7 @@ class TestSessionIsolation:
                 elif suffix == "/layer2/answer":
                     json_body = {"question_id": "onset", "answer": "هک"}
                 elif suffix == "/layer4":
-                    json_body = {"allergy_history": ["هک"]}
+                    json_body = {"allergies": "هک"}
 
                 if method == "POST":
                     response = await client.post(path, json=json_body, headers=intruder_headers)

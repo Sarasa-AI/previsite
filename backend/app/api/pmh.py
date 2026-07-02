@@ -1,80 +1,98 @@
-import json
 import logging
-from pathlib import Path
 
-import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import ValidationError
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.db.database import get_db
+from app.models.pmh import PatientPMH
 from app.models.user import User, UserRole
-from app.schemas.pmh import PMHSchemaResponse, PMHSubmission, PMHSubmissionResponse
-from app.services.pmh_service import upsert_patient_pmh
+from app.schemas.pmh import PatientOverviewResponse, PatientOverviewSubmission
+from app.services.pmh_service import get_patient_overview, upsert_patient_overview
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pmh", tags=["pmh"])
 
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
-DATA_PATH = BACKEND_ROOT / "data" / "pmh_schema.json"
 
-
-@router.get("/schema", response_model=PMHSchemaResponse)
-async def get_pmh_schema(response: Response) -> PMHSchemaResponse:
-    """Return the static PMH questionnaire schema (no PII/PHI)."""
-    if not DATA_PATH.is_file():
-        logger.error("PMH schema file not found: %s", DATA_PATH)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="PMH schema data unavailable",
-        )
-
-    try:
-        async with aiofiles.open(DATA_PATH, "r", encoding="utf-8") as f:
-            raw = json.loads(await f.read())
-        schema = PMHSchemaResponse.model_validate(raw)
-    except (json.JSONDecodeError, ValidationError):
-        logger.exception("PMH schema validation failed for %s", DATA_PATH)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="PMH schema data is invalid",
-        ) from None
-
-    response.headers["Cache-Control"] = "public, max-age=3600"
-    return schema
+@router.get("/schema")
+async def get_pmh_schema() -> None:
+    """Deprecated: nested PMH questionnaire replaced by MedicalOverview."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="PMH questionnaire deprecated; use MedicalOverview",
+    )
 
 
 def _require_patient(current_user: User) -> None:
     if current_user.role != UserRole.PATIENT:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only patients can submit PMH",
+            detail="Only patients can submit medical overview",
         )
 
 
-@router.post("/submit", response_model=PMHSubmissionResponse)
+async def _authorize_patient_access(
+    db: AsyncSession, patient_id: int, current_user: User
+) -> None:
+    if current_user.role == UserRole.PATIENT:
+        if patient_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot access another patient's overview",
+            )
+        return
+
+    if current_user.role != UserRole.DOCTOR:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+
+@router.post("/submit", response_model=PatientOverviewResponse)
 async def submit_pmh(
-    data: PMHSubmission,
+    data: PatientOverviewSubmission,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> PMHSubmissionResponse:
-    """Save or update a patient's structured past medical history."""
+) -> PatientOverviewResponse:
+    """Save or update a patient's lean medical overview."""
     _require_patient(current_user)
 
     if data.patient_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot submit PMH for another patient",
+            detail="Cannot submit overview for another patient",
         )
 
-    row = await upsert_patient_pmh(db, data.patient_id, data.answers)
+    row = await upsert_patient_overview(db, data.patient_id, data.overview)
     await db.commit()
     await db.refresh(row)
 
-    return PMHSubmissionResponse(
+    return PatientOverviewResponse(
         patient_id=row.patient_id,
+        overview=data.overview,
         last_updated=row.last_updated,
-        answer_count=len(data.answers),
+    )
+
+
+@router.get("/overview/{patient_id}", response_model=PatientOverviewResponse)
+async def get_patient_overview_endpoint(
+    patient_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PatientOverviewResponse:
+    await _authorize_patient_access(db, patient_id, current_user)
+
+    row_overview = await get_patient_overview(db, patient_id)
+    result = await db.execute(
+        select(PatientPMH).where(PatientPMH.patient_id == patient_id)
+    )
+    row = result.scalar_one_or_none()
+
+    return PatientOverviewResponse(
+        patient_id=patient_id,
+        overview=row_overview,
+        last_updated=row.last_updated if row else None,
     )
