@@ -199,6 +199,101 @@ class OpenRouterService:
                 "Empty response from OpenRouter after trying all configured models."
             )
 
+        return self._parse_json_content(content)
+
+    async def generate_json_primary(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.2,
+        model: str | None = None,
+        max_tokens: int = 2000,
+    ) -> dict:
+        """Single-model Tier 1 call — no FREE_MODEL_FALLBACKS rotation."""
+        self._ensure_client()
+
+        primary_model = (model or settings.intake_llm_model).strip()
+        messages = [
+            {"role": "system", "content": system_prompt + JSON_ONLY_SUFFIX},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        content: str | None = None
+        last_error: Exception | None = None
+
+        for use_json_format in (True, False):
+            try:
+                content = await self._complete(
+                    messages,
+                    model=primary_model,
+                    use_json_format=use_json_format,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                if content and content.strip():
+                    logger.info(
+                        "OpenRouter Tier 1 success model=%s json_format=%s",
+                        primary_model,
+                        use_json_format,
+                    )
+                    break
+            except AuthenticationError as exc:
+                logger.error(
+                    "OpenRouter authentication failed (401 Unauthorized): %s",
+                    exc,
+                )
+                raise OpenRouterAuthenticationError(
+                    "OpenRouter authentication failed."
+                ) from exc
+            except APIConnectionError as exc:
+                last_error = exc
+                logger.warning(
+                    "OpenRouter Tier 1 connection error model=%s json_format=%s: %s",
+                    primary_model,
+                    use_json_format,
+                    exc,
+                )
+            except APIStatusError as exc:
+                if exc.status_code == 401:
+                    raise OpenRouterAuthenticationError(
+                        "OpenRouter authentication failed."
+                    ) from exc
+                last_error = exc
+                logger.warning(
+                    "OpenRouter Tier 1 status error model=%s status=%s: %s",
+                    primary_model,
+                    exc.status_code,
+                    exc,
+                )
+            except RateLimitError as exc:
+                last_error = exc
+                logger.warning(
+                    "OpenRouter Tier 1 rate limit model=%s: %s",
+                    primary_model,
+                    exc,
+                )
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "OpenRouter Tier 1 call failed model=%s json_format=%s: %s",
+                    primary_model,
+                    use_json_format,
+                    exc,
+                )
+
+        if not content or not content.strip():
+            if isinstance(last_error, (APIConnectionError, APIStatusError, RateLimitError)):
+                raise OpenRouterServiceError(
+                    f"OpenRouter Tier 1 request failed: {last_error}"
+                ) from last_error
+            raise OpenRouterServiceError(
+                f"Empty response from OpenRouter Tier 1 model={primary_model}."
+            )
+
+        return self._parse_json_content(content)
+
+    def _parse_json_content(self, content: str) -> dict:
         try:
             return parse_llm_json(content)
         except ValueError:

@@ -10,6 +10,7 @@ from app.models import Intake, Message, Session as DBSession, Summary
 from app.schemas.medical import MedicalSummary
 from app.services.medical_overview_service import (
     format_conditions_for_summary,
+    format_medication_for_summary,
     load_medical_overview_from_intake,
 )
 from app.services.soap_generator import soap_generator
@@ -48,7 +49,13 @@ def _build_medical_summary_from_intake(intake: Intake) -> MedicalSummary | None:
     return MedicalSummary(
         chief_complaint=clinical.get("chief_complaint") or demographics.get("chief_complaint"),
         past_medical_history=past_medical_history,
-        current_medications=list(overview.current_medications) if overview else [],
+        current_medications=[
+            formatted
+            for med in overview.current_medications
+            if (formatted := format_medication_for_summary(med))
+        ]
+        if overview
+        else [],
         allergies=_overview_allergies_list(overview.allergies) if overview else [],
         additional_notes=clinical.get("hpi_summary"),
         is_hpi_complete=True,

@@ -96,6 +96,10 @@ ollama>=0.1.9
 sentence-transformers>=2.7.0
 numpy>=1.26.0
 
+# Vision / OCR (deterministic lab extraction)
+opencv-python-headless>=4.9.0
+pytesseract>=0.3.10
+
 # Object storage (S3 / MinIO)
 aioboto3>=13.0.0
 aiofiles==24.1.0

@@ -100,7 +100,7 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
             "assessment": "شرح حال اولیه ثبت شد.",
         }
 
-    async def fake_chat(_messages, system_prompt=None):
+    async def fake_chat(_messages, system_prompt=None, **kwargs):
         if len(_messages) == 1:
             return "شدت سردرد از ۱ تا ۱۰ چقدر است؟"
         elif len(_messages) == 3:
@@ -267,7 +267,7 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
             "assessment": "ثبت شد.",
         }
 
-    async def fake_chat(_messages):
+    async def fake_chat(_messages, **kwargs):
         return "آیا علامت دیگری هم دارید؟"
 
     monkeypatch.setattr(chat_api.summary_builder, "build_summary", fake_build_summary)
@@ -306,5 +306,41 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
     )
 
     assert response.status_code == 403
+
+    client._async_cleanup()
+
+
+def test_list_sessions_includes_patient_name_for_doctor(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+
+    patient_token = _register_and_login(
+        client,
+        seed="Named Patient",
+        password="VeryStrongPassword123!",
+    )
+    patient_headers = {"Authorization": f"Bearer {patient_token}"}
+
+    session_response = client.post(
+        "/api/chat/session",
+        json={"initial_complaint": "سردرد"},
+        headers=patient_headers,
+    )
+    assert session_response.status_code == 200
+
+    doctor_login = client.post(
+        "/api/auth/login",
+        json={"national_id": "bagherzade", "password": "0808"},
+    )
+    assert doctor_login.status_code == 200, doctor_login.text
+    doctor_headers = {"Authorization": f"Bearer {doctor_login.json()['access_token']}"}
+
+    sessions_response = client.get("/api/chat/sessions", headers=doctor_headers)
+    assert sessions_response.status_code == 200
+    sessions = sessions_response.json()
+    assert len(sessions) >= 1
+    matching = [s for s in sessions if s["initial_complaint"] == "سردرد"]
+    assert matching
+    assert matching[0]["patient_name"]
+    assert matching[0]["patient_id"] > 0
 
     client._async_cleanup()

@@ -194,3 +194,51 @@ class TestMedicalOverviewIntegration:
 
         asyncio.run(_run())
         _teardown()
+
+    def test_medication_image_upload_returns_extracted_medication_name_null(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        async def _run() -> None:
+            await _setup_test_db(tmp_path, monkeypatch)
+            async with await _async_client() as client:
+                token = await _register_and_login_async(
+                    client,
+                    seed="MedOCR",
+                    password="VeryStrongPassword123!",
+                )
+                headers = _auth_headers(token)
+                session_id = await _create_session(client, headers)
+                await _save_layer1(client, session_id, headers)
+
+                med_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                overview_payload = {
+                    "current_medications": [
+                        {
+                            "id": med_id,
+                            "name": "",
+                            "amount": "",
+                            "frequency": "",
+                        }
+                    ],
+                }
+                layer4 = await client.post(
+                    f"/api/intake/{session_id}/layer4",
+                    json=overview_payload,
+                    headers=headers,
+                )
+                assert layer4.status_code == 200, layer4.text
+
+                upload = await client.post(
+                    f"/api/files/{session_id}/upload",
+                    headers=headers,
+                    files={"file": ("pillbox.png", io.BytesIO(b"fake-image"), "image/png")},
+                    data={"condition_id": med_id},
+                )
+                assert upload.status_code == 200, upload.text
+                body = upload.json()
+                assert body["condition_id"] == med_id
+                assert "extracted_medication_name" in body
+                assert body["extracted_medication_name"] is None
+
+        asyncio.run(_run())
+        _teardown()

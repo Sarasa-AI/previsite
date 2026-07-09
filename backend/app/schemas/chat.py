@@ -8,6 +8,7 @@ class SessionCreate(BaseModel):
 class SessionResponse(BaseModel):
     id: int
     patient_id: int
+    patient_name: Optional[str] = None
     status: str
     initial_complaint: str
     created_at: datetime

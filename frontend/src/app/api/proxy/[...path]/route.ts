@@ -34,6 +34,26 @@ async function forward(request: Request, params: { path: string[] }) {
     body,
   });
 
+  const contentType = response.headers.get("content-type") || "application/json";
+  const isTextResponse =
+    contentType.includes("application/json") ||
+    contentType.startsWith("text/") ||
+    contentType.includes("application/problem+json");
+
+  if (!isTextResponse) {
+    const buffer = await response.arrayBuffer();
+    const outHeaders = new Headers();
+    outHeaders.set("Content-Type", contentType);
+    const disposition = response.headers.get("content-disposition");
+    if (disposition) {
+      outHeaders.set("Content-Disposition", disposition);
+    }
+    return new NextResponse(buffer, {
+      status: response.status,
+      headers: outHeaders,
+    });
+  }
+
   const text = await response.text();
   return new NextResponse(text, {
     status: response.status,

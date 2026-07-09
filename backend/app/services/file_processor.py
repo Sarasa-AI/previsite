@@ -106,6 +106,7 @@ class FileProcessor:
             "file_size": file_size,
             "mime_type": content_type,
             "file_path": s3_key,
+            "content": content,
         }
 
     async def delete_file(self, s3_key: str) -> None:

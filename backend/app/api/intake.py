@@ -20,6 +20,7 @@ from app.schemas.intake import (
 from app.services.intake_llm import intake_llm_service
 from app.services.medical_overview_service import (
     format_conditions_for_summary,
+    format_medications_for_summary,
     link_files_to_conditions,
     load_medical_overview_from_intake,
     overview_for_storage,
@@ -74,7 +75,7 @@ def _sync_patient_profile(user: User, data: DemographicsInput) -> None:
     user.full_name = f"{data.first_name} {data.last_name}".strip()
 
 
-def _to_response(intake: Intake) -> IntakeResponse:
+def _to_response(intake: Intake, session_initial_complaint: str | None = None) -> IntakeResponse:
     demographics = _load_json(intake.demographics_json)
     hpi_questions = _load_json(intake.hpi_questions_json)
     hpi_answers = _load_json(intake.hpi_answers_json)
@@ -85,6 +86,7 @@ def _to_response(intake: Intake) -> IntakeResponse:
         id=intake.id,
         session_id=intake.session_id,
         current_layer=intake.current_layer,
+        session_initial_complaint=session_initial_complaint,
         demographics=DemographicsInput.model_validate(demographics) if demographics else None,
         hpi_questions=HPIQuestionsResponse.model_validate(hpi_questions) if hpi_questions else None,
         hpi_answers=hpi_answers if isinstance(hpi_answers, dict) else None,
@@ -115,9 +117,7 @@ async def _save_summary_from_intake(
     summary.history_present_illness = clinical.get("hpi_summary")
     summary.past_medical_history = format_conditions_for_summary(overview.chronic_conditions)
     summary.allergies = overview.allergies or None
-    summary.medications = (
-        "، ".join(overview.current_medications) if overview.current_medications else None
-    )
+    summary.medications = format_medications_for_summary(overview.current_medications)
     summary.assessment = json.dumps(
         {
             "pertinent_positives": clinical.get("pertinent_positives", []),
@@ -141,9 +141,9 @@ async def get_intake(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_session_or_403(db, session_id, current_user)
+    session = await _get_session_or_403(db, session_id, current_user)
     intake = await _get_or_create_intake(db, session_id)
-    return _to_response(intake)
+    return _to_response(intake, session_initial_complaint=session.initial_complaint)
 
 
 @router.post("/{session_id}/layer1", response_model=IntakeResponse)

@@ -46,6 +46,12 @@ def test_intake_four_layer_flow(tmp_path, monkeypatch) -> None:
     )
     session_id = session_response.json()["id"]
 
+    intake_before_layer1 = client.get(f"/api/intake/{session_id}", headers=headers)
+    assert intake_before_layer1.status_code == 200
+    intake_body = intake_before_layer1.json()
+    assert intake_body["session_initial_complaint"] == "دل درد"
+    assert intake_body["demographics"] is None
+
     layer1 = client.post(
         f"/api/intake/{session_id}/layer1",
         json={

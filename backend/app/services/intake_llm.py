@@ -1,5 +1,4 @@
 import logging
-import asyncio
 import json
 from dataclasses import dataclass
 
@@ -7,12 +6,12 @@ from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.schemas.intake import ClinicalSummary, DemographicsInput, HPIQuestionsResponse
+from app.services.llm_cascade import llm_cascade
 from app.services.narrative_utils import (
     build_hpi_narrative_fallback,
     sex_label_fa,
     validate_narrative,
 )
-from app.services.openrouter_service import OpenRouterServiceError, openrouter_service
 
 logger = logging.getLogger(__name__)
 
@@ -396,31 +395,28 @@ class IntakeLLMService:
     ) -> Layer2GenerationResult:
         user_prompt = _build_layer2_user_prompt(demographics)
 
-        try:
-            parsed = await asyncio.wait_for(
-                openrouter_service.generate_json(
-                    system_prompt=LAYER2_SYSTEM_PROMPT,
-                    user_prompt=user_prompt,
-                    temperature=0.0,
-                    models=openrouter_service.intake_model_candidates(),
-                    max_tokens=INTAKE_MAX_TOKENS,
-                ),
-                timeout=INTAKE_LLM_TIMEOUT,
-            )
-            result = HPIQuestionsResponse.model_validate(parsed)
-            result.questions.sort(key=lambda q: q.priority)
-            return Layer2GenerationResult(questions=result)
-        except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
-            error_message = _log_layer2_fallback(
+        cascade_result = await llm_cascade.generate_json_with_cascade(
+            system_prompt=LAYER2_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            tier3_factory=lambda: _fallback_questions(demographics).model_dump(),
+            temperature=0.0,
+            max_tokens=INTAKE_MAX_TOKENS,
+        )
+
+        if cascade_result.llm_fallback_used:
+            _log_layer2_fallback(
                 session_id=session_id,
                 chief_complaint=demographics.chief_complaint,
-                exc=exc,
+                exc=Exception(cascade_result.error_message or "LLM fallback used"),
             )
-            return Layer2GenerationResult(
-                questions=_fallback_questions(demographics),
-                llm_fallback_used=True,
-                llm_error_message=error_message,
-            )
+
+        result = HPIQuestionsResponse.model_validate(cascade_result.data)
+        result.questions.sort(key=lambda q: q.priority)
+        return Layer2GenerationResult(
+            questions=result,
+            llm_fallback_used=cascade_result.llm_fallback_used,
+            llm_error_message=cascade_result.error_message,
+        )
 
     async def _extract_clinical_data(
         self,
@@ -430,26 +426,30 @@ class IntakeLLMService:
         session_id: int | None = None,
     ) -> tuple[ClinicalExtraction, bool, str | None]:
         user_prompt = _build_extraction_user_prompt(demographics, hpi_answers)
-        try:
-            parsed = await asyncio.wait_for(
-                openrouter_service.generate_json(
-                    system_prompt=EXTRACTION_SYSTEM_PROMPT,
-                    user_prompt=user_prompt,
-                    temperature=0.0,
-                    models=openrouter_service.intake_model_candidates(),
-                    max_tokens=INTAKE_MAX_TOKENS,
-                ),
-                timeout=INTAKE_LLM_TIMEOUT,
-            )
-            return ClinicalExtraction.model_validate(parsed), False, None
-        except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
-            error_message = _log_layer3_fallback(
+
+        cascade_result = await llm_cascade.generate_json_with_cascade(
+            system_prompt=EXTRACTION_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            tier3_factory=lambda: _fallback_extraction(
+                demographics, hpi_answers
+            ).model_dump(),
+            temperature=0.0,
+            max_tokens=INTAKE_MAX_TOKENS,
+        )
+
+        if cascade_result.llm_fallback_used:
+            _log_layer3_fallback(
                 session_id=session_id,
                 chief_complaint=demographics.chief_complaint,
                 stage="clinical extraction",
-                exc=exc,
+                exc=Exception(cascade_result.error_message or "LLM fallback used"),
             )
-            return _fallback_extraction(demographics, hpi_answers), True, error_message
+
+        return (
+            ClinicalExtraction.model_validate(cascade_result.data),
+            cascade_result.llm_fallback_used,
+            cascade_result.error_message,
+        )
 
     async def _generate_hpi_narration(
         self,
@@ -464,32 +464,48 @@ class IntakeLLMService:
         last_error: str | None = None
 
         for attempt in range(max_attempts):
-            try:
-                parsed = await asyncio.wait_for(
-                    openrouter_service.generate_json(
-                        system_prompt=NARRATION_SYSTEM_PROMPT,
-                        user_prompt=user_prompt,
-                        temperature=0.3,
-                        models=openrouter_service.intake_model_candidates(),
-                        max_tokens=INTAKE_MAX_TOKENS,
-                    ),
-                    timeout=INTAKE_LLM_TIMEOUT,
+            cascade_result = await llm_cascade.generate_json_with_cascade(
+                system_prompt=NARRATION_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                tier3_factory=lambda: {
+                    "hpi_summary": build_hpi_narrative_fallback(
+                        age=demographics.age,
+                        sex=demographics.sex,
+                        chief_complaint=extracted.chief_complaint,
+                        hpi_answers=hpi_answers,
+                    )
+                },
+                temperature=0.3,
+                max_tokens=INTAKE_MAX_TOKENS,
+            )
+
+            if cascade_result.tier_used == 3:
+                if cascade_result.llm_fallback_used:
+                    last_error = cascade_result.error_message
+                    _log_layer3_fallback(
+                        session_id=session_id,
+                        chief_complaint=demographics.chief_complaint,
+                        stage=f"HPI narration attempt {attempt + 1}/{max_attempts}",
+                        exc=Exception(last_error or "LLM fallback used"),
+                    )
+                narration = HpiNarration.model_validate(cascade_result.data)
+                return narration.hpi_summary, True, last_error
+
+            narration = HpiNarration.model_validate(cascade_result.data)
+            if validate_narrative(narration.hpi_summary):
+                return (
+                    narration.hpi_summary,
+                    cascade_result.llm_fallback_used,
+                    cascade_result.error_message,
                 )
-                narration = HpiNarration.model_validate(parsed)
-                if validate_narrative(narration.hpi_summary):
-                    return narration.hpi_summary, False, None
-                logger.warning(
-                    "HPI narration failed validation (attempt %s/%s)",
-                    attempt + 1,
-                    max_attempts,
-                )
-            except (OpenRouterServiceError, ValueError, TimeoutError) as exc:
-                last_error = _log_layer3_fallback(
-                    session_id=session_id,
-                    chief_complaint=demographics.chief_complaint,
-                    stage=f"HPI narration attempt {attempt + 1}/{max_attempts}",
-                    exc=exc,
-                )
+
+            logger.warning(
+                "HPI narration failed validation (attempt %s/%s)",
+                attempt + 1,
+                max_attempts,
+            )
+            if cascade_result.llm_fallback_used:
+                last_error = cascade_result.error_message
 
         return (
             build_hpi_narrative_fallback(

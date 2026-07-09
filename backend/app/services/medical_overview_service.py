@@ -13,6 +13,7 @@ from app.schemas.intake import (
     ChronicConditionWithFiles,
     ClinicalOverviewResponse,
     ConditionFileRef,
+    CurrentMedication,
     MedicalOverview,
 )
 
@@ -79,10 +80,92 @@ def format_conditions_for_summary(conditions: list[ChronicCondition]) -> str | N
     return "، ".join(parts) if parts else None
 
 
+def format_medication_for_summary(medication: CurrentMedication, has_file: bool = False) -> str:
+    name = medication.name.strip()
+    if not name:
+        if has_file:
+            name = "نامشخص - تصویر پیوست شد"
+        else:
+            return ""
+
+    dosage_parts = [part for part in (medication.amount.strip(), medication.frequency.strip()) if part]
+    if dosage_parts:
+        return f"{name} - {' '.join(dosage_parts)}"
+    return name
+
+
+def format_medications_for_summary(
+    medications: list[CurrentMedication],
+    files_by_condition: dict[str, list[ConditionFileRef]] | None = None,
+) -> str | None:
+    if not medications:
+        return None
+    files_by_condition = files_by_condition or {}
+    parts: list[str] = []
+    for medication in medications:
+        has_file = bool(files_by_condition.get(medication.id))
+        formatted = format_medication_for_summary(medication, has_file=has_file)
+        if formatted:
+            parts.append(formatted)
+    return "، ".join(parts) if parts else None
+
+
+def format_medication_display(medication: CurrentMedication, has_file: bool = False) -> str:
+    return format_medication_for_summary(medication, has_file=has_file)
+
+
 def validate_condition_id(overview: MedicalOverview, condition_id: str | None) -> bool:
+    return validate_file_link_id(overview, condition_id)
+
+
+def validate_file_link_id(overview: MedicalOverview, condition_id: str | None) -> bool:
     if not condition_id:
         return True
-    return any(c.id == condition_id for c in overview.chronic_conditions)
+    if any(c.id == condition_id for c in overview.chronic_conditions):
+        return True
+    if any(lab.id == condition_id for lab in overview.lab_results):
+        return True
+    if any(med.id == condition_id for med in overview.current_medications):
+        return True
+    return True
+
+
+def is_medication_bind_id(overview: MedicalOverview | None, condition_id: str | None) -> bool:
+    if not overview or not condition_id:
+        return False
+    return any(med.id == condition_id for med in overview.current_medications)
+
+
+def is_lab_bind_id(overview: MedicalOverview | None, condition_id: str | None) -> bool:
+    if not overview or not condition_id:
+        return False
+    return any(lab.id == condition_id for lab in overview.lab_results)
+
+
+def update_lab_extracted_data(
+    intake: Intake,
+    lab_id: str,
+    extracted_data: str,
+) -> MedicalOverview | None:
+    overview = load_medical_overview_from_intake(intake)
+    if not overview:
+        return None
+
+    updated = False
+    lab_results = []
+    for lab in overview.lab_results:
+        if lab.id == lab_id:
+            lab_results.append(lab.model_copy(update={"extracted_data": extracted_data}))
+            updated = True
+        else:
+            lab_results.append(lab)
+
+    if not updated:
+        return None
+
+    overview = overview.model_copy(update={"lab_results": lab_results})
+    intake.medical_history_json = json.dumps(overview_for_storage(overview))
+    return overview
 
 
 def file_to_ref(file_row: FileModel) -> ConditionFileRef:
@@ -126,7 +209,17 @@ def build_clinical_overview(
 
     return ClinicalOverviewResponse(
         hpi=hpi,
-        drug_history=list(overview.current_medications),
+        drug_history=[
+            format_medication_display(
+                medication,
+                has_file=bool(files_by_condition.get(medication.id)),
+            )
+            for medication in overview.current_medications
+            if format_medication_display(
+                medication,
+                has_file=bool(files_by_condition.get(medication.id)),
+            )
+        ],
         allergies=overview.allergies,
         surgical_history=overview.surgical_history,
         family_history=overview.family_history,

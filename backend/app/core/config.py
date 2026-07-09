@@ -115,6 +115,13 @@ class Settings(BaseSettings):
     intake_llm_model: str = "google/gemini-2.5-flash-lite"
     intake_llm_timeout_seconds: float = 20.0
 
+    # LLM cascade / circuit breaker
+    llm_circuit_failure_threshold: int = 3
+    llm_circuit_cooldown_seconds: int = 60
+    llm_tier2_provider: str = "gapgpt"
+    llm_tier2_ollama_model: str = "llama3.2"
+    llm_tier2_openrouter_model: str = "qwen/qwen-2.5-7b-instruct"
+
     # Outbound HTTP proxy for LLM API calls
     http_proxy: Optional[str] = None
 
@@ -127,6 +134,10 @@ class Settings(BaseSettings):
     # File Upload
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     allowed_extensions: list[str] = ["pdf", "jpg", "jpeg", "png", "doc", "docx", "txt"]
+    upload_dir: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("upload_dir", "UPLOAD_DIR"),
+    )
 
     # S3-compatible object storage
     s3_endpoint: Optional[str] = "http://localhost:9000"

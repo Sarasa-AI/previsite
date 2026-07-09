@@ -8,6 +8,7 @@ import type { PatientProfile } from "@/src/hooks/usePatientProfile";
 
 type Layer1Props = {
   initial?: Demographics | null;
+  sessionInitialComplaint?: string | null;
   profile?: PatientProfile | null;
   profileError?: string;
   onSubmit: (data: Demographics) => Promise<void>;
@@ -44,6 +45,7 @@ function sexLabel(value: string) {
 
 export default function Layer1Demographics({
   initial,
+  sessionInitialComplaint,
   profile,
   profileError,
   onSubmit,
@@ -63,15 +65,23 @@ export default function Layer1Demographics({
       ...profilePartial,
       ...(initial ?? {}),
     };
+    if (!merged.chief_complaint?.trim() && sessionInitialComplaint?.trim()) {
+      merged.chief_complaint = sessionInitialComplaint.trim();
+    }
 
-    if (Object.values(profilePartial).some(Boolean) || hasSessionData) {
+    const hasPrefillData =
+      Object.values(profilePartial).some(Boolean) ||
+      hasSessionData ||
+      Boolean(sessionInitialComplaint?.trim());
+
+    if (hasPrefillData) {
       setForm(merged);
       formInitialized.current = true;
       if (profile?.is_complete && !hasSessionData) {
         setMode("confirm");
       }
     }
-  }, [initial, profile]);
+  }, [initial, profile, sessionInitialComplaint]);
 
   const update = (field: keyof Demographics, value: string | number) => {
     setForm((prev) => ({ ...prev, [field]: value }));

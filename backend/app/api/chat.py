@@ -62,6 +62,15 @@ def _build_fallback_question(stage: InterviewStage) -> str:
     )
 
 
+def _patient_display_name(user: User | None) -> str | None:
+    if not user:
+        return None
+    if user.full_name and user.full_name.strip():
+        return user.full_name.strip()
+    parts = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    return parts or None
+
+
 def _calculate_progress(session: DBSession) -> int:
     """محاسبه درصد پیشرفت بر اساس داده‌های موجود در خلاصه"""
     if session.status == "completed" or session.status == "pending_review":
@@ -120,7 +129,10 @@ async def list_sessions(
     current_user: User = Depends(get_current_user),
 ):
     """لیست جلسات (برای بیمار: جلسات خودش، برای پزشک: تمام جلسات)"""
-    query = select(DBSession).options(selectinload(DBSession.summary))
+    query = select(DBSession).options(
+        selectinload(DBSession.summary),
+        selectinload(DBSession.patient),
+    )
 
     if current_user.role == "patient":
         query = query.where(DBSession.patient_id == current_user.id)
@@ -132,6 +144,7 @@ async def list_sessions(
     results = []
     for s in sessions:
         resp = SessionResponse.model_validate(s)
+        resp.patient_name = _patient_display_name(s.patient)
         resp.progress = _calculate_progress(s)
         results.append(resp)
 
@@ -289,7 +302,11 @@ async def send_message(
     )
 
     try:
-        ai_response = await llm_service.chat(history, system_prompt=system_prompt)
+        ai_response = await llm_service.chat(
+            history,
+            system_prompt=system_prompt,
+            tier3_factory=lambda: _build_fallback_question(current_stage),
+        )
     except Exception as e:
         logger.error("LLM Chat Error: %s", str(e))
         ai_response = _build_fallback_question(current_stage)

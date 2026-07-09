@@ -5,6 +5,7 @@ import { AxiosError } from "axios";
 import { FileText, Loader2, RotateCcw, X } from "lucide-react";
 import { extractApiError } from "@/lib/api";
 import { frontendApi } from "@/lib/client";
+import { fileDownloadUrl } from "@/lib/files";
 import type { ConditionFile } from "@/lib/pmh/types";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -14,6 +15,13 @@ type InlineConditionUploadProps = {
   conditionId: string;
   file: ConditionFile | null;
   onFileChange: (conditionId: string, file: ConditionFile | null) => void;
+  onExtractedData?: (extracted: string) => void;
+  onUploadStart?: (conditionId: string) => void;
+  onUploadComplete?: (
+    conditionId: string,
+    file: ConditionFile,
+    extractedMedicationName: string | null | undefined,
+  ) => void;
   disabled?: boolean;
 };
 
@@ -23,6 +31,8 @@ type UploadResponse = {
   size: number;
   mime_type: string;
   condition_id: string | null;
+  extracted_data?: string;
+  extracted_medication_name?: string | null;
 };
 
 function toConditionFile(data: UploadResponse): ConditionFile {
@@ -32,7 +42,7 @@ function toConditionFile(data: UploadResponse): ConditionFile {
     size: data.size,
     mime_type: data.mime_type,
     condition_id: data.condition_id,
-    url: `/api/files/download/${data.id}`,
+    url: fileDownloadUrl(data.id),
   };
 }
 
@@ -41,6 +51,9 @@ export function InlineConditionUpload({
   conditionId,
   file,
   onFileChange,
+  onExtractedData,
+  onUploadStart,
+  onUploadComplete,
   disabled,
 }: InlineConditionUploadProps) {
   const inputId = useMemo(() => `condition-upload-${crypto.randomUUID()}`, []);
@@ -66,13 +79,22 @@ export function InlineConditionUpload({
     setError("");
     setErrorKind(null);
     lastSelectedFileRef.current = selectedFile;
+    onUploadStart?.(conditionId);
 
     const formData = new FormData();
     formData.append("file", selectedFile);
 
     try {
       const response = await frontendApi.uploadFile(sessionId, formData, undefined, conditionId);
-      onFileChange(conditionId, toConditionFile(response.data as UploadResponse));
+      const data = response.data as UploadResponse;
+      const uploadedFile = toConditionFile(data);
+      onFileChange(conditionId, uploadedFile);
+      if (data.extracted_data && onExtractedData) {
+        onExtractedData(data.extracted_data);
+      }
+      if (onUploadComplete) {
+        onUploadComplete(conditionId, uploadedFile, data.extracted_medication_name);
+      }
     } catch (uploadError) {
       const payload = uploadError instanceof AxiosError ? uploadError.response?.data : undefined;
       setError(extractApiError(payload, "آپلود فایل ناموفق بود."));

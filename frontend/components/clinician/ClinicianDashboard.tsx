@@ -1,12 +1,18 @@
 "use client";
 
-import { AlertTriangle, CheckCircle, FileText, Stethoscope, User, XCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AxiosError } from "axios";
+import { AlertTriangle, CheckCircle, Stethoscope, User, XCircle } from "lucide-react";
+import { extractApiError } from "@/lib/api";
+import { frontendApi } from "@/lib/client";
 import type { ClinicalSummary, Demographics, IntakeData } from "@/lib/intake";
-import type { MedicalOverview } from "@/lib/pmh/types";
 import { SEX_OPTIONS } from "@/lib/intake";
+import MedicalOverviewReadOnly from "@/components/clinician/MedicalOverviewReadOnly";
+import type { ConditionFile } from "@/lib/pmh/types";
 
 type ClinicianDashboardProps = {
   intake: IntakeData;
+  sessionId: string;
 };
 
 function sexLabel(value?: string) {
@@ -27,8 +33,11 @@ function TagList({ items, variant }: { items: string[]; variant: "positive" | "n
 
   return (
     <div className="flex flex-wrap gap-2">
-      {items.map((item) => (
-        <span key={item} className={`rounded-full border px-3 py-1 text-xs font-semibold ${styles[variant]}`}>
+      {items.map((item, index) => (
+        <span
+          key={`${item}-${index}`}
+          className={`rounded-full border px-3 py-1 text-xs font-semibold ${styles[variant]}`}
+        >
           {item}
         </span>
       ))}
@@ -102,56 +111,40 @@ function ClinicalSummaryCard({ summary }: { summary: ClinicalSummary }) {
   );
 }
 
-function TextSection({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-      <p className="mb-2 text-sm font-semibold text-trust">{label}</p>
-      <p className="text-sm leading-relaxed text-slate-700">{value.trim() || "ثبت نشده"}</p>
-    </div>
-  );
-}
+export default function ClinicianDashboard({ intake, sessionId }: ClinicianDashboardProps) {
+  const [conditionFiles, setConditionFiles] = useState<Record<string, ConditionFile>>({});
+  const [filesError, setFilesError] = useState("");
 
-function MedicalOverviewCard({ overview }: { overview: MedicalOverview }) {
-  return (
-    <div className="medical-card space-y-4">
-      <div className="flex items-center gap-2 text-trust">
-        <FileText className="h-5 w-5" />
-        <h3 className="text-lg font-bold">سوابق پزشکی (لایه ۴)</h3>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextSection label="حساسیت‌ها" value={overview.allergies} />
-        <TextSection label="سوابق جراحی" value={overview.surgical_history} />
-        <TextSection label="سابقه خانوادگی" value={overview.family_history} />
-        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:col-span-2">
-          <p className="mb-2 text-sm font-semibold text-trust">بیماری‌های مزمن</p>
-          {overview.chronic_conditions.length === 0 ? (
-            <span className="text-sm text-slate-500">ثبت نشده</span>
-          ) : (
-            <ul className="space-y-2 text-sm text-slate-700">
-              {overview.chronic_conditions.map((condition) => (
-                <li key={condition.id}>
-                  {condition.name}
-                  {condition.duration ? ` — ${condition.duration}` : ""}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:col-span-2">
-          <p className="mb-2 text-sm font-semibold text-trust">داروهای فعلی</p>
-          <TagList items={overview.current_medications} variant="neutral" />
-        </div>
-      </div>
-    </div>
-  );
-}
+  useEffect(() => {
+    const loadFiles = async () => {
+      try {
+        const response = await frontendApi.listFiles(sessionId);
+        const files = response.data as ConditionFile[];
+        const map: Record<string, ConditionFile> = {};
+        for (const file of files) {
+          if (file.condition_id) {
+            map[file.condition_id] = file;
+          }
+        }
+        setConditionFiles(map);
+        setFilesError("");
+      } catch (requestError) {
+        const payload = requestError instanceof AxiosError ? requestError.response?.data : undefined;
+        setFilesError(extractApiError(payload, "بارگذاری فایل‌ها ناموفق بود."));
+      }
+    };
 
-export default function ClinicianDashboard({ intake }: ClinicianDashboardProps) {
+    void loadFiles();
+  }, [sessionId]);
+
   return (
     <section className="space-y-6">
       {intake.demographics && <DemographicsCard data={intake.demographics} />}
       {intake.clinical_summary && <ClinicalSummaryCard summary={intake.clinical_summary} />}
-      {intake.medical_overview && <MedicalOverviewCard overview={intake.medical_overview} />}
+      {filesError ? <p className="text-sm text-red-600">{filesError}</p> : null}
+      {intake.medical_overview && (
+        <MedicalOverviewReadOnly overview={intake.medical_overview} conditionFiles={conditionFiles} />
+      )}
     </section>
   );
 }

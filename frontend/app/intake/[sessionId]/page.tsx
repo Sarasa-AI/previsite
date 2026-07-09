@@ -189,6 +189,7 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
           {currentLayer <= 1 && (
             <Layer1Demographics
               initial={intake?.demographics}
+              sessionInitialComplaint={intake?.session_initial_complaint}
               profile={profile ?? null}
               profileError={
                 profileQueryError
