@@ -82,6 +82,9 @@ watchfiles==1.1.1
 wcwidth==0.6.0
 websockets==16.0
 pypdf>=4.2.0
+reportlab>=4.2.0
+arabic-reshaper>=3.0.0
+python-bidi>=0.4.2
 
 pillow==10.2.0
 
@@ -99,7 +102,11 @@ numpy>=1.26.0
 # Vision / OCR (deterministic lab extraction)
 opencv-python-headless>=4.9.0
 pytesseract>=0.3.10
+rapidfuzz>=3.6.0
 
 # Object storage (S3 / MinIO)
 aioboto3>=13.0.0
 aiofiles==24.1.0
+
+# Structured logging
+loguru>=0.7.2

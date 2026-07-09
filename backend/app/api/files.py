@@ -1,8 +1,8 @@
-import logging
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import RedirectResponse, Response
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.schemas.intake import FileConditionLink
 from app.services.file_processor import file_processor
 from app.services.medical_overview_service import (
     is_lab_bind_id,
+    is_medication_bind_id,
     load_medical_overview_from_intake,
     update_lab_extracted_data,
     validate_file_link_id,
@@ -27,8 +28,6 @@ router = APIRouter(
     prefix="/api/files",
     tags=["files"],
 )
-
-logger = logging.getLogger(__name__)
 
 
 async def _get_authorized_session(
@@ -52,6 +51,7 @@ async def upload_file(
     session_id: int,
     file: UploadFile = File(...),
     condition_id: str | None = Form(default=None),
+    condition_type: str | None = Form(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Dict:
@@ -71,7 +71,7 @@ async def upload_file(
         )
 
     extracted_data: str | None = None
-    extracted_medication_name: str | None = None
+    extracted_medications: list[dict[str, str]] | None = None
     intake_for_ocr: Intake | None = None
 
     if condition_id:
@@ -108,7 +108,7 @@ async def upload_file(
         raise
     except Exception:
         await db.rollback()
-        logger.exception("File upload failed for session_id=%s", session_id)
+        logger.exception("File upload failed for session_id={}", session_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Upload failed",
@@ -120,27 +120,48 @@ async def upload_file(
         is_chronic = bool(
             overview and any(c.id == condition_id for c in overview.chronic_conditions)
         )
-        if mime_type.startswith("image/"):
+        is_lab = condition_type == "lab" or is_lab_bind_id(overview, condition_id)
+        is_medication_slot = condition_type == "medication" or (
+            condition_type is None and is_medication_bind_id(overview, condition_id)
+        )
+        if is_lab and (
+            mime_type.startswith("image/") or mime_type == "application/pdf"
+        ):
             try:
-                image_bytes = file_data["content"]
-                if is_lab_bind_id(overview, condition_id):
-                    extracted_data = extract_lab_values_ocr(image_bytes)
-                    if extracted_data and intake_for_ocr and update_lab_extracted_data(
-                        intake_for_ocr, condition_id, extracted_data
-                    ):
-                        await db.commit()
-                elif not is_chronic:
-                    medication_ocr_attempted = True
-                    extracted_medication_name = extract_medication_ocr(image_bytes, mime_type)
+                extracted_data = extract_lab_values_ocr(file_data["content"], mime_type)
+                if extracted_data and intake_for_ocr and update_lab_extracted_data(
+                    intake_for_ocr, condition_id, extracted_data
+                ):
+                    await db.commit()
             except Exception as e:
                 logger.error(
-                    "OCR extraction failed for session_id=%s condition_id=%s: %s",
+                    "OCR extraction failed session_id={} condition_id={} mime_type={} ocr_type=lab error={}",
                     session_id,
                     condition_id,
+                    mime_type,
                     e,
                 )
                 extracted_data = None
-                extracted_medication_name = None
+        elif (
+            mime_type.startswith("image/")
+            and not is_chronic
+            and not is_lab
+            and (is_medication_slot or condition_type is None)
+        ):
+            try:
+                medication_ocr_attempted = True
+                extracted_medications = extract_medication_ocr(
+                    file_data["content"], mime_type
+                )
+            except Exception as e:
+                logger.error(
+                    "OCR extraction failed session_id={} condition_id={} mime_type={} ocr_type=medication error={}",
+                    session_id,
+                    condition_id,
+                    mime_type,
+                    e,
+                )
+                extracted_medications = None
 
     response: Dict = {
         "id": db_file.id,
@@ -152,10 +173,10 @@ async def upload_file(
     }
     if extracted_data is not None:
         response["extracted_data"] = extracted_data
-    if extracted_medication_name is not None:
-        response["extracted_medication_name"] = extracted_medication_name
+    if extracted_medications is not None:
+        response["extracted_medications"] = extracted_medications
     elif medication_ocr_attempted:
-        response["extracted_medication_name"] = None
+        response["extracted_medications"] = None
     return response
 
 

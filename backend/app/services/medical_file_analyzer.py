@@ -2,7 +2,6 @@ import asyncio
 import base64
 import hashlib
 import json
-import logging
 import os
 import re
 from datetime import datetime
@@ -12,15 +11,12 @@ from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 import aiofiles
 import httpx
 from anthropic import AsyncAnthropic
+from loguru import logger
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
-
-# تنظیم logging با ماسک کردن اطلاعات حساس
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # -----------------------------
 # مدل‌های داده‌ای و تایپ‌ها
@@ -86,7 +82,7 @@ class MedicalExtraction(BaseModel):
             parsed = datetime.fromisoformat(cleaned)
             return parsed.date().isoformat()
         except ValueError:
-            logger.warning("Invalid date format received from model: %s", value)
+            logger.warning("Invalid date format received from model: {}", value)
             return cleaned
 
 
@@ -186,10 +182,10 @@ class MedicalFileAnalyzer:
             try:
                 async with aiofiles.open(cache_file, "r", encoding="utf-8") as f:
                     content = await f.read()
-                logger.info("Cache hit for file hash: %s", file_hash[:8])
+                logger.info("Cache hit for file hash: {}", file_hash[:8])
                 return json.loads(content)
             except Exception as exc:
-                logger.warning("Unable to read cache (%s): %s", cache_file.name, exc)
+                logger.warning("Unable to read cache ({}): {}", cache_file.name, exc)
         return None
 
     async def _save_to_cache(self, file_hash: str, result: Dict[str, Any]) -> None:
@@ -197,9 +193,9 @@ class MedicalFileAnalyzer:
         try:
             async with aiofiles.open(cache_file, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(result, ensure_ascii=False, indent=2))
-            logger.info("Result cached under hash: %s", file_hash[:8])
+            logger.info("Result cached under hash: {}", file_hash[:8])
         except Exception as exc:
-            logger.warning("Unable to write cache (%s): %s", cache_file.name, exc)
+            logger.warning("Unable to write cache ({}): {}", cache_file.name, exc)
 
     def _validate_file(self, file_path: str) -> Path:
         path = Path(file_path)
@@ -390,16 +386,26 @@ class MedicalFileAnalyzer:
             if isinstance(content, list):
                 content = "".join(chunk["text"] for chunk in content if chunk.get("type") == "text")
 
-            logger.info("OpenAI response received (model: %s).", model)
+            logger.info("OpenAI response received provider=openai model={}", model)
             return self._safe_json_load(content)
 
         except Exception as exc:
             error_msg = str(exc).lower()
             if any(keyword in error_msg for keyword in ("timeout", "connection", "network", "rate limit")):
-                logger.warning("Retryable error from OpenAI: %s", exc)
+                logger.warning(
+                    "Retryable error from OpenAI provider=openai model={} error_type={} detail={}",
+                    model,
+                    type(exc).__name__,
+                    exc,
+                )
                 raise RetryableAPIError(f"OpenAI API error: {exc}") from exc
 
-            logger.error("Permanent error from OpenAI: %s", exc)
+            logger.error(
+                "Permanent error from OpenAI provider=openai model={} error_type={} detail={}",
+                model,
+                type(exc).__name__,
+                exc,
+            )
             raise PermanentAPIError(f"OpenAI API error: {exc}") from exc
 
     @retry(
@@ -456,16 +462,26 @@ class MedicalFileAnalyzer:
             if isinstance(content, list):
                 content = "".join(chunk["text"] for chunk in content if chunk.get("type") == "text")
 
-            logger.info("OpenRouter response received (model: %s).", model)
+            logger.info("OpenRouter response received provider=openrouter model={}", model)
             return self._safe_json_load(content)
 
         except Exception as exc:
             error_msg = str(exc).lower()
             if any(keyword in error_msg for keyword in ("timeout", "connection", "network", "rate limit")):
-                logger.warning("Retryable error from OpenRouter: %s", exc)
+                logger.warning(
+                    "Retryable error from OpenRouter provider=openrouter model={} error_type={} detail={}",
+                    model,
+                    type(exc).__name__,
+                    exc,
+                )
                 raise RetryableAPIError(f"OpenRouter API error: {exc}") from exc
 
-            logger.error("Permanent error from OpenRouter: %s", exc)
+            logger.error(
+                "Permanent error from OpenRouter provider=openrouter model={} error_type={} detail={}",
+                model,
+                type(exc).__name__,
+                exc,
+            )
             raise PermanentAPIError(f"OpenRouter API error: {exc}") from exc
 
     @retry(
@@ -501,16 +517,26 @@ class MedicalFileAnalyzer:
 
             # Anthropic پاسخ را به صورت لیست segment باز می‌گرداند
             content_text = " ".join(segment.text for segment in response.content if hasattr(segment, "text"))
-            logger.info("Anthropic response received (model: %s).", model)
+            logger.info("Anthropic response received provider=anthropic model={}", model)
             return self._safe_json_load(content_text)
 
         except Exception as exc:
             error_msg = str(exc).lower()
             if any(keyword in error_msg for keyword in ("timeout", "connection", "network", "rate limit", "overloaded")):
-                logger.warning("Retryable error from Anthropic: %s", exc)
+                logger.warning(
+                    "Retryable error from Anthropic provider=anthropic model={} error_type={} detail={}",
+                    model,
+                    type(exc).__name__,
+                    exc,
+                )
                 raise RetryableAPIError(f"Anthropic API error: {exc}") from exc
 
-            logger.error("Permanent error from Anthropic: %s", exc)
+            logger.error(
+                "Permanent error from Anthropic provider=anthropic model={} error_type={} detail={}",
+                model,
+                type(exc).__name__,
+                exc,
+            )
             raise PermanentAPIError(f"Anthropic API error: {exc}") from exc
 
     # -----------------------------
@@ -525,7 +551,7 @@ class MedicalFileAnalyzer:
         prefer_provider: Optional[Literal["openai", "anthropic", "openrouter"]] = None,
     ) -> MedicalExtraction:
         validated_path = self._validate_file(file_path)
-        logger.info("Processing file: %s", validated_path.name)
+        logger.info("Processing file file_path={}", validated_path.name)
 
         file_hash: Optional[str] = None
         if use_cache:
@@ -568,19 +594,37 @@ class MedicalFileAnalyzer:
 
                 if use_cache and file_hash:
                     await self._save_to_cache(file_hash, extraction.model_dump())
-                logger.info("Analysis completed successfully using provider: %s.", provider)
+                logger.info("Analysis completed successfully provider={} file_path={}", provider, validated_path.name)
                 return extraction
 
             except PermanentAPIError as exc:
-                logger.error("Permanent error with %s, switching provider.", provider)
+                logger.error(
+                    "Permanent error with provider={}, switching provider file_path={} error_type={} detail={}",
+                    provider,
+                    validated_path.name,
+                    type(exc).__name__,
+                    exc,
+                )
                 last_exception = exc
                 continue
             except RetryableAPIError as exc:
-                logger.error("Retries exhausted for %s, switching provider.", provider)
+                logger.error(
+                    "Retries exhausted for provider={}, switching provider file_path={} error_type={} detail={}",
+                    provider,
+                    validated_path.name,
+                    type(exc).__name__,
+                    exc,
+                )
                 last_exception = exc
                 continue
             except Exception as exc:
-                logger.exception("Unexpected error with %s: %s", provider, exc)
+                logger.exception(
+                    "Unexpected error with provider={} file_path={} error_type={} detail={}",
+                    provider,
+                    validated_path.name,
+                    type(exc).__name__,
+                    exc,
+                )
                 last_exception = exc
                 continue
 
@@ -593,7 +637,12 @@ class MedicalFileAnalyzer:
         successful: List[MedicalExtraction] = []
         for file_path, result in zip(file_paths, results):
             if isinstance(result, Exception):
-                logger.error("Failed to analyze %s: %s", file_path, result)
+                logger.error(
+                    "Failed to analyze file_path={} error_type={} detail={}",
+                    file_path,
+                    type(result).__name__,
+                    result,
+                )
             else:
                 successful.append(result)
 
@@ -620,7 +669,7 @@ async def main() -> None:
         print(f"تعداد داروها: {len(result.medications)}")
         print(f"\nخلاصه: {result.summary}")
     except Exception as exc:
-        logger.error("خطا در تحلیل: %s", exc)
+        logger.error("Analysis failed error_type={} detail={}", type(exc).__name__, exc)
 
 
 if __name__ == "__main__":

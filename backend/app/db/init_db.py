@@ -8,6 +8,7 @@ from sqlalchemy.exc import OperationalError
 from app.auth.security import get_password_hash
 from app.db.database import Base, engine, get_async_session
 from app.models.user import User, UserRole
+from scripts.seed_drugs import seed_drugs
 
 logger = logging.getLogger(__name__)
 
@@ -79,4 +80,5 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
     await _seed_default_doctor()
+    await seed_drugs(refresh_matcher=False)
     logger.info("Database tables created successfully")

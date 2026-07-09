@@ -195,7 +195,7 @@ class TestMedicalOverviewIntegration:
         asyncio.run(_run())
         _teardown()
 
-    def test_medication_image_upload_returns_extracted_medication_name_null(
+    def test_medication_image_upload_returns_extracted_medications_null(
         self, tmp_path, monkeypatch
     ) -> None:
         async def _run() -> None:
@@ -237,8 +237,8 @@ class TestMedicalOverviewIntegration:
                 assert upload.status_code == 200, upload.text
                 body = upload.json()
                 assert body["condition_id"] == med_id
-                assert "extracted_medication_name" in body
-                assert body["extracted_medication_name"] is None
+                assert "extracted_medications" in body
+                assert body["extracted_medications"] is None
 
         asyncio.run(_run())
         _teardown()

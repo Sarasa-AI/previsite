@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { HybridChipInput } from "@/components/intake/HybridChipInput";
-import { InlineConditionUpload } from "@/components/intake/InlineConditionUpload";
+import { InlineConditionUpload, type ExtractedMedication } from "@/components/intake/InlineConditionUpload";
 import { SuggestionChips } from "@/components/intake/SuggestionChips";
 import {
   MEDICATION_AMOUNT_OPTIONS,
@@ -60,7 +60,7 @@ function MedicationRow({
   onUploadComplete: (
     conditionId: string,
     file: ConditionFile,
-    extractedMedicationName: string | null | undefined,
+    extractedMedications: ExtractedMedication[] | null | undefined,
   ) => void;
   onRemove: () => void;
   disabled?: boolean;
@@ -75,11 +75,12 @@ function MedicationRow({
 
   return (
     <div className="space-y-2 border-b border-slate-100 py-2 last:border-b-0">
-      <div className={COMPACT_ROW_CLASS}>
-        <div className="relative min-w-0 flex-1">
+      <div className={COMPACT_ROW_CLASS} dir="auto">
+        <div className="relative min-w-0 flex-1" dir="ltr">
           <input
             type="text"
-            className="field-input w-full"
+            className="field-input w-full text-left"
+            dir="ltr"
             value={medication.name}
             onChange={(e) => onMedicationChange({ name: e.target.value })}
             placeholder="نام دارو"
@@ -94,6 +95,7 @@ function MedicationRow({
         <InlineConditionUpload
           sessionId={sessionId}
           conditionId={medication.id}
+          conditionType="medication"
           file={file}
           onFileChange={onConditionFileChange}
           onUploadStart={onUploadStart}
@@ -110,18 +112,48 @@ function MedicationRow({
           <X className="h-4 w-4" />
         </button>
       </div>
-      <SuggestionChips
-        suggestions={[...MEDICATION_AMOUNT_OPTIONS]}
-        selectedChips={medication.amount ? [medication.amount] : []}
-        onChipClick={toggleAmount}
-        disabled={disabled}
-      />
-      <SuggestionChips
-        suggestions={[...MEDICATION_FREQUENCY_OPTIONS]}
-        selectedChips={medication.frequency ? [medication.frequency] : []}
-        onChipClick={toggleFrequency}
-        disabled={disabled}
-      />
+      <div className="grid gap-2 sm:grid-cols-2" dir="rtl">
+        <label className="block space-y-1">
+          <span className="text-xs font-medium text-slate-600">تعداد در هر وعده</span>
+          <input
+            type="text"
+            className="field-input w-full text-right"
+            dir="rtl"
+            value={medication.amount}
+            onChange={(e) => onMedicationChange({ amount: e.target.value })}
+            placeholder="۱ عدد"
+            disabled={disabled}
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs font-medium text-slate-600">تعداد در روز</span>
+          <input
+            type="text"
+            className="field-input w-full text-right"
+            dir="rtl"
+            value={medication.frequency}
+            onChange={(e) => onMedicationChange({ frequency: e.target.value })}
+            placeholder="روزی ۱ بار"
+            disabled={disabled}
+          />
+        </label>
+      </div>
+      <div dir="rtl">
+        <SuggestionChips
+          suggestions={[...MEDICATION_AMOUNT_OPTIONS]}
+          selectedChips={medication.amount ? [medication.amount] : []}
+          onChipClick={toggleAmount}
+          disabled={disabled}
+        />
+      </div>
+      <div dir="rtl">
+        <SuggestionChips
+          suggestions={[...MEDICATION_FREQUENCY_OPTIONS]}
+          selectedChips={medication.frequency ? [medication.frequency] : []}
+          onChipClick={toggleFrequency}
+          disabled={disabled}
+        />
+      </div>
     </div>
   );
 }
@@ -164,6 +196,7 @@ function ExtraConditionRow({
       <InlineConditionUpload
         sessionId={sessionId}
         conditionId={condition.id}
+        conditionType="chronic"
         file={file}
         onFileChange={onConditionFileChange}
         disabled={disabled}
@@ -274,16 +307,38 @@ export function MedicalOverviewCard({
   const handleMedicationUploadComplete = (
     conditionId: string,
     _file: ConditionFile,
-    extractedMedicationName: string | null | undefined,
+    extractedMedications: ExtractedMedication[] | null | undefined,
   ) => {
     setOcrLoadingId(null);
-    if (!extractedMedicationName) {
+    if (!extractedMedications?.length) {
       return;
     }
-    const medication = value.current_medications.find((item) => item.id === conditionId);
-    if (medication && !medication.name.trim()) {
-      updateMedication(conditionId, { name: extractedMedicationName });
+
+    const [first, ...rest] = extractedMedications;
+    let updated = [...value.current_medications];
+
+    const current = updated.find((item) => item.id === conditionId);
+    if (current) {
+      updated = updated.map((item) =>
+        item.id === conditionId
+          ? {
+              ...item,
+              name: item.name.trim() || first.name,
+              amount: item.amount.trim() || first.amount,
+              frequency: item.frequency.trim() || first.frequency,
+            }
+          : item,
+      );
     }
+
+    const newRows: CurrentMedication[] = rest.map((med) => ({
+      id: crypto.randomUUID(),
+      name: med.name,
+      amount: med.amount,
+      frequency: med.frequency,
+    }));
+
+    onChange({ ...value, current_medications: [...updated, ...newRows] });
   };
 
   const addLabResult = () => {
@@ -423,6 +478,7 @@ export function MedicalOverviewCard({
                     <InlineConditionUpload
                       sessionId={sessionId}
                       conditionId={bindId}
+                      conditionType="lab"
                       file={conditionFiles[bindId] ?? null}
                       onFileChange={onConditionFileChange}
                       onExtractedData={(extracted) => onLabExtractedData(bindId, extracted)}

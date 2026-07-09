@@ -6,6 +6,7 @@ from .summary import Summary
 from .intake import Intake
 from .medical_knowledge import MedicalKnowledge
 from .pmh import PatientPMH
+from .drug import GenericDrug, BrandDrug, DrugAlias
 
 __all__ = [
     "User",
@@ -16,4 +17,7 @@ __all__ = [
     "Intake",
     "MedicalKnowledge",
     "PatientPMH",
+    "GenericDrug",
+    "BrandDrug",
+    "DrugAlias",
 ]

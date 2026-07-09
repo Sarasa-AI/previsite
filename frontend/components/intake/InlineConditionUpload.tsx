@@ -10,9 +10,18 @@ import type { ConditionFile } from "@/lib/pmh/types";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
+export type ExtractedMedication = {
+  name: string;
+  amount: string;
+  frequency: string;
+};
+
+export type ConditionUploadType = "lab" | "medication" | "chronic";
+
 type InlineConditionUploadProps = {
   sessionId: string;
   conditionId: string;
+  conditionType?: ConditionUploadType;
   file: ConditionFile | null;
   onFileChange: (conditionId: string, file: ConditionFile | null) => void;
   onExtractedData?: (extracted: string) => void;
@@ -20,7 +29,7 @@ type InlineConditionUploadProps = {
   onUploadComplete?: (
     conditionId: string,
     file: ConditionFile,
-    extractedMedicationName: string | null | undefined,
+    extractedMedications: ExtractedMedication[] | null | undefined,
   ) => void;
   disabled?: boolean;
 };
@@ -32,7 +41,7 @@ type UploadResponse = {
   mime_type: string;
   condition_id: string | null;
   extracted_data?: string;
-  extracted_medication_name?: string | null;
+  extracted_medications?: ExtractedMedication[] | null;
 };
 
 function toConditionFile(data: UploadResponse): ConditionFile {
@@ -49,6 +58,7 @@ function toConditionFile(data: UploadResponse): ConditionFile {
 export function InlineConditionUpload({
   sessionId,
   conditionId,
+  conditionType,
   file,
   onFileChange,
   onExtractedData,
@@ -85,15 +95,21 @@ export function InlineConditionUpload({
     formData.append("file", selectedFile);
 
     try {
-      const response = await frontendApi.uploadFile(sessionId, formData, undefined, conditionId);
+      const response = await frontendApi.uploadFile(
+        sessionId,
+        formData,
+        undefined,
+        conditionId,
+        conditionType,
+      );
       const data = response.data as UploadResponse;
       const uploadedFile = toConditionFile(data);
       onFileChange(conditionId, uploadedFile);
       if (data.extracted_data && onExtractedData) {
         onExtractedData(data.extracted_data);
       }
-      if (onUploadComplete) {
-        onUploadComplete(conditionId, uploadedFile, data.extracted_medication_name);
+      if (onUploadComplete && conditionType === "medication") {
+        onUploadComplete(conditionId, uploadedFile, data.extracted_medications);
       }
     } catch (uploadError) {
       const payload = uploadError instanceof AxiosError ? uploadError.response?.data : undefined;
