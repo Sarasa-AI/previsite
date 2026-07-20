@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2, Plus, X } from "lucide-react";
+import { useState, type Dispatch, type SetStateAction } from "react";
+import { Loader2, MessageCircleQuestion, Plus, X } from "lucide-react";
 import { HybridChipInput } from "@/components/intake/HybridChipInput";
 import { InlineConditionUpload, type ExtractedMedication } from "@/components/intake/InlineConditionUpload";
 import { SuggestionChips } from "@/components/intake/SuggestionChips";
@@ -24,10 +24,15 @@ import type {
 } from "@/lib/pmh/types";
 
 const COMPACT_ROW_CLASS = "flex flex-wrap items-center gap-2 border-b border-slate-100 py-1.5 sm:flex-nowrap";
+const MEDICATION_COMPACT_ROW_CLASS = "flex flex-wrap items-center gap-2 py-1.5 sm:flex-nowrap";
+
+function medicationFingerprint(med: Pick<CurrentMedication, "name" | "amount" | "frequency">): string {
+  return `${med.name.trim()}|${med.amount.trim()}|${med.frequency.trim()}`;
+}
 
 type MedicalOverviewCardProps = {
   value: MedicalOverview;
-  onChange: (value: MedicalOverview) => void;
+  onChange: Dispatch<SetStateAction<MedicalOverview>>;
   sessionId: string;
   conditionFiles: Record<string, ConditionFile>;
   onConditionFileChange: (conditionId: string, file: ConditionFile | null) => void;
@@ -35,6 +40,7 @@ type MedicalOverviewCardProps = {
   onAddLabResult: () => void;
   onRemoveLabResult: (index: number) => void;
   onLabExtractedData: (bindId: string, extracted: string) => void;
+  llmPatientQuestions?: string[];
   disabled?: boolean;
 };
 
@@ -74,8 +80,8 @@ function MedicationRow({
   };
 
   return (
-    <div className="space-y-2 border-b border-slate-100 py-2 last:border-b-0">
-      <div className={COMPACT_ROW_CLASS} dir="auto">
+    <div className="space-y-2 border-b border-gray-100 pb-3">
+      <div className={MEDICATION_COMPACT_ROW_CLASS} dir="auto">
         <div className="relative min-w-0 flex-1" dir="ltr">
           <input
             type="text"
@@ -224,12 +230,13 @@ export function MedicalOverviewCard({
   onAddLabResult,
   onRemoveLabResult,
   onLabExtractedData,
+  llmPatientQuestions,
   disabled,
 }: MedicalOverviewCardProps) {
   const [ocrLoadingId, setOcrLoadingId] = useState<string | null>(null);
 
   const updateField = <K extends keyof MedicalOverview>(field: K, fieldValue: MedicalOverview[K]) => {
-    onChange({ ...value, [field]: fieldValue });
+    onChange((prev) => ({ ...prev, [field]: fieldValue }));
   };
 
   const addCondition = () => {
@@ -280,24 +287,27 @@ export function MedicalOverviewCard({
       amount: "",
       frequency: "",
     };
-    updateField("current_medications", [...value.current_medications, medication]);
+    onChange((prev) => ({
+      ...prev,
+      current_medications: [...prev.current_medications, medication],
+    }));
   };
 
   const updateMedication = (id: string, patch: Partial<CurrentMedication>) => {
-    updateField(
-      "current_medications",
-      value.current_medications.map((medication) =>
+    onChange((prev) => ({
+      ...prev,
+      current_medications: prev.current_medications.map((medication) =>
         medication.id === id ? { ...medication, ...patch } : medication,
       ),
-    );
+    }));
   };
 
   const removeMedication = (id: string) => {
     onConditionFileChange(id, null);
-    updateField(
-      "current_medications",
-      value.current_medications.filter((medication) => medication.id !== id),
-    );
+    onChange((prev) => ({
+      ...prev,
+      current_medications: prev.current_medications.filter((medication) => medication.id !== id),
+    }));
   };
 
   const handleMedicationUploadStart = (conditionId: string) => {
@@ -314,31 +324,60 @@ export function MedicalOverviewCard({
       return;
     }
 
-    const [first, ...rest] = extractedMedications;
-    let updated = [...value.current_medications];
-
-    const current = updated.find((item) => item.id === conditionId);
-    if (current) {
-      updated = updated.map((item) =>
-        item.id === conditionId
-          ? {
-              ...item,
-              name: item.name.trim() || first.name,
-              amount: item.amount.trim() || first.amount,
-              frequency: item.frequency.trim() || first.frequency,
-            }
-          : item,
+    onChange((prev) => {
+      const [first, ...rest] = extractedMedications;
+      const existingFingerprints = new Set(
+        prev.current_medications.map((med) => medicationFingerprint(med)),
       );
-    }
 
-    const newRows: CurrentMedication[] = rest.map((med) => ({
-      id: crypto.randomUUID(),
-      name: med.name,
-      amount: med.amount,
-      frequency: med.frequency,
-    }));
+      const hasTargetRow = prev.current_medications.some((item) => item.id === conditionId);
+      let medications = prev.current_medications;
 
-    onChange({ ...value, current_medications: [...updated, ...newRows] });
+      if (hasTargetRow) {
+        medications = medications.map((item) =>
+          item.id === conditionId
+            ? {
+                ...item,
+                name: first.name,
+                amount: first.amount,
+                frequency: first.frequency,
+              }
+            : item,
+        );
+      } else {
+        medications = [
+          {
+            id: conditionId,
+            name: first.name,
+            amount: first.amount,
+            frequency: first.frequency,
+          },
+          ...medications,
+        ];
+      }
+
+      existingFingerprints.add(medicationFingerprint(first));
+
+      const newRows: CurrentMedication[] = [];
+      for (const med of rest) {
+        const fingerprint = medicationFingerprint(med);
+        if (existingFingerprints.has(fingerprint)) {
+          continue;
+        }
+        existingFingerprints.add(fingerprint);
+        newRows.push({
+          id: crypto.randomUUID(),
+          name: med.name,
+          amount: med.amount,
+          frequency: med.frequency,
+        });
+      }
+
+      return {
+        ...prev,
+        current_medications: [...medications, ...newRows],
+      };
+    });
   };
 
   const addLabResult = () => {
@@ -512,6 +551,19 @@ export function MedicalOverviewCard({
 
       <div className="space-y-2 border-t border-slate-100 pt-4">
         <h3 className="text-sm font-bold text-slate-900">سوالات و ملاحظات</h3>
+        {llmPatientQuestions?.length ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/90 p-3">
+            <div className="mb-2 flex items-center gap-2 text-amber-900">
+              <MessageCircleQuestion className="h-5 w-5 shrink-0" />
+              <p className="text-sm font-semibold">سوالات و ملاحظات بیمار</p>
+            </div>
+            <ul className="list-disc space-y-1 pr-5 text-sm leading-relaxed text-slate-800">
+              {llmPatientQuestions.map((question) => (
+                <li key={question}>{question}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <label className="mb-1 block text-sm font-medium text-slate-700">
           آیا سوال دیگری از پزشک دارید؟
         </label>

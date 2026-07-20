@@ -334,6 +334,16 @@ def _build_lab_results_section(
         flowables.append(Spacer(1, 0.2 * cm))
         return flowables
 
+    has_ocr = any((lab.extracted_data or "").strip() for lab in medical_overview.lab_results)
+    if has_ocr:
+        flowables.append(
+            _highlight_box(
+                styles,
+                "⚠ OCR-extracted data — unverified. Confirm against the original document.",
+            )
+        )
+        flowables.append(Spacer(1, 0.15 * cm))
+
     rows = [
         [lab.name or EMPTY, lab.extracted_data or EMPTY]
         for lab in medical_overview.lab_results

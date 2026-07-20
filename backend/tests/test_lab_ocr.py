@@ -99,7 +99,13 @@ class TestLabOcrUpload:
                 lab_results = intake.json()["medical_overview"]["lab_results"]
                 assert len(lab_results) == 1
                 assert lab_results[0]["id"] == "lab-1"
-                assert lab_results[0]["extracted_data"] == STUB_EXTRACTED
+                # Fail-Closed: OCR stripped from intake payloads
+                assert not lab_results[0].get("extracted_data")
+
+                file_id = body["id"]
+                ocr = await client.get(f"/api/documents/{file_id}/ocr", headers=headers)
+                assert ocr.status_code == 200, ocr.text
+                assert ocr.json()["ocr_text"] == STUB_EXTRACTED
 
         asyncio.run(_run())
         _teardown()
@@ -251,7 +257,7 @@ class TestLabOcrUpload:
         asyncio.run(_run())
         _teardown()
 
-    def test_lab_upload_with_condition_type_before_layer4_save(
+    def test_image_upload_without_condition_type_skips_ocr(
         self, tmp_path, monkeypatch
     ) -> None:
         lab_calls: list[tuple[bytes, str]] = []
@@ -273,26 +279,26 @@ class TestLabOcrUpload:
             async with await _async_client() as client:
                 token = await _register_and_login_async(
                     client,
-                    seed="LabTypeOcr",
+                    seed="NoTypeOcr",
                     password="VeryStrongPassword123!",
                 )
                 headers = _auth_headers(token)
                 session_id = await _create_session(client, headers)
                 await _save_layer1(client, session_id, headers)
 
-                lab_id = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+                unknown_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
                 upload = await client.post(
                     f"/api/files/{session_id}/upload",
                     headers=headers,
-                    files={"file": ("cbc.png", io.BytesIO(b"fake-lab-image"), "image/png")},
-                    data={"condition_id": lab_id, "condition_type": "lab"},
+                    files={"file": ("unknown.png", io.BytesIO(b"fake-image"), "image/png")},
+                    data={"condition_id": unknown_id},
                 )
                 assert upload.status_code == 200, upload.text
                 body = upload.json()
-                assert body["condition_id"] == lab_id
-                assert body["extracted_data"] == STUB_EXTRACTED
+                assert body["condition_id"] == unknown_id
+                assert "extracted_data" not in body
                 assert "extracted_medications" not in body
-                assert len(lab_calls) == 1
+                assert len(lab_calls) == 0
                 assert len(med_calls) == 0
 
         asyncio.run(_run())

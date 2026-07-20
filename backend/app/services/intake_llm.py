@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 INTAKE_LLM_TIMEOUT = settings.intake_llm_timeout_seconds
 INTAKE_MAX_TOKENS = 1200
 
-LAYER2_SYSTEM_PROMPT = """You are a medical intake assistant for a Persian-speaking clinic and telemedicine platform.
+LAYER2_SYSTEM_PROMPT = """You are a medical intake assistant for a Persian-speaking clinic and telemedicine platform in the field of endocrinology.
 Your task is to generate the most relevant Present Illness questions based on the patient's: Age, Sex, Chief Complaint.
 The questions will be shown to the patient by the application one at a time.
 Important rules:
@@ -34,6 +34,7 @@ Important rules:
 - Avoid duplicate or overlapping questions.
 - Limit the number of questions to the minimum needed to understand the current problem.
 - Return valid JSON only.
+- make sure to ask questions that are relevant to the endocrinology field . do not miss other urgent conditions in other fields.
 
 Question Writing Guidelines:
 - Keep questions short.
@@ -72,6 +73,20 @@ Rules:
 
 JSON Output Schema:
 { "hpi_summary": "Concise narrative summary of the present illness in fluent Persian." }"""
+
+FOLLOWUP_QUESTIONS_SYSTEM_PROMPT = """You are a medical intake assistant for a Persian-speaking clinic.
+Generate targeted follow-up questions for the patient based on the clinical data collected so far.
+Rules:
+- Write all questions in simple, natural Persian understandable to the general public.
+- Generate exactly 2 or 3 questions (no more, no fewer unless impossible).
+- Questions should clarify the most important information gaps a physician would want before the visit.
+- Do not repeat questions the patient has already answered in the Present Illness answers.
+- Do not ask about past medical history, medications, allergies, family history, or lab values.
+- Do not diagnose or suggest treatments.
+- Output valid JSON only.
+
+JSON Output Schema:
+{ "patient_questions": ["Persian question 1", "Persian question 2"] }"""
 
 INTERVIEW_CHAT_BASE_PROMPT = """شما یک دستیار پزشکی هوشمند و همدل هستید که در حال انجام مصاحبه با بیمار به زبان فارسی هستید.
 
@@ -136,6 +151,10 @@ class ClinicalExtraction(BaseModel):
 
 class HpiNarration(BaseModel):
     hpi_summary: str
+
+
+class PatientFollowupOutput(BaseModel):
+    patient_questions: list[str] = Field(default_factory=list)
 
 
 @dataclass
@@ -243,6 +262,52 @@ Extracted Positives: {json.dumps(extracted.pertinent_positives, ensure_ascii=Fal
 Extracted Negatives: {json.dumps(extracted.pertinent_negatives, ensure_ascii=False)}
 Extracted Red Flags: {json.dumps(extracted.red_flags, ensure_ascii=False)}
 Write a fluent Persian hpi_summary narrative."""
+
+
+def _build_followup_user_prompt(
+    demographics: DemographicsInput,
+    hpi_answers: dict[str, str],
+    extracted: ClinicalExtraction,
+    hpi_summary: str,
+) -> str:
+    sex_fa = sex_label_fa(demographics.sex)
+    return f"""Patient Information
+Age: {demographics.age}
+Sex: {sex_fa}
+Chief Complaint: {demographics.chief_complaint}
+Present Illness Answers: {json.dumps(hpi_answers, ensure_ascii=False)}
+HPI Summary: {hpi_summary}
+Extracted Positives: {json.dumps(extracted.pertinent_positives, ensure_ascii=False)}
+Extracted Negatives: {json.dumps(extracted.pertinent_negatives, ensure_ascii=False)}
+Extracted Red Flags: {json.dumps(extracted.red_flags, ensure_ascii=False)}
+Generate 2-3 targeted Persian follow-up questions for the patient."""
+
+
+def _fallback_patient_questions(demographics: DemographicsInput) -> list[str]:
+    complaint = demographics.chief_complaint.strip().lower()
+
+    if _complaint_matches(complaint, ("دیابت", "فشار خون", "قلب", "دوره‌ای", "پیگیری")):
+        return [
+            "آیا از آخرین ویزیت تاکنون علامت یا نگرانی جدیدی پیدا کرده‌اید؟",
+            "آیا پزشک قبلی توصیه یا تغییر درمان خاصی برای شما مطرح کرده بود؟",
+        ]
+
+    if _complaint_matches(complaint, ("آزمایش", "چکاپ", "نتیجه", "خون")):
+        return [
+            "آیا پزشک قبلی درباره نتیجه آزمایش توضیحی به شما داده است؟",
+            "آیا در حال حاضر علامتی دارید که باعث نگرانی شما شده باشد؟",
+        ]
+
+    if _complaint_matches(complaint, ("دل", "شکم", "دل‌درد", "درد شکم", "دل درد")):
+        return [
+            "آیا درد با غذا خوردن یا ناشتا بودن تغییر می‌کند؟",
+            "آیا تهوع، استفراغ یا تب همراه درد دارید؟",
+        ]
+
+    return [
+        "آیا این علامت بر انجام کارهای روزمره شما تأثیر گذاشته است؟",
+        "آیا قبلاً برای همین مشکل به پزشک مراجعه کرده‌اید؟",
+    ]
 
 
 def _fallback_questions(demographics: DemographicsInput) -> HPIQuestionsResponse:
@@ -383,6 +448,7 @@ def _fallback_clinical_summary(
         pertinent_positives=structured.pertinent_positives,
         pertinent_negatives=structured.pertinent_negatives,
         red_flags=structured.red_flags,
+        patient_questions=_fallback_patient_questions(demographics),
     )
 
 
@@ -518,6 +584,50 @@ class IntakeLLMService:
             last_error,
         )
 
+    async def _generate_patient_followup_questions(
+        self,
+        demographics: DemographicsInput,
+        hpi_answers: dict[str, str],
+        extracted: ClinicalExtraction,
+        hpi_summary: str,
+        *,
+        session_id: int | None = None,
+    ) -> tuple[list[str], bool, str | None]:
+        user_prompt = _build_followup_user_prompt(
+            demographics,
+            hpi_answers,
+            extracted,
+            hpi_summary,
+        )
+
+        cascade_result = await llm_cascade.generate_json_with_cascade(
+            system_prompt=FOLLOWUP_QUESTIONS_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            tier3_factory=lambda: {
+                "patient_questions": _fallback_patient_questions(demographics),
+            },
+            temperature=0.2,
+            max_tokens=INTAKE_MAX_TOKENS,
+        )
+
+        if cascade_result.llm_fallback_used:
+            _log_layer3_fallback(
+                session_id=session_id,
+                chief_complaint=demographics.chief_complaint,
+                stage="patient follow-up questions",
+                exc=Exception(cascade_result.error_message or "LLM fallback used"),
+            )
+
+        followup = PatientFollowupOutput.model_validate(cascade_result.data)
+        questions = [q.strip() for q in followup.patient_questions if q.strip()]
+        if not questions:
+            questions = _fallback_patient_questions(demographics)
+        return (
+            questions[:3],
+            cascade_result.llm_fallback_used,
+            cascade_result.error_message,
+        )
+
     async def generate_clinical_summary(
         self,
         demographics: DemographicsInput,
@@ -538,8 +648,17 @@ class IntakeLLMService:
                 extracted,
                 session_id=session_id,
             )
-            fallback_used = extraction_fallback or narration_fallback
-            error_message = extraction_error or narration_error
+            patient_questions, followup_fallback, followup_error = (
+                await self._generate_patient_followup_questions(
+                    demographics,
+                    hpi_answers,
+                    extracted,
+                    hpi_summary,
+                    session_id=session_id,
+                )
+            )
+            fallback_used = extraction_fallback or narration_fallback or followup_fallback
+            error_message = extraction_error or narration_error or followup_error
             return ClinicalSummaryResult(
                 summary=ClinicalSummary(
                     chief_complaint=extracted.chief_complaint,
@@ -547,6 +666,7 @@ class IntakeLLMService:
                     pertinent_positives=extracted.pertinent_positives,
                     pertinent_negatives=extracted.pertinent_negatives,
                     red_flags=extracted.red_flags,
+                    patient_questions=patient_questions,
                 ),
                 llm_fallback_used=fallback_used,
                 llm_error_message=error_message if fallback_used else None,

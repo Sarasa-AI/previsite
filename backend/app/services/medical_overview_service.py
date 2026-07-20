@@ -66,6 +66,17 @@ def overview_for_storage(overview: MedicalOverview) -> dict:
     return payload
 
 
+def strip_ocr_from_overview(overview: MedicalOverview | None) -> MedicalOverview | None:
+    """Fail-Closed: omit lab OCR from API payloads (fetch via /api/documents/{id}/ocr)."""
+    if overview is None:
+        return None
+    labs = [
+        lab.model_copy(update={"extracted_data": None})
+        for lab in overview.lab_results
+    ]
+    return overview.model_copy(update={"lab_results": labs})
+
+
 def format_conditions_for_summary(conditions: list[ChronicCondition]) -> str | None:
     if not conditions:
         return None

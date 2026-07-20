@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from app.api.routes import auth
-from app.api import chat, summary, files, intake, patients, pmh, pdf
+from app.api import admin, chat, documents, summary, files, intake, patients, pmh, pdf
 from app.core.config import settings, validate_startup_config
 from app.core.error_handler import register_exception_handlers
 from app.core.logging_config import setup_logging
@@ -100,9 +100,11 @@ def health_check():
 
 # ─────────── Include Routers ───────────
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(chat.router)
 app.include_router(summary.router)
 app.include_router(files.router)
+app.include_router(documents.router)
 app.include_router(intake.router)
 app.include_router(patients.router)
 app.include_router(pmh.router)

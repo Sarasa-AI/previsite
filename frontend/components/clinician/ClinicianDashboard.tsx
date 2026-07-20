@@ -8,6 +8,7 @@ import { frontendApi } from "@/lib/client";
 import type { ClinicalSummary, Demographics, IntakeData } from "@/lib/intake";
 import { SEX_OPTIONS } from "@/lib/intake";
 import MedicalOverviewReadOnly from "@/components/clinician/MedicalOverviewReadOnly";
+import AttachedDocumentsGrid from "@/components/shared/AttachedDocumentsGrid";
 import type { ConditionFile } from "@/lib/pmh/types";
 
 type ClinicianDashboardProps = {
@@ -112,6 +113,7 @@ function ClinicalSummaryCard({ summary }: { summary: ClinicalSummary }) {
 }
 
 export default function ClinicianDashboard({ intake, sessionId }: ClinicianDashboardProps) {
+  const [files, setFiles] = useState<ConditionFile[]>([]);
   const [conditionFiles, setConditionFiles] = useState<Record<string, ConditionFile>>({});
   const [filesError, setFilesError] = useState("");
 
@@ -119,13 +121,14 @@ export default function ClinicianDashboard({ intake, sessionId }: ClinicianDashb
     const loadFiles = async () => {
       try {
         const response = await frontendApi.listFiles(sessionId);
-        const files = response.data as ConditionFile[];
+        const listed = response.data as ConditionFile[];
         const map: Record<string, ConditionFile> = {};
-        for (const file of files) {
+        for (const file of listed) {
           if (file.condition_id) {
             map[file.condition_id] = file;
           }
         }
+        setFiles(listed);
         setConditionFiles(map);
         setFilesError("");
       } catch (requestError) {
@@ -145,6 +148,7 @@ export default function ClinicianDashboard({ intake, sessionId }: ClinicianDashb
       {intake.medical_overview && (
         <MedicalOverviewReadOnly overview={intake.medical_overview} conditionFiles={conditionFiles} />
       )}
+      <AttachedDocumentsGrid files={files} />
     </section>
   );
 }

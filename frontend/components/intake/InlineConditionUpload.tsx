@@ -93,14 +93,16 @@ export function InlineConditionUpload({
 
     const formData = new FormData();
     formData.append("file", selectedFile);
+    formData.append("condition_id", conditionId);
+    if (conditionType) {
+      formData.append("condition_type", conditionType);
+    }
 
     try {
       const response = await frontendApi.uploadFile(
         sessionId,
         formData,
         undefined,
-        conditionId,
-        conditionType,
       );
       const data = response.data as UploadResponse;
       const uploadedFile = toConditionFile(data);

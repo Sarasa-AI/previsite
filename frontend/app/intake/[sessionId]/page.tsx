@@ -226,6 +226,7 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
               <Layer4MedicalHistory
                 sessionId={sessionId}
                 initial={intake.medical_overview}
+                clinicalSummary={intake.clinical_summary}
                 onSubmit={handleLayer4}
                 loading={loading}
               />

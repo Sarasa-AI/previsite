@@ -9,6 +9,7 @@ from app.db.database import get_db
 from app.models.pmh import PatientPMH
 from app.models.user import User, UserRole
 from app.schemas.pmh import PatientOverviewResponse, PatientOverviewSubmission
+from app.services.medical_overview_service import strip_ocr_from_overview
 from app.services.pmh_service import get_patient_overview, upsert_patient_overview
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ async def submit_pmh(
 
     return PatientOverviewResponse(
         patient_id=row.patient_id,
-        overview=data.overview,
+        overview=strip_ocr_from_overview(data.overview),
         last_updated=row.last_updated,
     )
 
@@ -93,6 +94,6 @@ async def get_patient_overview_endpoint(
 
     return PatientOverviewResponse(
         patient_id=patient_id,
-        overview=row_overview,
+        overview=strip_ocr_from_overview(row_overview),
         last_updated=row.last_updated if row else None,
     )

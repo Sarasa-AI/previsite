@@ -24,6 +24,7 @@ from app.services.medical_overview_service import (
     link_files_to_conditions,
     load_medical_overview_from_intake,
     overview_for_storage,
+    strip_ocr_from_overview,
 )
 from app.services.pmh_service import upsert_patient_overview
 
@@ -80,7 +81,7 @@ def _to_response(intake: Intake, session_initial_complaint: str | None = None) -
     hpi_questions = _load_json(intake.hpi_questions_json)
     hpi_answers = _load_json(intake.hpi_answers_json)
     clinical_summary = _load_json(intake.clinical_summary_json)
-    medical_overview = load_medical_overview_from_intake(intake)
+    medical_overview = strip_ocr_from_overview(load_medical_overview_from_intake(intake))
 
     return IntakeResponse(
         id=intake.id,

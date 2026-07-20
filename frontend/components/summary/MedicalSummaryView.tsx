@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, ChevronDown, FileText, Loader2, Pill, RefreshCw, ShieldAlert, Stethoscope, ImageIcon } from "lucide-react";
+import { AlertCircle, ChevronDown, FileText, Loader2, Pill, RefreshCw, ShieldAlert, Stethoscope } from "lucide-react";
+import AttachedDocumentsGrid from "@/components/shared/AttachedDocumentsGrid";
 
 type SoapStatus = "pending" | "generating" | "failed" | "ready";
 
@@ -162,8 +163,6 @@ export default function MedicalSummaryView({
   const sections = useMemo(() => soapSections(data.soap_note), [data.soap_note]);
   const soapStatus: SoapStatus = data.soap_status ?? (data.soap_note ? "ready" : "pending");
 
-  const images = useMemo(() => files.filter((f) => f.mime_type.startsWith("image/")), [files]);
-
   return (
     <section className="space-y-6">
       <div className="rounded-[28px] border border-trust/10 bg-trust/5 p-5 shadow-soft">
@@ -251,34 +250,7 @@ export default function MedicalSummaryView({
         </div>
       </div>
 
-      {images.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-trust">
-            <ImageIcon className="h-5 w-5" />
-            <h3 className="text-xl font-bold text-slate-900">تصاویر و مدارک پیوست</h3>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {images.map((img) => (
-              <a
-                key={img.id}
-                href={`/api/proxy${img.url}`}
-                target="_blank"
-                rel="noreferrer"
-                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 transition-all hover:shadow-md"
-              >
-                <img
-                  src={`/api/proxy${img.url}`}
-                  alt={img.filename}
-                  className="h-48 w-full rounded-xl object-cover"
-                />
-                <div className="mt-2 px-1">
-                  <p className="truncate text-xs font-medium text-slate-700">{img.filename}</p>
-                </div>
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
+      <AttachedDocumentsGrid files={files} />
     </section>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { FileText, MessageCircleQuestion } from "lucide-react";
+import { FileText } from "lucide-react";
+import ClinicalDocumentViewer from "@/components/shared/ClinicalDocumentViewer";
 import { fileDownloadUrl } from "@/lib/files";
 import type { ConditionFile, CurrentMedication, MedicalOverview } from "@/lib/pmh/types";
 
@@ -41,11 +42,14 @@ function ConditionDisplayRow({
   detail,
   duration,
   file,
+  unverifiedMatch = false,
 }: {
   label?: string;
   detail: string;
   duration?: string;
   file?: ConditionFile | null;
+  /** Fail-closed: show when a file is linked but OCR match is not verified */
+  unverifiedMatch?: boolean;
 }) {
   return (
     <li className="flex flex-wrap items-center gap-2 border-b border-slate-100 py-1.5 text-sm text-slate-700 last:border-b-0">
@@ -53,8 +57,17 @@ function ConditionDisplayRow({
       <span>{detail}</span>
       {duration ? <span className="text-slate-500">— {duration}</span> : null}
       {file ? <ReadOnlyFileChip file={file} /> : null}
+      {unverifiedMatch && file ? (
+        <span className="text-xs font-medium text-amber-700" dir="ltr">
+          ⚠️ Unverified Match
+        </span>
+      ) : null}
     </li>
   );
+}
+
+function fileImageUrl(file: ConditionFile): string {
+  return file.url ? `/api/proxy${file.url}` : fileDownloadUrl(file.id);
 }
 
 type MedicalOverviewReadOnlyProps = {
@@ -93,7 +106,12 @@ export default function MedicalOverviewReadOnly({
         return null;
       }
       return (
-        <ConditionDisplayRow key={medication.id} detail={detail} file={file} />
+        <ConditionDisplayRow
+          key={medication.id}
+          detail={detail}
+          file={file}
+          unverifiedMatch={hasFile}
+        />
       );
     })
     .filter(Boolean);
@@ -101,9 +119,8 @@ export default function MedicalOverviewReadOnly({
   const hasChronicData = chronicRows.length > 0;
   const hasMedicationData = medicationRows.length > 0;
   const hasLabData = overview.lab_results.some(
-    (lab) => lab.name.trim() || lab.extracted_data || (lab.id && conditionFiles[lab.id]),
+    (lab) => lab.name.trim() || (lab.id && conditionFiles[lab.id]),
   );
-  const patientQuestions = overview.patient_questions?.trim() ?? "";
 
   return (
     <div className="medical-card space-y-3">
@@ -111,15 +128,6 @@ export default function MedicalOverviewReadOnly({
         <FileText className="h-5 w-5" />
         <h3 className="text-lg font-bold">سوابق پزشکی (لایه ۴)</h3>
       </div>
-      {patientQuestions ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/90 p-3">
-          <div className="mb-2 flex items-center gap-2 text-amber-900">
-            <MessageCircleQuestion className="h-5 w-5 shrink-0" />
-            <p className="text-sm font-semibold">سوالات و ملاحظات بیمار</p>
-          </div>
-          <p className="text-sm leading-relaxed text-slate-800">{patientQuestions}</p>
-        </div>
-      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <TextSection label="حساسیت‌ها" value={overview.allergies} />
         <TextSection label="سوابق جراحی" value={overview.surgical_history} />
@@ -129,9 +137,7 @@ export default function MedicalOverviewReadOnly({
           {!hasChronicData ? (
             <span className="text-sm text-slate-500">ثبت نشده</span>
           ) : (
-            <ul className="space-y-0">
-              {chronicRows}
-            </ul>
+            <ul className="space-y-0">{chronicRows}</ul>
           )}
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:col-span-2">
@@ -139,9 +145,7 @@ export default function MedicalOverviewReadOnly({
           {!hasMedicationData ? (
             <span className="text-sm text-slate-500">ثبت نشده</span>
           ) : (
-            <ul className="space-y-0">
-              {medicationRows}
-            </ul>
+            <ul className="space-y-0">{medicationRows}</ul>
           )}
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:col-span-2">
@@ -153,18 +157,23 @@ export default function MedicalOverviewReadOnly({
               {overview.lab_results.map((lab) => {
                 const file = conditionFiles[lab.id] ?? null;
                 const name = lab.name.trim();
-                if (!name && !lab.extracted_data && !file) {
+                if (!name && !file) {
                   return null;
                 }
+                const isImage = Boolean(file?.mime_type?.startsWith("image/"));
                 return (
                   <li key={lab.id} className="border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
                     <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
                       <span className="font-bold text-slate-900">{name || "—"}</span>
-                      {file ? <ReadOnlyFileChip file={file} /> : null}
+                      {file && !isImage ? <ReadOnlyFileChip file={file} /> : null}
                     </div>
-                    {lab.extracted_data ? (
-                      <div className="mt-2 rounded-lg border border-slate-200 bg-slate-100/80 px-3 py-2 font-mono text-sm text-slate-800">
-                        {lab.extracted_data}
+                    {file && isImage ? (
+                      <div className="mt-2 max-w-sm">
+                        <ClinicalDocumentViewer
+                          documentId={file.id}
+                          imageUrl={fileImageUrl(file)}
+                          documentTitle={name || file.filename}
+                        />
                       </div>
                     ) : null}
                   </li>

@@ -26,6 +26,7 @@ def test_intake_four_layer_flow(tmp_path, monkeypatch) -> None:
             pertinent_positives=["درد شکم"],
             pertinent_negatives=[],
             red_flags=[],
+            patient_questions=["آیا درد با غذا خوردن تغییر می‌کند؟"],
             )
         )
 

@@ -6,15 +6,36 @@ import { FileText } from "lucide-react";
 import { MedicalOverviewCard, sanitizeMedicalOverview } from "@/components/intake/MedicalOverviewCard";
 import { extractApiError } from "@/lib/api";
 import { frontendApi } from "@/lib/client";
+import type { ClinicalSummary } from "@/lib/intake";
 import { normalizeMedicalOverview } from "@/lib/intake";
 import type { ConditionFile, CurrentMedication, MedicalOverview } from "@/lib/pmh/types";
 
 type Layer4Props = {
   sessionId: string;
   initial?: MedicalOverview | null;
+  clinicalSummary?: ClinicalSummary | null;
   onSubmit: (data: MedicalOverview) => Promise<void>;
   loading?: boolean;
 };
+
+function prefillPatientQuestions(
+  overview: MedicalOverview,
+  clinicalSummary?: ClinicalSummary | null,
+): MedicalOverview {
+  if (overview.patient_questions?.trim()) {
+    return overview;
+  }
+
+  const llmQuestions = clinicalSummary?.patient_questions?.filter((question) => question.trim()) ?? [];
+  if (!llmQuestions.length) {
+    return overview;
+  }
+
+  return {
+    ...overview,
+    patient_questions: llmQuestions.join("\n"),
+  };
+}
 
 function buildConditionFileMap(files: ConditionFile[]): Record<string, ConditionFile> {
   const map: Record<string, ConditionFile> = {};
@@ -84,9 +105,11 @@ function recoverLabBindIds(
   return bindIds.slice(0, labCount);
 }
 
-export default function Layer4MedicalHistory({ sessionId, initial, onSubmit, loading }: Layer4Props) {
+export default function Layer4MedicalHistory({ sessionId, initial, clinicalSummary, onSubmit, loading }: Layer4Props) {
   const normalizedInitial = useMemo(() => normalizeMedicalOverview(initial), [initial]);
-  const [form, setForm] = useState<MedicalOverview>(() => normalizedInitial);
+  const [form, setForm] = useState<MedicalOverview>(() =>
+    prefillPatientQuestions(normalizedInitial, clinicalSummary),
+  );
   const [labBindIds, setLabBindIds] = useState<string[]>(() =>
     createLabBindIds(normalizedInitial.lab_results),
   );
@@ -192,6 +215,7 @@ export default function Layer4MedicalHistory({ sessionId, initial, onSubmit, loa
         onAddLabResult={handleAddLabResult}
         onRemoveLabResult={handleRemoveLabResult}
         onLabExtractedData={handleLabExtractedData}
+        llmPatientQuestions={clinicalSummary?.patient_questions}
         disabled={loading}
       />
 

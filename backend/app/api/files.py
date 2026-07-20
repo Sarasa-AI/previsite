@@ -146,7 +146,7 @@ async def upload_file(
             mime_type.startswith("image/")
             and not is_chronic
             and not is_lab
-            and (is_medication_slot or condition_type is None)
+            and is_medication_slot
         ):
             try:
                 medication_ocr_attempted = True

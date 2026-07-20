@@ -489,6 +489,10 @@ class TestLayer3ClinicalSummaryContract:
             pertinent_positives=["درد قفسه سینه", "تنگی نفس"],
             pertinent_negatives=["تب", "سرفه"],
             red_flags=["درد منتشر به بازو"],
+            patient_questions=[
+                "آیا درد با فعالیت بدتر می‌شود؟",
+                "آیا سابقه بیماری قلبی در خانواده دارید؟",
+            ],
         )
         captured: dict[str, str] = {}
 
@@ -506,6 +510,15 @@ class TestLayer3ClinicalSummaryContract:
                 captured["narration_system_prompt"] = system_prompt
                 captured["narration_user_prompt"] = user_prompt
                 return {"hpi_summary": "بیمار با درد قفسه سینه و تنگی نفس مراجعه کرده است."}
+            if "Generate 2-3 targeted Persian follow-up questions" in user_prompt:
+                captured["followup_system_prompt"] = system_prompt
+                captured["followup_user_prompt"] = user_prompt
+                return {
+                    "patient_questions": [
+                        "آیا درد با فعالیت بدتر می‌شود؟",
+                        "آیا سابقه بیماری قلبی در خانواده دارید؟",
+                    ]
+                }
             raise AssertionError(f"Unexpected user prompt: {user_prompt[:120]}")
 
         async def fake_generate_hpi_questions(_demographics, **kwargs):
@@ -521,7 +534,7 @@ class TestLayer3ClinicalSummaryContract:
 
         async def _run() -> None:
             await _setup_test_db(tmp_path, monkeypatch)
-            monkeypatch.setattr(openrouter_service, "generate_json", spy_generate_json)
+            monkeypatch.setattr(openrouter_service, "generate_json_primary", spy_generate_json)
             monkeypatch.setattr(
                 intake_api.intake_llm_service,
                 "generate_hpi_questions",
@@ -563,6 +576,10 @@ class TestLayer3ClinicalSummaryContract:
                 assert "درد قفسه سینه" in summary.pertinent_positives
                 assert "تب" in summary.pertinent_negatives
                 assert "درد منتشر به بازو" in summary.red_flags
+                assert summary.patient_questions == [
+                    "آیا درد با فعالیت بدتر می‌شود؟",
+                    "آیا سابقه بیماری قلبی در خانواده دارید؟",
+                ]
                 assert response.json()["current_layer"] == 4
 
         asyncio.run(_run())
@@ -864,6 +881,7 @@ class TestLLMResiliency:
                 assert summary["chief_complaint"] == VALID_DEMOGRAPHICS["chief_complaint"]
                 assert summary["pertinent_positives"]
                 assert summary["red_flags"] == []
+                assert len(summary["patient_questions"]) >= 2
                 assert response.json()["llm_fallback_used"] is True
 
         asyncio.run(_run())

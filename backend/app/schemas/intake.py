@@ -50,6 +50,7 @@ class ClinicalSummary(BaseModel):
     pertinent_positives: list[str]
     pertinent_negatives: list[str]
     red_flags: list[str]
+    patient_questions: list[str] = Field(default_factory=list)
 
 
 class ChronicCondition(BaseModel):
