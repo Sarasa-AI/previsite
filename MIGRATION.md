@@ -41,7 +41,7 @@ This document describes the migration from using OpenAI API to GapGPT API.
 
 ## New Environment Variables
 ```env
-GAPGPT_API_KEY=sk-gpqe35rzLyMYQVdNHLe3wE2Ij2oemOjttixApzORZPJBEnpa
+GAPGPT_API_KEY=<GAPGPT_API_KEY>
 GAPGPT_BASE_URL=https://api.gapgpt.app/v1
 LLM_PROVIDER=gapgpt
 GAPGPT_MODEL=gapgpt-qwen-3.5
