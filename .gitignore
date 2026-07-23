@@ -10,8 +10,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Python packaging dirs (root only — do not ignore frontend/lib)
+/lib/
+/lib64/
 parts/
 sdist/
 var/
