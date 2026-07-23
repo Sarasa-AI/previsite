@@ -13,6 +13,18 @@ type SummaryData = {
   soap_note: string | null;
   soap_status: "pending" | "generating" | "failed" | "ready";
   soap_error_detail?: string | null;
+  soap_citations?: Array<{
+    index?: number;
+    marker?: string;
+    source?: string | null;
+    source_title?: string | null;
+    content?: string | null;
+    source_excerpt?: string | null;
+    verified?: boolean;
+    verification_status?: string;
+    similarity_score?: number | null;
+  }> | null;
+  soap_verification_status?: string | null;
   medical_data: {
     chief_complaint: string | null;
     history_present_illness: string | null;

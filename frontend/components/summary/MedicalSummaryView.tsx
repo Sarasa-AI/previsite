@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, FileText, Loader2, Pill, RefreshCw, ShieldAlert, Stethoscope } from "lucide-react";
 import AttachedDocumentsGrid from "@/components/shared/AttachedDocumentsGrid";
+import SoapCitationText, { type SoapCitation } from "@/components/summary/SoapCitationText";
 
 type SoapStatus = "pending" | "generating" | "failed" | "ready";
 
@@ -10,6 +11,8 @@ type SummaryPayload = {
   soap_note?: string | null;
   soap_status?: SoapStatus;
   soap_error_detail?: string | null;
+  soap_citations?: SoapCitation[] | null;
+  soap_verification_status?: string | null;
   medical_data?: {
     chief_complaint?: string | null;
     history_present_illness?: string | null;
@@ -90,6 +93,7 @@ function SoapSectionContent({
   errorDetail,
   onRetry,
   retryLoading,
+  citations,
 }: {
   title: string;
   content: string;
@@ -97,6 +101,7 @@ function SoapSectionContent({
   errorDetail?: string | null;
   onRetry?: () => void;
   retryLoading?: boolean;
+  citations?: SoapCitation[];
 }) {
   if (status === "generating") {
     return (
@@ -136,7 +141,9 @@ function SoapSectionContent({
     return (
       <article className="glass-card min-h-[180px]">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-trust/75">{title}</p>
-        <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{content}</p>
+        <div className="mt-3">
+          <SoapCitationText text={content} citations={citations} />
+        </div>
       </article>
     );
   }
@@ -245,6 +252,7 @@ export default function MedicalSummaryView({
               errorDetail={data.soap_error_detail}
               onRetry={onRetrySoap}
               retryLoading={retryLoading}
+              citations={data.soap_citations ?? []}
             />
           ))}
         </div>

@@ -183,10 +183,16 @@ class TestCitationVerification:
 
         assert result.verification_status == "verified"
         assert result.citations[0]["verification_status"] == "verified"
+        assert result.citations[0]["verified"] is True
+        assert result.citations[0]["marker"] == "[1]"
+        assert result.citations[0]["source_title"] == "Harrison's Internal Medicine"
+        assert result.citations[0]["source_excerpt"]
+        assert result.citations[0]["similarity_score"] is not None
+        assert result.citations[0]["similarity_score"] >= 0.35
         assert "[1]" in result.content
 
     @pytest.mark.asyncio
-    async def test_verify_citations_invalid_index_stripped(self):
+    async def test_verify_citations_invalid_index_kept_as_unverified(self):
         generator = SOAPNoteGenerator(rag_service=MagicMock())
         citations = _build_citations_from_rag()
         note = "A: Unsupported claim [9]"
@@ -194,9 +200,12 @@ class TestCitationVerification:
         result = await generator._apply_citation_verification(note, citations)
 
         assert result.verification_status == "unverified"
-        assert "[9]" not in result.content
+        assert "[9]" in result.content
         hallucinated = next(c for c in result.citations if c["index"] == 9)
         assert hallucinated["verification_status"] == "unverified"
+        assert hallucinated["verified"] is False
+        assert hallucinated["marker"] == "[9]"
+        assert hallucinated["similarity_score"] is None
 
     @pytest.mark.asyncio
     async def test_verify_citations_low_similarity(self):
@@ -207,7 +216,10 @@ class TestCitationVerification:
         result = await generator._apply_citation_verification(note, citations)
 
         assert result.citations[0]["verification_status"] == "unverified"
-        assert "[1]" not in result.content
+        assert result.citations[0]["verified"] is False
+        assert "[1]" in result.content
+        assert result.citations[0]["similarity_score"] is not None
+        assert result.citations[0]["similarity_score"] < 0.35
         assert result.verification_status in {"partially_verified", "unverified"}
 
     @pytest.mark.asyncio
@@ -220,6 +232,8 @@ class TestCitationVerification:
 
         assert result.verification_status == "verified"
         assert all(c["verification_status"] == "unused" for c in result.citations)
+        assert all(c["verified"] is False for c in result.citations)
+        assert all(c["similarity_score"] is None for c in result.citations)
 
     @pytest.mark.asyncio
     async def test_icd10_not_treated_as_citation(self):
@@ -233,14 +247,26 @@ class TestCitationVerification:
         assert result.verification_status == "verified"
 
     @pytest.mark.asyncio
-    async def test_verify_citations_strips_markers_when_no_rag_evidence(self):
+    async def test_verify_citations_keeps_markers_when_no_rag_evidence(self):
         generator = SOAPNoteGenerator(rag_service=MagicMock())
         note = "A: Hallucinated reference [1]"
 
         result = await generator._apply_citation_verification(note, [])
 
         assert result.verification_status == "unverified"
-        assert "[1]" not in result.content
+        assert "[1]" in result.content
+        assert result.citations[0]["verified"] is False
+        assert result.citations[0]["marker"] == "[1]"
+
+    def test_build_citations_includes_ui_fields(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = generator._build_citations(_rag_results())
+
+        assert citations[0]["marker"] == "[1]"
+        assert citations[0]["source_title"] == "Harrison's Internal Medicine"
+        assert citations[0]["source_excerpt"].startswith("Acute coronary syndrome")
+        assert citations[0]["verified"] is False
+        assert citations[0]["similarity_score"] is None
 
 
 @pytest.mark.asyncio

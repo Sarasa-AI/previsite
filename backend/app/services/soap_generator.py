@@ -20,6 +20,7 @@ from app.services.rag_service import RagService, rag_service as default_rag_serv
 logger = logging.getLogger(__name__)
 
 CITATION_SIMILARITY_THRESHOLD = 0.35
+CITATION_EXCERPT_MAX_CHARS = 280
 _CITATION_MARKER_RE = re.compile(r"\[(\d+)\]")
 
 
@@ -115,15 +116,52 @@ class SOAPNoteGenerator:
     def _build_citations(self, results: List[dict]) -> List[dict]:
         citations: List[dict] = []
         for index, result in enumerate(results, start=1):
+            source = result.get("source") or "Unknown source"
+            content = result.get("content", "")
             citations.append(
                 {
                     "index": index,
-                    "source": result.get("source") or "Unknown source",
-                    "content": result.get("content", ""),
+                    "marker": f"[{index}]",
+                    "source": source,
+                    "source_title": source,
+                    "content": content,
+                    "source_excerpt": self._truncate_excerpt(content),
                     "confidence": result.get("confidence"),
+                    "verified": False,
+                    "similarity_score": None,
                 }
             )
         return citations
+
+    @staticmethod
+    def _truncate_excerpt(text: str, max_chars: int = CITATION_EXCERPT_MAX_CHARS) -> str:
+        normalized = (text or "").strip()
+        if len(normalized) <= max_chars:
+            return normalized
+        return normalized[: max_chars - 1].rstrip() + "…"
+
+    @staticmethod
+    def _enrich_citation_for_ui(
+        citation: dict,
+        *,
+        similarity_score: float | None = None,
+    ) -> dict:
+        """Attach UI-facing citation fields while keeping legacy keys."""
+        index = citation.get("index")
+        source = citation.get("source")
+        content = citation.get("content") or ""
+        verification_status = citation.get("verification_status")
+        verified = verification_status == "verified"
+
+        enriched = {**citation}
+        if index is not None:
+            enriched["marker"] = f"[{index}]"
+        enriched["source_title"] = source
+        enriched["source_excerpt"] = SOAPNoteGenerator._truncate_excerpt(content)
+        enriched["verified"] = verified
+        if "similarity_score" not in enriched or similarity_score is not None:
+            enriched["similarity_score"] = similarity_score
+        return enriched
 
     @staticmethod
     def _normalize_for_similarity(text: str) -> str:
@@ -212,8 +250,6 @@ class SOAPNoteGenerator:
         citation_map = {citation["index"]: citation for citation in citations}
         used_indices = self._extract_citation_indices(soap_note_text)
         annotated_citations: List[dict] = []
-        indices_to_strip: Set[int] = set()
-        similarity_scores: Dict[int, float] = {}
 
         for citation in citations:
             index = citation["index"]
@@ -221,41 +257,43 @@ class SOAPNoteGenerator:
 
             if index not in used_indices:
                 annotated["verification_status"] = "unused"
-                annotated_citations.append(annotated)
+                annotated_citations.append(
+                    self._enrich_citation_for_ui(annotated, similarity_score=None)
+                )
                 continue
 
             citing_context = self._extract_citing_context(soap_note_text, index)
             chunk_content = citation.get("content", "")
             similarity = self._content_similarity(citing_context, chunk_content)
-            similarity_scores[index] = similarity
 
             if similarity >= CITATION_SIMILARITY_THRESHOLD:
                 annotated["verification_status"] = "verified"
             else:
                 annotated["verification_status"] = "unverified"
-                indices_to_strip.add(index)
                 logger.warning(
                     "Citation [%s] failed similarity check (score=%.2f)",
                     index,
                     similarity,
                 )
 
-            annotated_citations.append(annotated)
+            annotated_citations.append(
+                self._enrich_citation_for_ui(annotated, similarity_score=similarity)
+            )
 
         for index in used_indices:
             if index in citation_map:
                 continue
 
+            orphan = {
+                "index": index,
+                "source": None,
+                "content": "",
+                "confidence": None,
+                "verification_status": "unverified",
+            }
             annotated_citations.append(
-                {
-                    "index": index,
-                    "source": None,
-                    "content": "",
-                    "confidence": None,
-                    "verification_status": "unverified",
-                }
+                self._enrich_citation_for_ui(orphan, similarity_score=None)
             )
-            indices_to_strip.add(index)
             logger.warning("Citation [%s] references index not in retrieved evidence", index)
 
         verification_status = self._compute_aggregate_verification_status(
@@ -264,14 +302,9 @@ class SOAPNoteGenerator:
             has_citations=bool(citations),
         )
 
-        cleaned_content = soap_note_text
-        if indices_to_strip:
-            cleaned_content = self._strip_citation_markers(soap_note_text, indices_to_strip)
-        elif used_indices and not citations:
-            cleaned_content = self._strip_citation_markers(soap_note_text, used_indices)
-
+        # Keep [n] markers in the SOAP text so the doctor UI can render citations.
         return CitationVerificationResult(
-            content=cleaned_content,
+            content=soap_note_text,
             citations=annotated_citations,
             verification_status=verification_status,
         )
