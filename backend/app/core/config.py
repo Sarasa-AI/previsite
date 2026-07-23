@@ -210,6 +210,13 @@ class Settings(BaseSettings):
     llm_rate_limit_requests: int = 60
     llm_rate_limit_window_seconds: int = 60
 
+    # Auth brute-force protection (login shared by patients and doctors)
+    auth_login_max_failures: int = 5
+    auth_login_window_seconds: int = 900
+    auth_login_lockout_seconds: int = 900
+    auth_register_max_requests: int = 20
+    auth_register_window_seconds: int = 900
+
     @property
     def SECRET_KEY(self) -> str:
         return self.secret_key

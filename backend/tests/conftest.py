@@ -97,6 +97,10 @@ async def setup_async_test_db(tmp_path, monkeypatch) -> create_async_engine:
     # without the removed hardcoded auto-provision path.
     await init_db_module._seed_default_doctor()
 
+    from app.core.rate_limiter import rate_limiter
+
+    rate_limiter.reset()
+
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with session_factory() as session:
             try:
