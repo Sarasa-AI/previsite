@@ -155,7 +155,7 @@ async def retry_soap_generation(
     client_ip = request.client.host if request.client else None
     await record_audit(
         db,
-        action="edit_soap",
+        action="retry_soap",
         user_id=current_user.id,
         resource_type="session",
         resource_id=session_id,

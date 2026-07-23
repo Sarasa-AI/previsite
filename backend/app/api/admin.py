@@ -22,6 +22,7 @@ class AuditLogItem(BaseModel):
     resource_id: Optional[str] = None
     timestamp: Optional[str] = None
     ip_address: Optional[str] = None
+    previous_value: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -58,6 +59,7 @@ async def list_audit_logs(
             resource_id=row.resource_id,
             timestamp=row.timestamp.isoformat() if row.timestamp else None,
             ip_address=row.ip_address,
+            previous_value=row.previous_value,
         )
         for row in rows
     ]

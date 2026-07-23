@@ -54,7 +54,7 @@ Intentionally **not** addressed in this security phase:
 - Central secret manager (Vault / cloud KMS) — env-based secrets only for now
 - MFA / stronger auth hardening (account lockout, device trust)
 - Encryption at rest / field-level PHI encryption
-- Free-text SOAP edit API (today `edit_soap` audit hooks `POST /api/summary/{id}/retry-soap` only)
+- Free-text SOAP edit API exists as `PATCH /api/sessions/{id}/soap` (overwrite + `previous_value` on audit); full Inline Edit / Track Changes UI remains Phase 4
 - Admin UI for audit logs (API only: `GET /api/admin/audit-logs`)
 - Full auth rate limiting / bot protection beyond existing chat/LLM limiters
 - Manual key rotation in OpenRouter / GapGPT panels (owner checklist above)

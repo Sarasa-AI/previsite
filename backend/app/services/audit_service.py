@@ -20,6 +20,7 @@ async def record_audit(
     resource_type: Optional[str] = None,
     resource_id: Optional[str | int] = None,
     ip_address: Optional[str] = None,
+    previous_value: Optional[str] = None,
 ) -> None:
     """Persist an audit row; never raise to the caller (fail-soft)."""
     try:
@@ -29,6 +30,7 @@ async def record_audit(
             resource_type=resource_type,
             resource_id=str(resource_id) if resource_id is not None else None,
             ip_address=ip_address,
+            previous_value=previous_value,
         )
         db.add(entry)
         await db.commit()
