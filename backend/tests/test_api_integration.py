@@ -326,7 +326,7 @@ class TestLayer2HPIContract:
 
         async def _run() -> None:
             await _setup_test_db(tmp_path, monkeypatch)
-            monkeypatch.setattr(openrouter_service, "generate_json", spy_generate_json)
+            monkeypatch.setattr(openrouter_service, "generate_json_primary", spy_generate_json)
 
             async with await _async_client() as client:
                 token = await _register_and_login_async(
@@ -763,7 +763,7 @@ class TestLLMResiliency:
         async def _run() -> None:
             await _setup_test_db(tmp_path, monkeypatch)
             monkeypatch.setattr(asyncio, "sleep", noop_sleep)
-            monkeypatch.setattr(openrouter_service, "generate_json", slow_then_fail)
+            monkeypatch.setattr(openrouter_service, "generate_json_primary", slow_then_fail)
 
             async with await _async_client() as client:
                 token = await _register_and_login_async(
@@ -800,7 +800,7 @@ class TestLLMResiliency:
 
         async def _run() -> None:
             await _setup_test_db(tmp_path, monkeypatch)
-            monkeypatch.setattr(openrouter_service, "generate_json", return_unparseable)
+            monkeypatch.setattr(openrouter_service, "generate_json_primary", return_unparseable)
 
             async with await _async_client() as client:
                 token = await _register_and_login_async(
@@ -842,7 +842,7 @@ class TestLLMResiliency:
 
         async def _run() -> None:
             await _setup_test_db(tmp_path, monkeypatch)
-            monkeypatch.setattr(openrouter_service, "generate_json", fail_generate)
+            monkeypatch.setattr(openrouter_service, "generate_json_primary", fail_generate)
 
             async with await _async_client() as client:
                 token = await _register_and_login_async(
@@ -880,7 +880,7 @@ class TestLLMResiliency:
             await asyncio.sleep(0.05)
             raise OpenRouterServiceError("timeout")
 
-        monkeypatch.setattr(openrouter_service, "generate_json", slow_fail)
+        monkeypatch.setattr(openrouter_service, "generate_json_primary", slow_fail)
         demographics = DemographicsInput.model_validate(VALID_DEMOGRAPHICS)
 
         async def _run() -> Layer2GenerationResult:

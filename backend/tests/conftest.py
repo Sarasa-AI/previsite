@@ -9,6 +9,7 @@ os.environ["HTTP_PROXY"] = ""
 os.environ["http_proxy"] = ""
 # Ensure startup health check skips OpenRouter during tests.
 os.environ["OPENROUTER_API_KEY"] = ""
+os.environ["GAPGPT_API_KEY"] = ""
 # Required for fail-fast SECRET_KEY validation and doctor seed used by legacy tests.
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only")
 os.environ.setdefault("SEED_DOCTOR_PASSWORD", "0808")
@@ -121,8 +122,10 @@ async def setup_async_test_db(tmp_path, monkeypatch) -> create_async_engine:
     await init_db_module._seed_default_doctor()
 
     from app.core.rate_limiter import rate_limiter
+    from app.services.llm_circuit_breaker import tier1_circuit_breaker
 
     rate_limiter.reset()
+    tier1_circuit_breaker.reset()
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with session_factory() as session:
