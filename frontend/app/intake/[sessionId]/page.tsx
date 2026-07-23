@@ -8,6 +8,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import Layer1Demographics from "@/components/intake/Layer1Demographics";
 import Layer2HPIQuestions from "@/components/intake/Layer2HPIQuestions";
 import Layer4MedicalHistory from "@/components/intake/Layer4MedicalHistory";
+import ProgressIndicator from "@/components/intake/ProgressIndicator";
 import { extractApiError } from "@/lib/api";
 import { frontendApi } from "@/lib/client";
 import type { Demographics, HPIQuestion, IntakeData } from "@/lib/intake";
@@ -155,27 +156,7 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
           <p className="text-sm font-semibold text-trust">مصاحبه پیش از ویزیت — جلسه #{sessionId}</p>
           <h1 className="text-2xl font-bold text-slate-900">فرم چندلایه شرح حال</h1>
 
-          <div className="mt-6 flex flex-wrap gap-2">
-            {LAYER_LABELS.map((label, idx) => {
-              const layerNum = idx + 1;
-              const isActive = currentLayer === layerNum;
-              const isDone = currentLayer > layerNum;
-              return (
-                <span
-                  key={label}
-                  className={`status-chip ${
-                    isDone
-                      ? "bg-mint/50 text-trust"
-                      : isActive
-                        ? "bg-trust text-white"
-                        : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  {isDone ? "✓" : layerNum}. {label}
-                </span>
-              );
-            })}
-          </div>
+          <ProgressIndicator currentLayer={currentLayer} labels={LAYER_LABELS} />
         </section>
 
         <section className="medical-card">

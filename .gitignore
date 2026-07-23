@@ -54,6 +54,10 @@ error
 
 # Test results
 test-results/
+backend/.coverage
+backend/.coverage.*
+backend/coverage.xml
+frontend/coverage/
 
 # Environment files
 backend/.env

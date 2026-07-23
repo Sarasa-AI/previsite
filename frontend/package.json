@@ -8,6 +8,7 @@
     "start": "next start -p $PORT",
     "lint": "next lint",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -39,12 +40,18 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20.16.5",
     "@types/react": "^18.3.8",
     "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^3.2.4",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.5",
+    "jsdom": "^26.0.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.17",
     "typescript": "5.4.5",
