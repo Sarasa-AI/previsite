@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getBackendApiUrl } from "@/lib/backend-config";
 
-// Bypass system proxies for local requests
 process.env.NO_PROXY = "localhost,127.0.0.1";
 process.env.no_proxy = "localhost,127.0.0.1";
 
@@ -22,18 +21,6 @@ function shouldUseSecureCookies(request: Request): boolean {
   return request.url.startsWith("https://") || forwardedProto === "https";
 }
 
-function setAccessCookie(request: Request, token: string) {
-  const res = NextResponse.json({ success: true });
-  res.cookies.set("access_token", token, {
-    httpOnly: true,
-    secure: shouldUseSecureCookies(request),
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24,
-  });
-  return res;
-}
-
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -44,31 +31,35 @@ export async function POST(request: Request) {
 
   let response: Response;
   try {
-    response = await fetch(`${BACKEND_API_URL}/api/auth/login`, {
+    response = await fetch(`${BACKEND_API_URL}/api/auth/mfa/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
   } catch (error) {
-    console.error("Login failed with error:", error);
     return NextResponse.json({ detail: "Backend is unreachable", error: String(error) }, { status: 502 });
   }
 
-  const data = (await readJsonFromResponse(response)) as unknown;
+  const data = await readJsonFromResponse(response);
   if (!response.ok) {
     return NextResponse.json(data, { status: response.status });
   }
 
-  if (data && typeof data === "object") {
-    const record = data as Record<string, unknown>;
-    if (record.mfa_required === true || record.mfa_setup_required === true) {
-      return NextResponse.json(data);
-    }
-    const token = record.access_token;
-    if (typeof token === "string" && token) {
-      return setAccessCookie(request, token);
-    }
+  const token =
+    data && typeof data === "object" && "access_token" in data
+      ? (data as { access_token?: unknown }).access_token
+      : undefined;
+  if (typeof token !== "string" || !token) {
+    return NextResponse.json({ detail: "Invalid MFA verify response" }, { status: 502 });
   }
 
-  return NextResponse.json({ detail: "Invalid login response from backend" }, { status: 502 });
+  const res = NextResponse.json({ success: true });
+  res.cookies.set("access_token", token, {
+    httpOnly: true,
+    secure: shouldUseSecureCookies(request),
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24,
+  });
+  return res;
 }

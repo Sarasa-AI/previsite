@@ -28,8 +28,29 @@ class UserLogin(BaseModel):
 
 
 class Token(BaseModel):
+    access_token: Optional[str] = None
+    token_type: str = "bearer"
+    mfa_required: bool = False
+    mfa_setup_required: bool = False
+    mfa_token: Optional[str] = None
+    setup_token: Optional[str] = None
+    otpauth_uri: Optional[str] = None
+
+
+class MfaSetupVerifyRequest(BaseModel):
+    setup_token: str
+    code: str = Field(..., min_length=6, max_length=8)
+
+
+class MfaVerifyRequest(BaseModel):
+    mfa_token: str
+    code: str = Field(..., min_length=6, max_length=16)
+
+
+class MfaSetupVerifyResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    backup_codes: list[str]
 
 
 class TokenData(BaseModel):

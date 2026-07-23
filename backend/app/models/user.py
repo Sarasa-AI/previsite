@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Enum, Float, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, Integer, String, Text
 from sqlalchemy.sql import func
 from app.db.database import Base
 import enum
@@ -24,5 +24,8 @@ class User(Base):
     height = Column(Float, nullable=True)
     role = Column(Enum(UserRole), nullable=False, default=UserRole.PATIENT)
     is_active = Column(Boolean, nullable=False, default=True)
+    mfa_secret = Column(String, nullable=True)
+    mfa_enabled = Column(Boolean, nullable=False, default=False)
+    mfa_backup_codes_hash = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

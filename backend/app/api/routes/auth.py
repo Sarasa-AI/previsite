@@ -6,7 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.schemas import Token, UserLogin, UserRegister, UserResponse
+from app.auth.schemas import (
+    MfaSetupVerifyRequest,
+    MfaSetupVerifyResponse,
+    MfaVerifyRequest,
+    Token,
+    UserLogin,
+    UserRegister,
+    UserResponse,
+)
 from app.auth.security import create_access_token, get_password_hash, verify_password
 from app.core.config import settings
 from app.core.rate_limiter import (
@@ -16,8 +24,9 @@ from app.core.rate_limiter import (
     register_attempt_key,
 )
 from app.db.database import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.services.audit_service import record_audit
+from app.services import mfa_service
 from app.utils.national_id import validate_iranian_national_id
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -104,6 +113,15 @@ async def _reject_login_failure(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail=detail,
     )
+
+
+def _issue_access_token(user: User) -> dict:
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id), "email": user.email},
+        expires_delta=access_token_expires,
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/register", response_model=UserResponse)
@@ -224,13 +242,37 @@ async def login(
 
     rate_limiter.clear(key)
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    # MFA only applies to doctors when the feature flag is on.
+    if mfa_service.mfa_feature_enabled() and user.role == UserRole.DOCTOR:
+        if user.mfa_enabled and user.mfa_secret:
+            mfa_token = mfa_service.create_mfa_challenge_token(
+                user_id=user.id,
+                purpose="mfa_verify",
+            )
+            return {
+                "token_type": "bearer",
+                "mfa_required": True,
+                "mfa_token": mfa_token,
+            }
 
-    access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email},
-        expires_delta=access_token_expires,
-    )
+        secret = mfa_service.generate_totp_secret()
+        setup_token = mfa_service.create_mfa_challenge_token(
+            user_id=user.id,
+            purpose="mfa_setup",
+            secret=secret,
+        )
+        otpauth_uri = mfa_service.build_otpauth_uri(
+            secret=secret,
+            account_name=user.full_name or user.email,
+        )
+        return {
+            "token_type": "bearer",
+            "mfa_setup_required": True,
+            "setup_token": setup_token,
+            "otpauth_uri": otpauth_uri,
+        }
 
+    token_payload = _issue_access_token(user)
     await record_audit(
         db,
         action="login",
@@ -239,8 +281,108 @@ async def login(
         resource_id=user.id,
         ip_address=client_ip,
     )
+    return token_payload
 
+
+@router.post("/mfa/setup/verify", response_model=MfaSetupVerifyResponse)
+async def mfa_setup_verify(
+    body: MfaSetupVerifyRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Complete doctor MFA enrollment after scanning QR / entering first TOTP."""
+    if not mfa_service.mfa_feature_enabled():
+        raise HTTPException(status_code=404, detail="MFA is disabled")
+
+    payload = mfa_service.decode_mfa_challenge_token(
+        body.setup_token, expected_purpose="mfa_setup"
+    )
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired setup token")
+
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid setup token")
+
+    secret = payload.get("mfa_secret")
+    if not secret or not isinstance(secret, str):
+        raise HTTPException(status_code=401, detail="Invalid setup token")
+
+    if not mfa_service.verify_totp(secret, body.code):
+        raise HTTPException(status_code=401, detail="Invalid MFA code")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or user.role != UserRole.DOCTOR:
+        raise HTTPException(status_code=401, detail="Invalid setup token")
+
+    backup_codes = mfa_service.generate_backup_codes()
+    user.mfa_secret = secret
+    user.mfa_enabled = True
+    user.mfa_backup_codes_hash = mfa_service.serialize_backup_hashes(backup_codes)
+    await db.commit()
+
+    await record_audit(
+        db,
+        action="mfa_enabled",
+        user_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        ip_address=_client_ip(request),
+    )
+
+    token_payload = _issue_access_token(user)
     return {
-        "access_token": access_token,
-        "token_type": "bearer",
+        **token_payload,
+        "backup_codes": backup_codes,
     }
+
+
+@router.post("/mfa/verify", response_model=Token)
+async def mfa_verify(
+    body: MfaVerifyRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Second-factor login for doctors with MFA already enabled."""
+    if not mfa_service.mfa_feature_enabled():
+        raise HTTPException(status_code=404, detail="MFA is disabled")
+
+    payload = mfa_service.decode_mfa_challenge_token(
+        body.mfa_token, expected_purpose="mfa_verify"
+    )
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired MFA token")
+
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid MFA token")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or user.role != UserRole.DOCTOR or not user.mfa_enabled or not user.mfa_secret:
+        raise HTTPException(status_code=401, detail="Invalid MFA token")
+
+    code = body.code.strip()
+    if mfa_service.verify_totp(user.mfa_secret, code):
+        pass
+    else:
+        consumed, updated = mfa_service.consume_backup_code(
+            user.mfa_backup_codes_hash, code
+        )
+        if not consumed:
+            raise HTTPException(status_code=401, detail="Invalid MFA code")
+        user.mfa_backup_codes_hash = updated
+        await db.commit()
+
+    await record_audit(
+        db,
+        action="login",
+        user_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        ip_address=_client_ip(request),
+    )
+    return _issue_access_token(user)
