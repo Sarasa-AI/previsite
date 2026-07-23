@@ -7,7 +7,7 @@
 | Key | Prefix / pattern | Where found |
 |-----|------------------|-------------|
 | GapGPT API key | `sk-gp…` (full value previously in docs) | Working tree: [`MIGRATION.md`](MIGRATION.md) line 44. Introduced in commit `add0033` (“Initial MVP commit”). |
-| OpenRouter API key | `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` | Git history only (removed from current tree earlier). Commits: `49fe475` (`frontend/openrouter-test.py`), `09d8970` (`backend/.env.example`). |
+| OpenRouter API key | `sk-or-v1-…` (full value previously in docs/history) | Git history only (removed from current tree earlier). Commits: `49fe475` (`frontend/openrouter-test.py`), `09d8970` (`backend/.env.example`). |
 
 The GapGPT value in the current working tree has been replaced with the placeholder `<GAPGPT_API_KEY>`. The OpenRouter value is no longer in HEAD but remains reachable via `git show` on the commits above until history is rewritten.
 
