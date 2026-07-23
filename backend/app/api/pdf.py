@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
+from app.auth.session_access import get_authorized_session
 from app.core.config import settings
 from app.db.database import get_db
 from app.models import Intake, User
@@ -24,17 +25,7 @@ router = APIRouter(prefix="/api/sessions", tags=["pdf"])
 async def _get_session_or_403(
     db: AsyncSession, session_id: int, current_user: User
 ) -> DBSession:
-    query = select(DBSession).where(DBSession.id == session_id)
-    if current_user.role == "patient":
-        query = query.where(DBSession.patient_id == current_user.id)
-    result = await db.execute(query)
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this session",
-        )
-    return session
+    return await get_authorized_session(db, session_id, current_user, claim=True)
 
 
 @router.get("/{session_id}/pdf")

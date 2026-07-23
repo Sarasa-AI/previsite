@@ -39,6 +39,7 @@ config_module.settings.seed_doctor_password = os.environ["SEED_DOCTOR_PASSWORD"]
 config_module.settings.seed_doctor_username = os.environ["SEED_DOCTOR_USERNAME"]
 config_module.settings.app_env = os.environ.get("APP_ENV", "test")
 config_module.settings.skip_health_check = True
+config_module.settings.single_doctor_mode = False
 
 
 class FakeStorageService:

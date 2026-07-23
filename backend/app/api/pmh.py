@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
+from app.auth.session_access import doctor_may_access_patient, is_doctor
 from app.db.database import get_db
 from app.models.pmh import PatientPMH
 from app.models.user import User, UserRole
@@ -45,7 +46,13 @@ async def _authorize_patient_access(
             )
         return
 
-    if current_user.role != UserRole.DOCTOR:
+    if not is_doctor(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+    if not await doctor_may_access_patient(db, patient_id, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",

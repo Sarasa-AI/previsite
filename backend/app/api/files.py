@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
+from app.auth.session_access import get_authorized_session
 from app.db.database import get_db
 from app.models import File as FileModel
 from app.models import Session as SessionModel
@@ -33,17 +34,9 @@ router = APIRouter(
 async def _get_authorized_session(
     db: AsyncSession, session_id: int, current_user: User
 ) -> SessionModel:
-    result = await db.execute(
-        select(SessionModel).where(SessionModel.id == session_id)
+    return await get_authorized_session(
+        db, session_id, current_user, claim=True, not_found_as_403=False
     )
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if session.patient_id != current_user.id and session.doctor_id != current_user.id:
-        if current_user.role != "doctor":
-            raise HTTPException(status_code=403, detail="Access denied")
-    return session
 
 
 @router.post("/{session_id}/upload")
@@ -267,10 +260,12 @@ async def download_file(
         select(SessionModel).where(SessionModel.id == db_file.session_id)
     )
     session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
 
-    if session.patient_id != current_user.id and session.doctor_id != current_user.id:
-        if current_user.role != "doctor":
-            raise HTTPException(status_code=403, detail="Access denied")
+    await get_authorized_session(
+        db, session.id, current_user, claim=True, not_found_as_403=False
+    )
 
     if getattr(storage_service, "is_local", False):
         try:

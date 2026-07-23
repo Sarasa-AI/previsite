@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
+from app.auth.session_access import doctor_may_access_session, get_authorized_session
 from app.db.database import get_db
 from app.models import File as FileModel
 from app.models import Intake
@@ -39,9 +40,11 @@ def _no_ocr_available() -> HTTPException:
 
 
 def _user_can_access_session(session: SessionModel, user: User) -> bool:
-    if session.patient_id == user.id or session.doctor_id == user.id:
+    if session.patient_id == user.id:
         return True
-    return user.role == UserRole.DOCTOR or user.role == "doctor"
+    if user.role == UserRole.DOCTOR or user.role == "doctor":
+        return doctor_may_access_session(session, user)
+    return False
 
 
 @router.get("/{file_id}/ocr", response_model=DocumentOcrResponse)
@@ -66,6 +69,15 @@ async def get_document_ocr(
     session = session_result.scalar_one_or_none()
     if not session or not _user_can_access_session(session, current_user):
         raise _not_found()
+
+    # Claim-on-open for doctors viewing OCR on an unassigned session.
+    if session.patient_id != current_user.id:
+        try:
+            await get_authorized_session(
+                db, session.id, current_user, claim=True, not_found_as_403=False
+            )
+        except HTTPException:
+            raise _not_found()
 
     condition_id = (db_file.condition_id or "").strip()
     if not condition_id:

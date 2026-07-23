@@ -8,6 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth.dependencies import get_current_user
+from app.auth.session_access import (
+    doctor_session_list_filter,
+    get_authorized_session,
+    is_patient,
+)
 from app.core.rate_limiter import chat_rate_limit
 from app.db.database import get_async_session, get_db
 from app.models import Message, User
@@ -128,14 +133,16 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """لیست جلسات (برای بیمار: جلسات خودش، برای پزشک: تمام جلسات)"""
+    """List sessions: patient owns; doctor sees assigned + unassigned (or all if SINGLE_DOCTOR_MODE)."""
     query = select(DBSession).options(
         selectinload(DBSession.summary),
         selectinload(DBSession.patient),
     )
 
-    if current_user.role == "patient":
+    if is_patient(current_user):
         query = query.where(DBSession.patient_id == current_user.id)
+    else:
+        query = doctor_session_list_filter(query, current_user)
 
     query = query.order_by(DBSession.created_at.desc())
     result = await db.execute(query)
@@ -347,16 +354,9 @@ async def get_chat_history(
     current_user: User = Depends(get_current_user),
 ):
     """دریافت تاریخچه کامل گفتگو"""
-    result = await db.execute(
-        select(DBSession).where(DBSession.id == session_id)
+    session = await get_authorized_session(
+        db, session_id, current_user, claim=True, not_found_as_403=False
     )
-    session = result.scalar_one_or_none()
-
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if current_user.role == "patient" and session.patient_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     msg_result = await db.execute(
         select(Message)
