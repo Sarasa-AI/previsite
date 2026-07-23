@@ -75,7 +75,7 @@ curl https://sarasa-backend.liara.run/health
 Expected:
 
 ```json
-{"status":"healthy","service":"PreVisit MVP"}
+{"status":"ok"}
 ```
 
 ---

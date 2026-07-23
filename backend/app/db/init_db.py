@@ -107,12 +107,21 @@ async def _seed_default_doctor() -> None:
 
 
 async def init_db() -> None:
-    """Create all database tables after the database is reachable."""
+    """Ensure DB is reachable, optionally create schema in non-production, then seed."""
     await _wait_for_database()
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    env = (settings.app_env or "").strip().lower()
+    # create_all hides migration drift in production — Alembic is source of truth there.
+    if env in {"development", "dev", "test", "testing", "staging", ""}:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Schema ensured via create_all (APP_ENV=%s)", settings.app_env)
+    else:
+        logger.info(
+            "Skipping create_all in APP_ENV=%s; rely on alembic upgrade head",
+            settings.app_env,
+        )
 
     await _seed_default_doctor()
     await seed_drugs(refresh_matcher=False)
-    logger.info("Database tables created successfully")
+    logger.info("Database initialization finished")

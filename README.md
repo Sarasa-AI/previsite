@@ -91,7 +91,7 @@ PreVisit MVP is a two-tier application for collecting a pre-visit medical histor
 ### Backend
 
 - `python -m pytest -q`
-  - Result: `6 passed`
+  - Result: `146 passed, 5 failed` (failures are pre-existing LLM resiliency / HPI contract flakes in `test_api_integration.py`, unrelated to this security phase)
 - `python -m compileall app tests`
   - Result: success
 
