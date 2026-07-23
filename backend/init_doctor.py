@@ -1,38 +1,32 @@
-import sys
+"""Seed the default doctor account from environment variables.
+
+Usage (from backend/):
+  SEED_DOCTOR_PASSWORD=... python init_doctor.py
+"""
+
+from __future__ import annotations
+
+import asyncio
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.db.database import SessionLocal
-from app.models.user import User, UserRole
-from app.auth.security import get_password_hash
+from app.core.config import settings
+from app.db.init_db import _seed_default_doctor
 
 
-def create_default_doctor():
-    db = SessionLocal()
-    try:
-        existing_doctor = db.query(User).filter(User.email == "bagherzade@doctor.com").first()
-        if existing_doctor:
-            print("Doctor user already exists")
-            return
-
-        doctor = User(
-            email="bagherzade@doctor.com",
-            full_name="bagherzade",
-            hashed_password=get_password_hash("0808"),
-            role=UserRole.DOCTOR,
-            is_active=True
+async def _main() -> None:
+    if not (settings.seed_doctor_password or "").strip():
+        print(
+            "ERROR: Set SEED_DOCTOR_PASSWORD before running this script.",
+            file=sys.stderr,
         )
-        db.add(doctor)
-        db.commit()
-        db.refresh(doctor)
-        print(f"Doctor user created successfully: {doctor.full_name}")
-    except Exception as e:
-        print(f"Error creating doctor: {e}")
-        db.rollback()
-    finally:
-        db.close()
+        sys.exit(1)
+    await _seed_default_doctor()
+    username = settings.seed_doctor_username
+    print(f"Doctor seed ensured for username={username!r} email={username}@doctor.com")
 
 
 if __name__ == "__main__":
-    create_default_doctor()
+    asyncio.run(_main())

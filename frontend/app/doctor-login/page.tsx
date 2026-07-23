@@ -7,8 +7,8 @@ import Link from "next/link";
 import { extractApiError } from "@/lib/api";
 
 export default function DoctorLoginPage() {
-  const [username, setUsername] = useState("bagherzade");
-  const [password, setPassword] = useState("0808");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();

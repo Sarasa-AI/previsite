@@ -17,9 +17,6 @@ from app.utils.national_id import validate_iranian_national_id
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
-DOCTOR_LOGIN_USERNAME = "bagherzade"
-DOCTOR_LOGIN_PASSWORD = "0808"
-
 
 def _internal_email(national_id: str) -> str:
     return f"patient_{national_id}@patient.local"
@@ -106,32 +103,6 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
         )
     else:
         logger.info("Login lookup failed: no user found for login_id=%r", login_id)
-
-    if (
-        login_id.lower() == DOCTOR_LOGIN_USERNAME
-        and user_data.password == DOCTOR_LOGIN_PASSWORD
-        and (not user or user.role != UserRole.DOCTOR)
-    ):
-        result = await db.execute(
-            select(User).where(User.email == f"{DOCTOR_LOGIN_USERNAME}@doctor.com")
-        )
-        user = result.scalar_one_or_none()
-        if not user:
-            user = User(
-                email=f"{DOCTOR_LOGIN_USERNAME}@doctor.com",
-                full_name=DOCTOR_LOGIN_USERNAME,
-                hashed_password=get_password_hash(DOCTOR_LOGIN_PASSWORD),
-                role=UserRole.DOCTOR,
-                is_active=True,
-            )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-            logger.info(
-                "Login auto-provisioned doctor account user_id=%s email=%r",
-                user.id,
-                user.email,
-            )
 
     hashed = getattr(user, "hashed_password", None) if user else None
     if not user:

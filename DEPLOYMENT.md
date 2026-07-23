@@ -46,6 +46,8 @@ Set these in the Liara dashboard (or via CLI):
 ```env
 DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:PORT/DATABASE
 SECRET_KEY=<long-random-secret>
+SEED_DOCTOR_USERNAME=bagherzade
+SEED_DOCTOR_PASSWORD=<strong-doctor-password>
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 APP_ENV=production
@@ -59,6 +61,8 @@ OPENROUTER_HTTP_REFERER=https://sarasa-ai.liara.run
 OPENROUTER_APP_TITLE=PreVisit MVP
 UPLOAD_DIR=./uploads
 ```
+
+`SECRET_KEY` and `SEED_DOCTOR_PASSWORD` are required in production. Do **not** reuse local docker-compose defaults (`postgres`/`postgres`, `minioadmin`/`minioadmin`) — the backend exits on startup if those appear when `APP_ENV=production`.
 
 See `backend/.env.example` for the full list.
 

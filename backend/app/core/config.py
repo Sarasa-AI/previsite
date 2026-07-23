@@ -16,6 +16,21 @@ OPENROUTER_API_KEY_PLACEHOLDERS = frozenset(
     }
 )
 
+INSECURE_SECRET_KEY_VALUES = frozenset(
+    {
+        "",
+        "change-me-in-production",
+        "changeme",
+        "replace-me",
+        "replace-with-a-long-random-secret",
+        "secret",
+        "your-secret-key",
+    }
+)
+
+DEV_ONLY_DB_PASSWORDS = frozenset({"postgres", "password", "admin"})
+DEV_ONLY_S3_CREDENTIALS = frozenset({"minioadmin"})
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -77,10 +92,38 @@ class Settings(BaseSettings):
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
 
-    # Security
-    secret_key: str = "change-me-in-production"
+    # Security — SECRET_KEY must be set via env; insecure defaults fail at startup
+    secret_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("secret_key", "SECRET_KEY"),
+    )
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+
+    # Default doctor seed (password from env only — never hardcode in source)
+    seed_doctor_username: str = Field(
+        default="bagherzade",
+        validation_alias=AliasChoices(
+            "seed_doctor_username",
+            "SEED_DOCTOR_USERNAME",
+        ),
+    )
+    seed_doctor_password: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "seed_doctor_password",
+            "SEED_DOCTOR_PASSWORD",
+        ),
+    )
+
+    # When true, any doctor may access any session (legacy single-clinic mode)
+    single_doctor_mode: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "single_doctor_mode",
+            "SINGLE_DOCTOR_MODE",
+        ),
+    )
 
     # LLM Configuration
     llm_provider: str = "openrouter"
@@ -146,8 +189,11 @@ class Settings(BaseSettings):
     s3_secret_key: str = "minioadmin"
     s3_use_ssl: bool = False
 
-    # CORS / Runtime
-    app_env: str = "development"
+    # CORS / Runtime (APP_ENV; ENVIRONMENT accepted as alias)
+    app_env: str = Field(
+        default="development",
+        validation_alias=AliasChoices("app_env", "APP_ENV", "ENVIRONMENT"),
+    )
     cors_origins: str = (
         "http://localhost:3000,"
         "http://127.0.0.1:3000,"
@@ -201,8 +247,49 @@ def is_openrouter_api_key_configured(api_key: Optional[str] = None) -> bool:
     return normalized.lower() not in OPENROUTER_API_KEY_PLACEHOLDERS
 
 
+def _normalized_env(value: str) -> str:
+    return (value or "").strip().lower()
+
+
+def is_production_env() -> bool:
+    return _normalized_env(settings.app_env) == "production"
+
+
 def validate_startup_config() -> None:
-    """Log severe warnings for missing configuration that degrades AI features."""
+    """Fail fast on insecure secrets; warn when AI keys are missing."""
+    secret = (settings.secret_key or "").strip()
+    if secret.lower() in INSECURE_SECRET_KEY_VALUES or len(secret) < 16:
+        raise SystemExit(
+            "FATAL: SECRET_KEY must be set to a strong random value via environment. "
+            "Do not use empty, placeholder, or 'change-me-in-production' values."
+        )
+
+    if is_production_env():
+        db_password = (settings.db_password or "").strip().lower()
+        s3_user = (settings.s3_access_key or "").strip().lower()
+        s3_secret = (settings.s3_secret_key or "").strip().lower()
+        if db_password in DEV_ONLY_DB_PASSWORDS:
+            raise SystemExit(
+                "FATAL: Default database password "
+                f"({settings.db_password!r}) must not be used when "
+                "APP_ENV/ENVIRONMENT=production. Set DB_PASSWORD to a strong secret."
+            )
+        if (
+            s3_user in DEV_ONLY_S3_CREDENTIALS
+            or s3_secret in DEV_ONLY_S3_CREDENTIALS
+        ):
+            raise SystemExit(
+                "FATAL: Default MinIO/S3 credentials (minioadmin) must not be used "
+                "when APP_ENV/ENVIRONMENT=production. Set S3_ACCESS_KEY and "
+                "S3_SECRET_KEY to production values."
+            )
+        if not (settings.seed_doctor_password or "").strip():
+            raise SystemExit(
+                "FATAL: SEED_DOCTOR_PASSWORD must be set when "
+                "APP_ENV/ENVIRONMENT=production so the default doctor account "
+                "is not created with a random password that only appears in logs."
+            )
+
     if not is_openrouter_api_key_configured():
         banner = "=" * 72
         logger.warning(banner)

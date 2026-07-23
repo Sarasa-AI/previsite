@@ -9,6 +9,12 @@ os.environ["HTTP_PROXY"] = ""
 os.environ["http_proxy"] = ""
 # Ensure startup health check skips OpenRouter during tests.
 os.environ["OPENROUTER_API_KEY"] = ""
+# Required for fail-fast SECRET_KEY validation and doctor seed used by legacy tests.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only")
+os.environ.setdefault("SEED_DOCTOR_PASSWORD", "0808")
+os.environ.setdefault("SEED_DOCTOR_USERNAME", "bagherzade")
+os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("SKIP_HEALTH_CHECK", "true")
 
 from collections.abc import AsyncGenerator
 
@@ -24,6 +30,15 @@ import app.services.file_processor as file_processor_module
 import app.services.storage_service as storage_service_module
 from app.db.database import Base, get_db
 from app.main import app as fastapi_app
+from app.core import config as config_module
+
+# Ensure fail-fast / seed settings match the env we set above (pydantic may
+# also read a local .env; keep tests deterministic).
+config_module.settings.secret_key = os.environ["SECRET_KEY"]
+config_module.settings.seed_doctor_password = os.environ["SEED_DOCTOR_PASSWORD"]
+config_module.settings.seed_doctor_username = os.environ["SEED_DOCTOR_USERNAME"]
+config_module.settings.app_env = os.environ.get("APP_ENV", "test")
+config_module.settings.skip_health_check = True
 
 
 class FakeStorageService:
@@ -76,6 +91,10 @@ async def setup_async_test_db(tmp_path, monkeypatch) -> create_async_engine:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+
+    # Seed default doctor so login tests that use SEED_DOCTOR_* still work
+    # without the removed hardcoded auto-provision path.
+    await init_db_module._seed_default_doctor()
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with session_factory() as session:
