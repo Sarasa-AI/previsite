@@ -1,21 +1,27 @@
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import admin, chat, documents, files, intake, patients, pdf, pmh, summary
 from app.api.routes import auth
-from app.api import admin, chat, documents, summary, files, intake, patients, pmh, pdf
+from app.auth.dependencies import get_current_active_admin
 from app.core.config import settings, validate_startup_config
 from app.core.error_handler import register_exception_handlers
+from app.core.health_checks import check_database, check_llm_provider, check_ollama
 from app.core.logging_config import setup_logging
+from app.core.sentry import init_sentry
 from app.core.startup_health import verify_llm_connection
-from app.db.database import get_async_session
+from app.db.database import get_async_session, get_db
 from app.db.init_db import init_db
+from app.models.user import User
 from app.services.drug_matcher import drug_matcher
 
 setup_logging()
+init_sentry()
 
 
 @asynccontextmanager
@@ -96,6 +102,32 @@ def health_check():
     """بررسی سلامت سرور"""
     return {
         "status": "ok"
+    }
+
+
+@app.get("/health/detailed")
+async def health_detailed(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_active_admin),
+):
+    """Admin-only dependency status (DB, Ollama, LLM provider)."""
+    db_status = await check_database(db)
+    ollama_status = await check_ollama()
+    llm_status = await check_llm_provider()
+    statuses = [db_status["status"], ollama_status["status"], llm_status["status"]]
+    if all(s == "ok" for s in statuses):
+        overall = "ok"
+    elif any(s == "down" for s in statuses):
+        overall = "degraded"
+    else:
+        overall = "degraded"
+    return {
+        "status": overall,
+        "dependencies": {
+            "database": db_status,
+            "ollama": ollama_status,
+            "llm_provider": llm_status,
+        },
     }
 
 # ─────────── Include Routers ───────────

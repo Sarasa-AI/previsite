@@ -204,6 +204,18 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     skip_health_check: bool = False
 
+    # Observability (optional — empty DSN disables Sentry)
+    sentry_dsn: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("sentry_dsn", "SENTRY_DSN"),
+    )
+
+    # MFA / TOTP for doctors (feature-flagged; default off)
+    mfa_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("mfa_enabled", "MFA_ENABLED"),
+    )
+
     # Rate limiting
     chat_rate_limit_requests: int = 20
     chat_rate_limit_window_seconds: int = 60

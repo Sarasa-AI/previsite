@@ -11,6 +11,7 @@ from openai import (
 )
 
 from app.core.config import settings
+from app.core.sentry import capture_categorized_error
 from app.services.json_parser import parse_llm_json
 
 logger = logging.getLogger(__name__)
@@ -283,13 +284,22 @@ class OpenRouterService:
                 )
 
         if not content or not content.strip():
+            err: Exception
             if isinstance(last_error, (APIConnectionError, APIStatusError, RateLimitError)):
-                raise OpenRouterServiceError(
+                err = OpenRouterServiceError(
                     f"OpenRouter Tier 1 request failed: {last_error}"
-                ) from last_error
-            raise OpenRouterServiceError(
-                f"Empty response from OpenRouter Tier 1 model={primary_model}."
+                )
+                err.__cause__ = last_error
+            else:
+                err = OpenRouterServiceError(
+                    f"Empty response from OpenRouter Tier 1 model={primary_model}."
+                )
+            capture_categorized_error(
+                err,
+                category="llm",
+                context={"provider": "openrouter", "tier": 1},
             )
+            raise err
 
         return self._parse_json_content(content)
 

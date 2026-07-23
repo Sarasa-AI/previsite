@@ -8,6 +8,7 @@ import httpx
 from openai import APIConnectionError, APIStatusError, RateLimitError
 
 from app.core.config import settings
+from app.core.sentry import capture_categorized_error
 from app.services.json_parser import parse_llm_json
 from app.services.llm_circuit_breaker import tier1_circuit_breaker
 from app.services.openrouter_service import (
@@ -180,6 +181,11 @@ class LLMCascade:
             except RECOVERABLE_ERRORS as exc:
                 tier1_error = exc
                 await tier1_circuit_breaker.record_tier1_failure(exc)
+                capture_categorized_error(
+                    exc,
+                    category="llm",
+                    context={"provider": "openrouter", "tier": 1},
+                )
                 logger.warning(
                     "Tier 1 LLM failed. Switching to Tier 2. Error: %s",
                     exc,
@@ -200,6 +206,11 @@ class LLMCascade:
             )
         except RECOVERABLE_ERRORS as exc:
             tier2_error = exc
+            capture_categorized_error(
+                exc,
+                category="llm",
+                context={"provider": settings.llm_tier2_provider, "tier": 2},
+            )
             logger.warning(
                 "Tier 2 LLM failed. Switching to Tier 3 static fallback. Error: %s",
                 exc,

@@ -35,10 +35,16 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
         except exc.SQLAlchemyError as e:
             logger.error("Critical database error during transaction (fail-closed): %s", e)
+            from app.core.sentry import capture_categorized_error
+
+            capture_categorized_error(e, category="db")
             await session.rollback()
             raise
         except Exception as e:
             logger.exception("Unexpected database session failure: %s", e)
+            from app.core.sentry import capture_categorized_error
+
+            capture_categorized_error(e, category="db")
             await session.rollback()
             raise
 

@@ -24,6 +24,7 @@ from app.services.medical_overview_service import (
 from app.services.ocr_service import extract_lab_values_ocr, extract_medication_ocr
 from app.services.storage_service import storage_service
 from app.models import Intake
+from app.core.sentry import capture_categorized_error
 
 router = APIRouter(
     prefix="/api/files",
@@ -134,6 +135,16 @@ async def upload_file(
                     mime_type,
                     e,
                 )
+                capture_categorized_error(
+                    e,
+                    category="ocr",
+                    context={
+                        "session_id": session_id,
+                        "condition_id": condition_id,
+                        "mime_type": mime_type,
+                        "ocr_type": "lab",
+                    },
+                )
                 extracted_data = None
         elif (
             mime_type.startswith("image/")
@@ -153,6 +164,16 @@ async def upload_file(
                     condition_id,
                     mime_type,
                     e,
+                )
+                capture_categorized_error(
+                    e,
+                    category="ocr",
+                    context={
+                        "session_id": session_id,
+                        "condition_id": condition_id,
+                        "mime_type": mime_type,
+                        "ocr_type": "medication",
+                    },
                 )
                 extracted_medications = None
 
