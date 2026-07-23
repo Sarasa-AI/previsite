@@ -3,7 +3,7 @@ import re
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,7 @@ from app.auth.security import create_access_token, get_password_hash, verify_pas
 from app.core.config import settings
 from app.db.database import get_db
 from app.models.user import User, UserRole
+from app.services.audit_service import record_audit
 from app.utils.national_id import validate_iranian_national_id
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -87,7 +88,11 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
+async def login(
+    user_data: UserLogin,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     """Authenticate a user and return an access token."""
     login_id = user_data.national_id.strip()
     user = await _find_user_by_login(db, login_id)
@@ -143,6 +148,16 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     access_token = create_access_token(
         data={"sub": str(user.id), "email": user.email},
         expires_delta=access_token_expires,
+    )
+
+    client_ip = request.client.host if request.client else None
+    await record_audit(
+        db,
+        action="login",
+        user_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        ip_address=client_ip,
     )
 
     return {

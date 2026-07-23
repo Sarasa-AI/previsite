@@ -2,16 +2,17 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.auth.session_access import get_authorized_session
+from app.auth.session_access import get_authorized_session, is_doctor
 from app.db.database import get_db
 from app.models import File as FileModel
 from app.models import Intake, Summary, User
 from app.models import Session as SessionModel
+from app.services.audit_service import record_audit
 from app.services.medical_overview_service import (
     build_clinical_overview,
     load_medical_overview_from_intake,
@@ -33,10 +34,22 @@ async def _get_authorized_session(
 @router.get("/{session_id}")
 async def get_summary(
     session_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Optional[dict]:
     session = await _get_authorized_session(db, session_id, current_user)
+
+    if is_doctor(current_user):
+        client_ip = request.client.host if request.client else None
+        await record_audit(
+            db,
+            action="view_session",
+            user_id=current_user.id,
+            resource_type="session",
+            resource_id=session_id,
+            ip_address=client_ip,
+        )
 
     sum_result = await db.execute(
         select(Summary).where(Summary.session_id == session_id)
@@ -118,6 +131,7 @@ async def get_summary(
 @router.post("/{session_id}/retry-soap")
 async def retry_soap_generation(
     session_id: int,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -137,6 +151,16 @@ async def retry_soap_generation(
     session.soap_status = "generating"
     session.soap_error_detail = None
     await db.commit()
+
+    client_ip = request.client.host if request.client else None
+    await record_audit(
+        db,
+        action="edit_soap",
+        user_id=current_user.id,
+        resource_type="session",
+        resource_id=session_id,
+        ip_address=client_ip,
+    )
 
     trigger_soap_generation(background_tasks, session_id)
     return {"soap_status": "generating"}

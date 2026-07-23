@@ -46,8 +46,15 @@ Rewriting history requires a force-push and every clone to be re-cloned or caref
 
 The product has historically behaved as a **single-doctor clinic**: any authenticated doctor could see all patient sessions because `sessions.doctor_id` was never set. Resource-level RBAC (claim-on-open + `SINGLE_DOCTOR_MODE`) is implemented separately so multi-doctor isolation can be enforced when `SINGLE_DOCTOR_MODE=false` (default).
 
-## What this phase does *not* do
+## Remaining risks (deferred to later phases)
 
-- Does not revoke keys in OpenRouter/GapGPT panels (no panel access from CI/agent).
-- Does not rewrite git history automatically.
-- Does not introduce Vault, MFA, or encryption-at-rest (see remaining risks in the security hardening delivery notes).
+Intentionally **not** addressed in this security phase:
+
+- Git history rewrite not executed yet (requires team coordination + force-push; see checklist above)
+- Central secret manager (Vault / cloud KMS) — env-based secrets only for now
+- MFA / stronger auth hardening (account lockout, device trust)
+- Encryption at rest / field-level PHI encryption
+- Free-text SOAP edit API (today `edit_soap` audit hooks `POST /api/summary/{id}/retry-soap` only)
+- Admin UI for audit logs (API only: `GET /api/admin/audit-logs`)
+- Full auth rate limiting / bot protection beyond existing chat/LLM limiters
+- Manual key rotation in OpenRouter / GapGPT panels (owner checklist above)

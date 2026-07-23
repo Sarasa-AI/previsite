@@ -1,7 +1,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.session_access import (
     doctor_session_list_filter,
     get_authorized_session,
+    is_doctor,
     is_patient,
 )
 from app.core.rate_limiter import chat_rate_limit
@@ -25,6 +26,7 @@ from app.schemas.chat import (
     SessionResponse,
 )
 from app.schemas.medical import MedicalSummary
+from app.services.audit_service import record_audit
 from app.services.interview_controller import interview_controller
 from app.services.interview_flow import InterviewStage
 from app.services.llm_service import llm_service
@@ -350,6 +352,7 @@ async def send_message(
 @router.get("/{session_id}", response_model=ChatHistoryResponse)
 async def get_chat_history(
     session_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -357,6 +360,17 @@ async def get_chat_history(
     session = await get_authorized_session(
         db, session_id, current_user, claim=True, not_found_as_403=False
     )
+
+    if is_doctor(current_user):
+        client_ip = request.client.host if request.client else None
+        await record_audit(
+            db,
+            action="view_session",
+            user_id=current_user.id,
+            resource_type="session",
+            resource_id=session_id,
+            ip_address=client_ip,
+        )
 
     msg_result = await db.execute(
         select(Message)

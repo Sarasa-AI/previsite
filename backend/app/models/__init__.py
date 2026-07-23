@@ -7,6 +7,7 @@ from .intake import Intake
 from .medical_knowledge import MedicalKnowledge
 from .pmh import PatientPMH
 from .drug import GenericDrug, BrandDrug, DrugAlias
+from .audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -20,4 +21,5 @@ __all__ = [
     "GenericDrug",
     "BrandDrug",
     "DrugAlias",
+    "AuditLog",
 ]
