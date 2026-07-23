@@ -48,13 +48,20 @@ The product has historically behaved as a **single-doctor clinic**: any authenti
 
 ## Remaining risks (deferred to later phases)
 
-Intentionally **not** addressed in this security phase:
+Intentionally **not** addressed yet (or only partially):
 
 - Git history rewrite not executed yet (requires team coordination + force-push; see checklist above)
 - Central secret manager (Vault / cloud KMS) — env-based secrets only for now
-- MFA / stronger auth hardening (device trust; login lockout for failed attempts is implemented)
-- Encryption at rest / field-level PHI encryption
+- Encryption at rest / field-level PHI encryption (MFA secrets stored in DB without field-level encryption)
 - Free-text SOAP edit API exists as `PATCH /api/sessions/{id}/soap` (overwrite + `previous_value` on audit); full Inline Edit / Track Changes UI remains Phase 4
 - Admin UI for audit logs (API only: `GET /api/admin/audit-logs`)
 - Distributed/multi-instance auth rate limiting (current limiter is in-memory per process)
 - Manual key rotation in OpenRouter / GapGPT panels (owner checklist above)
+- GitHub branch protection required checks must be enabled manually after first green Actions runs (`Backend CI` / `Frontend CI`)
+
+### Addressed in quality phase (this branch)
+
+- CI/CD via GitHub Actions (backend Postgres + Alembic + pytest; frontend lint/build/Vitest)
+- Backend coverage visibility (`pytest-cov` artifact) and frontend Vitest suite for critical UI paths
+- Optional Sentry (`SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`) and admin `GET /health/detailed`
+- Doctor MFA/TOTP behind `MFA_ENABLED` (default off; enrollment + backup codes; no lockout until doctor completes setup)
