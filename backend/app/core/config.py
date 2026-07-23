@@ -173,6 +173,9 @@ class Settings(BaseSettings):
     embedding_model: str = "nomic-embed-text"
     embedding_dimensions: int = 768
     max_embedding_tokens: int = 512
+    # auto | ollama | openrouter — auto tries Ollama then OpenRouter
+    embedding_provider: str = "auto"
+    openrouter_embedding_model: str = "openai/text-embedding-3-small"
 
     # Optional CrossEncoder rerank after pgvector cosine retrieval
     reranker_enabled: bool = True

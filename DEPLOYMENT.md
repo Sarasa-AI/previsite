@@ -60,6 +60,11 @@ OPENROUTER_DEFAULT_MODEL=qwen/qwen-2.5-72b-instruct
 OPENROUTER_HTTP_REFERER=https://sarasa-ai.liara.run
 OPENROUTER_APP_TITLE=PreVisit MVP
 UPLOAD_DIR=./uploads
+# RAG embeddings (Liara has no Ollama service — use OpenRouter or auto fallback)
+EMBEDDING_PROVIDER=openrouter
+OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
+# Optional: set false to disable CrossEncoder rerank if latency is a concern
+RERANKER_ENABLED=true
 ```
 
 `SECRET_KEY` and `SEED_DOCTOR_PASSWORD` are required in production. Do **not** reuse local docker-compose defaults (`postgres`/`postgres`, `minioadmin`/`minioadmin`) — the backend exits on startup if those appear when `APP_ENV=production`.

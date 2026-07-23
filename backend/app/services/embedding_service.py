@@ -2,9 +2,10 @@ import logging
 import re
 from typing import List
 
+import httpx
 import ollama
 
-from app.core.config import settings
+from app.core.config import is_openrouter_api_key_configured, settings
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?؟])\s+")
 
 
 class EmbeddingServiceError(Exception):
-    """Raised when Ollama embedding generation fails."""
+    """Raised when embedding generation fails for all configured providers."""
 
 
 def _estimate_tokens(text: str) -> int:
@@ -88,32 +89,108 @@ class EmbeddingService:
     def __init__(self) -> None:
         self._client = ollama.AsyncClient(host=settings.ollama_host)
 
-    async def generate_embedding(self, text: str) -> List[float]:
-        prompt = text.strip()
-        if not prompt:
-            raise ValueError("Cannot generate embedding for empty text.")
+    def _validate_dimensions(self, embedding: List[float], *, provider: str) -> List[float]:
+        if not embedding:
+            raise EmbeddingServiceError(f"{provider} returned an empty embedding vector.")
+        if len(embedding) != settings.embedding_dimensions:
+            raise EmbeddingServiceError(
+                f"Expected {settings.embedding_dimensions}-dim vector from {provider}, "
+                f"got {len(embedding)}."
+            )
+        return embedding
 
+    async def _embed_with_ollama(self, prompt: str) -> List[float]:
         try:
             response = await self._client.embeddings(
                 model=settings.embedding_model,
                 prompt=prompt,
             )
         except Exception as exc:
-            logger.exception("Ollama embedding request failed")
+            logger.warning("Ollama embedding request failed: %s", exc)
             raise EmbeddingServiceError(
-                f"Failed to generate embedding with model {settings.embedding_model}"
+                f"Failed to generate embedding with Ollama model {settings.embedding_model}"
             ) from exc
 
-        embedding = response.get("embedding")
-        if not embedding:
-            raise EmbeddingServiceError("Ollama returned an empty embedding vector.")
+        embedding = response.get("embedding") if isinstance(response, dict) else None
+        if embedding is None and hasattr(response, "embedding"):
+            embedding = response.embedding
+        return self._validate_dimensions(list(embedding or []), provider="Ollama")
 
-        if len(embedding) != settings.embedding_dimensions:
+    async def _embed_with_openrouter(self, prompt: str) -> List[float]:
+        if not is_openrouter_api_key_configured():
             raise EmbeddingServiceError(
-                f"Expected {settings.embedding_dimensions}-dim vector, got {len(embedding)}."
+                "OpenRouter embedding fallback is not configured (OPENROUTER_API_KEY missing)."
             )
 
-        return embedding
+        url = settings.openrouter_base_url.rstrip("/") + "/embeddings"
+        headers = {
+            "Authorization": f"Bearer {settings.openrouter_api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": settings.openrouter_http_referer,
+            "X-Title": settings.openrouter_app_title,
+        }
+        payload = {
+            "model": settings.openrouter_embedding_model,
+            "input": prompt,
+            "dimensions": settings.embedding_dimensions,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                body = response.json()
+        except Exception as exc:
+            logger.warning("OpenRouter embedding request failed: %s", exc)
+            raise EmbeddingServiceError(
+                f"Failed to generate embedding with OpenRouter model "
+                f"{settings.openrouter_embedding_model}"
+            ) from exc
+
+        try:
+            embedding = body["data"][0]["embedding"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise EmbeddingServiceError(
+                "OpenRouter returned an unexpected embeddings response shape."
+            ) from exc
+
+        return self._validate_dimensions(list(embedding), provider="OpenRouter")
+
+    async def generate_embedding(self, text: str) -> List[float]:
+        prompt = text.strip()
+        if not prompt:
+            raise ValueError("Cannot generate embedding for empty text.")
+
+        provider = (settings.embedding_provider or "auto").strip().lower()
+        errors: list[str] = []
+
+        if provider == "ollama":
+            return await self._embed_with_ollama(prompt)
+
+        if provider == "openrouter":
+            return await self._embed_with_openrouter(prompt)
+
+        if provider != "auto":
+            raise EmbeddingServiceError(
+                f"Unknown EMBEDDING_PROVIDER={provider!r}. Use auto, ollama, or openrouter."
+            )
+
+        # auto: prefer Ollama, fall back to OpenRouter when Ollama is unreachable.
+        try:
+            return await self._embed_with_ollama(prompt)
+        except EmbeddingServiceError as exc:
+            errors.append(str(exc))
+            logger.warning("Ollama embedding failed; attempting OpenRouter fallback")
+
+        try:
+            return await self._embed_with_openrouter(prompt)
+        except EmbeddingServiceError as exc:
+            errors.append(str(exc))
+
+        raise EmbeddingServiceError(
+            "All embedding providers failed. "
+            + " | ".join(errors)
+        )
 
     def chunk_medical_text(self, text: str, max_tokens: int | None = None) -> List[str]:
         return chunk_medical_text(text, max_tokens=max_tokens)
