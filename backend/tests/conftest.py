@@ -17,6 +17,7 @@ os.environ.setdefault("SEED_DOCTOR_USERNAME", "bagherzade")
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("SKIP_HEALTH_CHECK", "true")
 os.environ.setdefault("MFA_ENABLED", "false")
+os.environ.setdefault("RERANKER_ENABLED", "false")
 
 from collections.abc import AsyncGenerator
 
@@ -46,6 +47,8 @@ config_module.settings.skip_health_check = True
 config_module.settings.single_doctor_mode = False
 if hasattr(config_module.settings, "mfa_enabled"):
     config_module.settings.mfa_enabled = False
+if hasattr(config_module.settings, "reranker_enabled"):
+    config_module.settings.reranker_enabled = False
 
 
 def _test_database_url() -> str | None:

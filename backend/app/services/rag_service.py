@@ -1,8 +1,10 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.medical_knowledge import MedicalKnowledge
 from app.services.embedding_service import embedding_service
+from app.services.reranker_service import reranker_service
 
 
 class RagService:
@@ -15,12 +17,16 @@ class RagService:
     ) -> list[dict]:
         query_vector = await embedding_service.generate_embedding(query)
 
+        retrieve_k = top_k
+        if settings.reranker_enabled:
+            retrieve_k = max(top_k, settings.reranker_candidates)
+
         distance = MedicalKnowledge.embedding.cosine_distance(query_vector)
         stmt = (
             select(MedicalKnowledge, distance.label("distance"))
             .where(MedicalKnowledge.embedding.is_not(None))
             .order_by(distance)
-            .limit(top_k)
+            .limit(retrieve_k)
         )
 
         result = await db.execute(stmt)
@@ -40,7 +46,10 @@ class RagService:
                 }
             )
 
-        return matches
+        if settings.reranker_enabled and matches:
+            return reranker_service.rerank(query, matches, top_k=top_k)
+
+        return matches[:top_k]
 
 
 rag_service = RagService()

@@ -174,6 +174,11 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 768
     max_embedding_tokens: int = 512
 
+    # Optional CrossEncoder rerank after pgvector cosine retrieval
+    reranker_enabled: bool = True
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    reranker_candidates: int = 20
+
     # File Upload
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     allowed_extensions: list[str] = ["pdf", "jpg", "jpeg", "png", "doc", "docx", "txt"]
