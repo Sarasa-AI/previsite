@@ -1,0 +1,70 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - version-4.0.0
+      - "feature/**"
+  pull_request:
+    branches:
+      - version-4.0.0
+      - "feature/**"
+
+jobs:
+  backend:
+    name: Backend CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: previsit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d previsit_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      SECRET_KEY: test-secret-key-for-ci-only-do-not-use-in-prod
+      SEED_DOCTOR_PASSWORD: "0808"
+      SEED_DOCTOR_USERNAME: bagherzade
+      APP_ENV: test
+      SKIP_HEALTH_CHECK: "true"
+      OPENROUTER_API_KEY: ""
+      MFA_ENABLED: "false"
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/previsit_test
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/previsit_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint with Ruff
+        run: ruff check app tests
+
+      - name: Run Alembic migrations
+        run: alembic upgrade head
+
+      - name: Run pytest
+        run: pytest -q

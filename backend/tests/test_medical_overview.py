@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock
 
 import app.api.intake as intake_api
 from app.schemas.intake import ClinicalSummary, HPIQuestionsResponse
-from app.services.intake_llm import ClinicalSummaryResult, Layer2GenerationResult
 from app.services.medical_overview_service import normalize_legacy_medical_history
 from tests.test_api_integration import (
     _async_client,

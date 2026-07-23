@@ -1,4 +1,3 @@
-import pytest
 
 from app.services.llm_service import llm_service
 from app.services.summary_builder import summary_builder

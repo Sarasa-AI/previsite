@@ -8,6 +8,7 @@ from fastapi import HTTPException, UploadFile
 from pypdf import PdfReader
 
 from app.core.config import settings
+from app.services.storage_service import storage_service
 
 if TYPE_CHECKING:
     from app.services.storage_service import StorageService
@@ -112,7 +113,5 @@ class FileProcessor:
     async def delete_file(self, s3_key: str) -> None:
         await self._storage.delete_file(s3_key)
 
-
-from app.services.storage_service import storage_service
 
 file_processor = FileProcessor(storage_service)

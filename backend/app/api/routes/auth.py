@@ -16,7 +16,7 @@ from app.core.rate_limiter import (
     register_attempt_key,
 )
 from app.db.database import get_db
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.services.audit_service import record_audit
 from app.utils.national_id import validate_iranian_national_id
 

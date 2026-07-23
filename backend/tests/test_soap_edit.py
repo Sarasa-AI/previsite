@@ -11,7 +11,6 @@ import app.db.database as database_module
 from app.auth.security import get_password_hash
 from app.core import config as config_module
 from app.main import app as fastapi_app
-from app.models import Session as SessionModel
 from app.models import Summary
 from app.models.audit_log import AuditLog
 from app.models.user import User, UserRole

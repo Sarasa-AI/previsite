@@ -1,0 +1,15 @@
+target-version = "py311"
+line-length = 100
+
+[lint]
+# Keep CI lint lean on the existing codebase; expand gradually.
+select = ["E", "F"]
+ignore = [
+  "E501",  # line length; many existing lines exceed 100
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["E402"]  # env setup before app imports in conftest
+"alembic/**" = ["E402"]
+"app/models/__init__.py" = ["F401"]
+"tests/conftest.py" = ["F401", "F403"]  # model import for metadata registration

@@ -8,7 +8,6 @@ SQLite database per test module invocation.
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -483,17 +482,6 @@ class TestLayer2HPIContract:
 
 class TestLayer3ClinicalSummaryContract:
     def test_clinical_summary_schema_with_categorized_flags(self, tmp_path, monkeypatch) -> None:
-        llm_payload = ClinicalSummary(
-            chief_complaint="درد قفسه سینه",
-            hpi_summary="بیمار با درد قفسه سینه و تنگی نفس مراجعه کرده است.",
-            pertinent_positives=["درد قفسه سینه", "تنگی نفس"],
-            pertinent_negatives=["تب", "سرفه"],
-            red_flags=["درد منتشر به بازو"],
-            patient_questions=[
-                "آیا درد با فعالیت بدتر می‌شود؟",
-                "آیا سابقه بیماری قلبی در خانواده دارید؟",
-            ],
-        )
         captured: dict[str, str] = {}
 
         async def spy_generate_json(*, system_prompt: str, user_prompt: str, **kwargs) -> dict:
