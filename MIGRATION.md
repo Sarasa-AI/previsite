@@ -1,54 +1,44 @@
-# Migration to GapGPT API
+# Clinical Pipeline Notes (supersedes GapGPT migration doc)
 
-## Overview
-This document describes the migration from using OpenAI API to GapGPT API.
+## Canonical clinical spine
 
-## Changes Made
+All patient entry modalities (intake, chat, uploads, future voice) must converge on:
 
-### 1. Configuration Update (`backend/app/core/config.py`)
-- Added new settings for GapGPT:
-  - `gapgpt_api_key`
-  - `gapgpt_base_url` (default: `https://api.gapgpt.app/v1`)
-  - `gapgpt_model` (default: `gapgpt-qwen-3.5`)
-
-### 2. LLM Service Update (`backend/app/services/llm_service.py`)
-- Added support for "gapgpt" as an LLM provider
-- Updated client initialization to use OpenAI client with GapGPT base URL
-- Updated error handling to work with GapGPT
-
-### 3. Medical Extractor Update (`backend/app/services/medical_extractor.py`)
-- Updated to support GapGPT provider
-- Now checks `llm_provider` setting to decide which client to use
-
-### 4. SOAP Note Generator Update (`backend/app/services/soap_generator.py`)
-- Added GapGPT to LLMProvider enum
-- Added `gapgpt_client` initialization
-- Added `_generate_with_gapgpt` method
-- Updated provider selection logic
-
-### 5. Medical File Analyzer Update (`backend/app/services/medical_file_analyzer.py`)
-- Added `gapgpt_api_key` and `gapgpt_base_url` parameters to constructor
-- Added `gapgpt_client` initialization
-- Added `_analyze_with_gapgpt` method
-- Updated provider selection logic
-
-### 6. Environment Variables Update
-- Updated `backend/.env` to use GapGPT
-- Updated `backend/.env.example` to show new variables
-
-### 7. Test Script
-- Created `backend/test_gapgpt.py` to test GapGPT connection
-
-## New Environment Variables
-```env
-GAPGPT_API_KEY=<GAPGPT_API_KEY>
-GAPGPT_BASE_URL=https://api.gapgpt.app/v1
-LLM_PROVIDER=gapgpt
-GAPGPT_MODEL=gapgpt-qwen-3.5
+```
+modality adapters
+  → Summary / Intake / MedicalOverview / Files
+  → ClinicalContextBuilder.build
+  → ClinicalContext                          # source clinical aggregate
+  → TimelineBuilder.build
+  → ClinicalContext.timeline                 # first derived artifact (additive; see ADR)
+  → soap_generator (via soap_task only)
+  → Summary.soap_* + Session.soap_status
 ```
 
-## Notes
-- GapGPT uses the same OpenAI client library, so no need to install new packages
-- All parameters (temperature, max_tokens, etc.) should work the same
-- Response format is the same as OpenAI
-- You can still switch back to OpenAI by setting `LLM_PROVIDER=openai` in .env
+`ClinicalTimeline` is the first derived clinical artifact. Do not stack further derived AI
+outputs (DDx, risk scores, recommendations, explainability) onto `ClinicalContext` long-term;
+see [`docs/adr/0001-clinical-artifacts-aggregate.md`](docs/adr/0001-clinical-artifacts-aggregate.md).
+
+Document extraction uses Tesseract OCR (`ocr_service` + `drug_matcher`), not LLM vision analyzers.
+
+## Removed dead modules (pipeline audit)
+
+- `backend/app/services/medical_file_analyzer.py` — unused LLM document analyzer
+- `backend/app/services/medical_extractor.py` — unused free-text extractor
+- Abandoned ad-hoc scripts (`test_gapgpt.py`, `test_openai_error.py`, `test_httpx_params.py`, `test_diagnostic_flow.py`, `openrouter-test.py`)
+
+## Deprecated (kept for compatibility)
+
+- `GET /api/pmh/schema` — returns 410; nested questionnaire replaced by MedicalOverview
+- `POST /api/pmh/submit` — prefer intake Layer 4 / submit; overview write still works
+- Legacy `PatientPMH.answers_json` read path in `ClinicalContextBuilder` / `pmh_service` helpers
+
+## Observability
+
+Clinical AI pipeline stages emit PHI-safe structured telemetry via
+`app.core.observability` (`ClinicalPipelineEvent` / `AITelemetryEvent`),
+correlation IDs (`X-Request-ID`), and in-process Prometheus metrics at `GET /metrics`.
+
+## LLM providers
+
+Primary path is OpenRouter via `llm_cascade` / `openrouter_service`. Provider-specific settings remain in `backend/app/core/config.py` and `.env.example`.
