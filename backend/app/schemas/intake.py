@@ -102,6 +102,8 @@ class MedicalOverview(BaseModel):
                     )
             elif isinstance(item, dict):
                 coerced.append(item)
+            elif hasattr(item, "model_dump"):
+                coerced.append(item.model_dump())
         return coerced
 
     @model_validator(mode="after")

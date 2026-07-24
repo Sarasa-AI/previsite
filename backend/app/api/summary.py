@@ -19,6 +19,7 @@ from app.services.medical_overview_service import (
     parse_legacy_soap,
 )
 from app.services.soap_task import trigger_soap_generation
+from app.core.observability.context import get_correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,12 @@ async def retry_soap_generation(
         ip_address=client_ip,
     )
 
-    trigger_soap_generation(background_tasks, session_id)
+    trigger_soap_generation(
+        background_tasks,
+        session_id,
+        correlation_id=get_correlation_id(),
+        entry="retry",
+    )
     return {"soap_status": "generating"}
 
 

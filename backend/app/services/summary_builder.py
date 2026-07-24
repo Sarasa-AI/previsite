@@ -1,5 +1,7 @@
 from typing import Dict, List
 
+from app.core.observability.stages import PipelineModule, PipelineStage
+from app.core.observability.timing import pipeline_stage
 from app.services.llm_cascade import llm_cascade
 
 
@@ -24,12 +26,15 @@ class MedicalSummaryBuilder:
         }
 
     async def build_summary(self, messages: List[dict]) -> Dict:
+        async with pipeline_stage(
+            PipelineStage.SUMMARY_BUILD,
+            module=PipelineModule.SUMMARY,
+        ):
+            conversation = "\n".join([
+                f"{m['role']}: {m['content']}" for m in messages
+            ])
 
-        conversation = "\n".join([
-            f"{m['role']}: {m['content']}" for m in messages
-        ])
-
-        prompt = f"""
+            prompt = f"""
 از مکالمه زیر اطلاعات پزشکی بیمار را استخراج کن و خلاصه استاندارد بساز.
 
 مکالمه:
@@ -53,33 +58,33 @@ class MedicalSummaryBuilder:
 - فیلد is_hpi_complete را زمانی true کن که شرح حال فعلی (HPI) از نظر بالینی برای تشخیص افتراقی کافی باشد (شامل جزئیات کافی از شروع، کیفیت، علائم همراه و رد فرضیات مهم).
 """
 
-        system_prompt = (
-            "You are a medical documentation assistant. "
-            "Extract structured medical summary data and respond with valid JSON only."
-        )
+            system_prompt = (
+                "You are a medical documentation assistant. "
+                "Extract structured medical summary data and respond with valid JSON only."
+            )
 
-        cascade_result = await llm_cascade.generate_json_with_cascade(
-            system_prompt=system_prompt,
-            user_prompt=prompt,
-            tier3_factory=lambda: self._fallback_summary(messages),
-            temperature=0.2,
-            max_tokens=2000,
-        )
+            cascade_result = await llm_cascade.generate_json_with_cascade(
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                tier3_factory=lambda: self._fallback_summary(messages),
+                temperature=0.2,
+                max_tokens=2000,
+            )
 
-        data = cascade_result.data
-        required_keys = {
-            "chief_complaint",
-            "history_present_illness",
-            "past_medical_history",
-            "medications",
-            "allergies",
-            "assessment",
-            "is_hpi_complete",
-        }
-        if not isinstance(data, dict) or not required_keys.issubset(data.keys()):
-            return self._fallback_summary(messages)
+            data = cascade_result.data
+            required_keys = {
+                "chief_complaint",
+                "history_present_illness",
+                "past_medical_history",
+                "medications",
+                "allergies",
+                "assessment",
+                "is_hpi_complete",
+            }
+            if not isinstance(data, dict) or not required_keys.issubset(data.keys()):
+                return self._fallback_summary(messages)
 
-        return data
+            return data
 
 
 summary_builder = MedicalSummaryBuilder()

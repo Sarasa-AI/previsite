@@ -14,6 +14,7 @@ from app.auth.session_access import (
     is_doctor,
     is_patient,
 )
+from app.core.observability.context import get_correlation_id
 from app.core.rate_limiter import chat_rate_limit
 from app.db.database import get_async_session, get_db
 from app.models import Message, User
@@ -160,7 +161,10 @@ async def list_sessions(
     return results
 
 
-async def _process_final_summary(session_id: int) -> None:
+async def _process_final_summary(
+    session_id: int,
+    correlation_id: str | None = None,
+) -> None:
     """پردازش پس‌زمینه برای تولید خلاصه نهایی و SOAP note"""
     async with get_async_session() as db:
         try:
@@ -189,7 +193,11 @@ async def _process_final_summary(session_id: int) -> None:
         except Exception as e:
             logger.error("Final background summary update error: %s", e)
 
-    await run_soap_generation(session_id)
+    await run_soap_generation(
+        session_id,
+        correlation_id=correlation_id,
+        entry="chat",
+    )
 
 
 @router.post("/{session_id}/submit", response_model=SessionResponse)
@@ -213,7 +221,11 @@ async def submit_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    background_tasks.add_task(_process_final_summary, session_id)
+    background_tasks.add_task(
+        _process_final_summary,
+        session_id,
+        get_correlation_id(),
+    )
 
     session.status = "pending_review"
     session.soap_status = "generating"

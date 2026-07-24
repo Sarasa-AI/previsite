@@ -6,6 +6,8 @@ import numpy as np
 import pytesseract
 from loguru import logger
 
+from app.core.observability.stages import PipelineModule, PipelineStage
+from app.core.observability.timing import pipeline_stage_sync
 from app.services.drug_matcher import drug_matcher
 from app.services.file_processor import file_processor
 
@@ -414,7 +416,14 @@ def extract_medication_ocr(file_bytes: bytes, mime_type: str) -> list[dict[str, 
     if not mime_type.startswith("image/"):
         return None
     try:
-        return _route_medication_extraction(file_bytes, mime_type)
+        with pipeline_stage_sync(
+            PipelineStage.OCR_EXTRACT,
+            module=PipelineModule.OCR,
+            ocr_type="medication",
+            recoverable_on_error=True,
+            retryable_on_error=True,
+        ):
+            return _route_medication_extraction(file_bytes, mime_type)
     except Exception:
         logger.exception(
             "Medication OCR pipeline failed mime_type={} pipeline=medication",
@@ -425,9 +434,16 @@ def extract_medication_ocr(file_bytes: bytes, mime_type: str) -> list[dict[str, 
 
 def extract_lab_values_ocr(file_bytes: bytes, mime_type: str = "image/png") -> str | None:
     try:
-        if mime_type == "application/pdf" or mime_type.startswith("image/"):
-            return _route_lab_extraction(file_bytes, mime_type)
-        return None
+        with pipeline_stage_sync(
+            PipelineStage.OCR_EXTRACT,
+            module=PipelineModule.OCR,
+            ocr_type="lab",
+            recoverable_on_error=True,
+            retryable_on_error=True,
+        ):
+            if mime_type == "application/pdf" or mime_type.startswith("image/"):
+                return _route_lab_extraction(file_bytes, mime_type)
+            return None
     except Exception:
         logger.exception(
             "Lab OCR pipeline failed mime_type={} pipeline=lab",

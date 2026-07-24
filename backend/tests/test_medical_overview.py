@@ -122,6 +122,12 @@ class TestMedicalOverviewIntegration:
                 )
                 assert layer4.status_code == 200, layer4.text
 
+                monkeypatch.setattr(
+                    intake_api,
+                    "trigger_soap_generation",
+                    lambda background_tasks, session_id, **kwargs: None,
+                )
+
                 submit = await client.post(
                     f"/api/intake/{session_id}/submit",
                     headers=headers,
@@ -140,7 +146,7 @@ class TestMedicalOverviewIntegration:
                 body = summary.json()
                 assert body["clinical_overview"]["drug_history"] == ["متفورمین"]
                 assert body["clinical_overview"]["chronic_conditions"][0]["name"] == "دیابت"
-                assert body["soap_status"] == "pending"
+                assert body["soap_status"] == "generating"
 
         asyncio.run(_run())
         _teardown()

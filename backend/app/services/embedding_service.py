@@ -195,20 +195,7 @@ class EmbeddingService:
     def chunk_medical_text(self, text: str, max_tokens: int | None = None) -> List[str]:
         return chunk_medical_text(text, max_tokens=max_tokens)
 
-    async def generate_chunked_embeddings(
-        self, text: str, max_tokens: int | None = None
-    ) -> List[List[float]]:
-        chunks = self.chunk_medical_text(text, max_tokens=max_tokens)
-        if not chunks:
-            raise ValueError("Cannot generate embeddings for empty text.")
-
-        embeddings: List[List[float]] = []
-        for chunk in chunks:
-            embeddings.append(await self.generate_embedding(chunk))
-        return embeddings
-
 
 embedding_service = EmbeddingService()
 
 generate_embedding = embedding_service.generate_embedding
-generate_chunked_embeddings = embedding_service.generate_chunked_embeddings

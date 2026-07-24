@@ -98,6 +98,7 @@ async def test_chat_soap_generation_uses_summary_without_pmh_tree(
 
     user_prompt = captured_messages["messages"][1]["content"]
     assert "Chest pain" in user_prompt
+    # Chat-only without overview/PMH: questionnaire section must remain absent
     assert "### Patient Past Medical History (From Questionnaire):" not in user_prompt
 
     summary = (

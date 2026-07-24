@@ -297,6 +297,9 @@ def log_discovered_models(
 
 def build_benchmark_messages() -> list[dict[str, str]]:
     """Assemble production-equivalent SOAP prompt payload (RAG skipped via mock)."""
+    from app.schemas.clinical_context import ClinicalChatMessage, ClinicalContext
+    from app.services.pmh_service import build_pmh_assertion_registry
+
     summary = MedicalSummary(
         chief_complaint="Chest pain",
         symptoms=["chest pain", "shortness of breath"],
@@ -319,31 +322,41 @@ def build_benchmark_messages() -> list[dict[str, str]]:
         ),
     ]
     pmh_context = format_pmh_for_prompt(pmh_answers)
+    pmh_assertions = tuple(build_pmh_assertion_registry(pmh_answers))
 
-    chat_history = [
-        {
-            "role": "user",
-            "content": "I have been having chest pain for the past two days.",
-        },
-        {
-            "role": "assistant",
-            "content": "Can you describe the pain? Is it sharp, dull, or pressure-like?",
-        },
-        {
-            "role": "user",
-            "content": "It feels like pressure in the center of my chest.",
-        },
-        {
-            "role": "assistant",
-            "content": "Does the pain radiate anywhere, such as your arm or jaw?",
-        },
-    ]
+    chat_history = (
+        ClinicalChatMessage(
+            role="user",
+            content="I have been having chest pain for the past two days.",
+        ),
+        ClinicalChatMessage(
+            role="assistant",
+            content="Can you describe the pain? Is it sharp, dull, or pressure-like?",
+        ),
+        ClinicalChatMessage(
+            role="user",
+            content="It feels like pressure in the center of my chest.",
+        ),
+        ClinicalChatMessage(
+            role="assistant",
+            content="Does the pain radiate anywhere, such as your arm or jaw?",
+        ),
+    )
+
+    clinical_context = ClinicalContext(
+        session_id=1,
+        patient_id=1,
+        summary=summary,
+        chat_history=chat_history,
+        pmh_context=pmh_context,
+        pmh_answers=tuple(pmh_answers),
+        pmh_assertions=pmh_assertions,
+    )
 
     generator = SOAPNoteGenerator(rag_service=MagicMock())
     context = generator._build_context(
-        summary,
-        chat_history=chat_history,
-        pmh_context=pmh_context,
+        clinical_context,
+        pmh_assertion_registry=generator._format_pmh_assertion_registry(pmh_assertions) or None,
     )
 
     return [

@@ -1,7 +1,6 @@
-import time
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +12,8 @@ from app.core.config import settings, validate_startup_config
 from app.core.error_handler import register_exception_handlers
 from app.core.health_checks import check_database, check_llm_provider, check_ollama
 from app.core.logging_config import setup_logging
+from app.core.observability.metrics import metrics_response
+from app.core.observability.middleware import CorrelationIdMiddleware
 from app.core.sentry import init_sentry
 from app.core.startup_health import verify_llm_connection
 from app.db.database import get_async_session, get_db
@@ -58,31 +59,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.middleware("http")
-async def log_requests_middleware(request: Request, call_next):
-    start = time.time()
-    client_ip = request.client.host if request.client else "unknown"
-    try:
-        response = await call_next(request)
-    except Exception:
-        logger.exception(
-            "Request failed method={} path={} client_ip={}",
-            request.method,
-            request.url.path,
-            client_ip,
-        )
-        raise
-    duration_ms = int((time.time() - start) * 1000)
-    logger.info(
-        "HTTP {} {} client_ip={} status={} duration_ms={}",
-        request.method,
-        request.url.path,
-        client_ip,
-        response.status_code,
-        duration_ms,
-    )
-    return response
+# Correlation ID + structured HTTP request logging (outermost after CORS registration → runs first)
+app.add_middleware(CorrelationIdMiddleware)
 
 register_exception_handlers(app)
 
@@ -103,6 +81,13 @@ def health_check():
     return {
         "status": "ok"
     }
+
+
+@app.get("/metrics")
+def prometheus_metrics():
+    """Prometheus text exposition of Clinical AI pipeline metrics."""
+    body, content_type = metrics_response()
+    return Response(content=body, media_type=content_type)
 
 
 @app.get("/health/detailed")

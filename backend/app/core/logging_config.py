@@ -4,6 +4,7 @@ import sys
 from loguru import logger
 
 from app.core.config import settings
+from app.core.observability.context import get_context
 
 LOG_FORMAT = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
@@ -12,6 +13,16 @@ LOG_FORMAT = (
     "<level>{message}</level>"
 )
 LOG_FILE_PATH = "/tmp/previsit-backend.log"
+JSON_LOG_FILE_PATH = "/tmp/previsit-backend.json.log"
+
+
+def _enrich_record(record: dict) -> bool:
+    """Inject correlation context into every Loguru record (PHI-safe fields only)."""
+    ctx = get_context()
+    extra = record["extra"]
+    for key, value in ctx.as_log_extra().items():
+        extra.setdefault(key, value)
+    return True
 
 
 class InterceptHandler(logging.Handler):
@@ -43,6 +54,7 @@ def setup_logging() -> None:
         colorize=True,
         backtrace=True,
         diagnose=False,
+        filter=_enrich_record,
     )
 
     logger.add(
@@ -55,6 +67,20 @@ def setup_logging() -> None:
         backtrace=True,
         diagnose=False,
         enqueue=True,
+        filter=_enrich_record,
+    )
+
+    logger.add(
+        JSON_LOG_FILE_PATH,
+        level=normalized_level,
+        serialize=True,
+        colorize=False,
+        rotation="10 MB",
+        retention="7 days",
+        backtrace=True,
+        diagnose=False,
+        enqueue=True,
+        filter=_enrich_record,
     )
 
     logging.root.handlers = [InterceptHandler()]

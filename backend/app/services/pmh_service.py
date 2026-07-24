@@ -82,43 +82,11 @@ def _load_pmh_question_meta() -> dict[str, dict[str, str]]:
     return _question_meta_lookup
 
 
-def _answers_payload(answers: list[PMHAnswer]) -> dict:
-    return {"answers": [answer.model_dump() for answer in answers]}
-
-
 def _parse_answers_payload(payload: dict | None) -> list[PMHAnswer]:
     if not payload:
         return []
     raw_answers = payload.get("answers", [])
     return [PMHAnswer.model_validate(item) for item in raw_answers]
-
-
-async def upsert_patient_pmh(
-    db: AsyncSession,
-    patient_id: int,
-    answers: list[PMHAnswer],
-) -> PatientPMH:
-    """Deprecated: use upsert_patient_overview with MedicalOverview."""
-    warnings.warn(
-        "upsert_patient_pmh is deprecated; use upsert_patient_overview",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    result = await db.execute(
-        select(PatientPMH).where(PatientPMH.patient_id == patient_id)
-    )
-    row = result.scalar_one_or_none()
-    payload = _answers_payload(answers)
-
-    if row:
-        row.answers_json = payload
-    else:
-        row = PatientPMH(patient_id=patient_id, answers_json=payload)
-        db.add(row)
-
-    await db.flush()
-    await db.refresh(row)
-    return row
 
 
 def _overview_payload(overview: MedicalOverview) -> dict:

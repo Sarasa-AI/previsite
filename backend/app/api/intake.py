@@ -1,7 +1,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,8 @@ from app.services.medical_overview_service import (
     strip_ocr_from_overview,
 )
 from app.services.pmh_service import upsert_patient_overview
+from app.services.soap_task import trigger_soap_generation
+from app.core.observability.context import get_correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +279,7 @@ async def save_layer4(
 @router.post("/{session_id}/submit", response_model=IntakeResponse)
 async def submit_intake(
     session_id: int,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -296,9 +299,16 @@ async def submit_intake(
     await _save_summary_from_intake(db, session_id, intake)
     await upsert_patient_overview(db, session.patient_id, overview)
     session.status = "pending_review"
-    session.soap_status = "pending"
+    session.soap_status = "generating"
     session.soap_error_detail = None
     await db.commit()
+
+    trigger_soap_generation(
+        background_tasks,
+        session_id,
+        correlation_id=get_correlation_id(),
+        entry="intake",
+    )
 
     await db.refresh(intake)
     return _to_response(intake)

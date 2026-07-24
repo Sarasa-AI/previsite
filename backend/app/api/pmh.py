@@ -65,7 +65,14 @@ async def submit_pmh(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> PatientOverviewResponse:
-    """Save or update a patient's lean medical overview."""
+    """Deprecated public write path.
+
+    Canonical overview persistence is intake Layer 4 / submit via
+    ``upsert_patient_overview``. Kept for external API compatibility.
+    """
+    logger.warning(
+        "POST /api/pmh/submit is deprecated; prefer intake Layer 4 / submit"
+    )
     _require_patient(current_user)
 
     if data.patient_id != current_user.id:

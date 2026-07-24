@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.schemas.clinical_context import ClinicalContext
 from app.schemas.medical import MedicalSummary
 from app.services.soap_generator import SOAPNoteGenerator
 
@@ -16,6 +17,18 @@ def _sample_summary(**overrides) -> MedicalSummary:
     }
     base.update(overrides)
     return MedicalSummary(**base)
+
+
+def _sample_clinical_context(**overrides) -> ClinicalContext:
+    base = {
+        "session_id": 1,
+        "patient_id": 1,
+        "summary": _sample_summary(),
+    }
+    base.update(overrides)
+    if "summary" in overrides and isinstance(overrides["summary"], dict):
+        base["summary"] = _sample_summary(**overrides["summary"])
+    return ClinicalContext(**base)
 
 
 def _rag_results() -> list[dict]:
@@ -123,7 +136,10 @@ async def test_generate_soap_note_includes_evidence_and_citations():
     summary = _sample_summary()
     db = MagicMock()
 
-    result = await generator.generate_soap_note(summary=summary, db=db)
+    result = await generator.generate_soap_note(
+        clinical_context=_sample_clinical_context(summary=summary),
+        db=db,
+    )
 
     assert result["status"] == "success"
     assert result["soap_note"].startswith("# SOAP")
@@ -159,7 +175,10 @@ async def test_generate_soap_note_gracefully_degrades_when_rag_fails():
 
     generator.openrouter_client.chat.completions.create = AsyncMock(side_effect=fake_create)
 
-    result = await generator.generate_soap_note(summary=_sample_summary(), db=MagicMock())
+    result = await generator.generate_soap_note(
+        clinical_context=_sample_clinical_context(),
+        db=MagicMock(),
+    )
 
     assert result["status"] == "success"
     assert result["citations"] == []
@@ -290,7 +309,10 @@ async def test_generate_soap_note_returns_verification_status():
 
     generator.openrouter_client.chat.completions.create = AsyncMock(side_effect=fake_create)
 
-    result = await generator.generate_soap_note(summary=_sample_summary(), db=MagicMock())
+    result = await generator.generate_soap_note(
+        clinical_context=_sample_clinical_context(),
+        db=MagicMock(),
+    )
 
     assert result["status"] == "success"
     assert result["verification_status"] == "verified"
