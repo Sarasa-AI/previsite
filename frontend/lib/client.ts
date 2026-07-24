@@ -1,6 +1,6 @@
 import type { AxiosProgressEvent } from "axios";
 import type { Demographics } from "./intake";
-import type { MedicalOverview, PMHSubmission } from "./pmh/types";
+import type { MedicalOverview } from "./pmh/types";
 import { apiClient } from "./api";
 
 export const frontendApi = {
@@ -40,10 +40,6 @@ export const frontendApi = {
     apiClient.post(`/proxy/api/intake/${sessionId}/layer4`, payload),
   submitIntake: (sessionId: string) => apiClient.post(`/proxy/api/intake/${sessionId}/submit`),
   getPatientProfile: () => apiClient.get("/proxy/api/patients/me/profile"),
-  updatePatientProfile: (payload: Record<string, unknown>) =>
-    apiClient.patch("/proxy/api/patients/me/profile", payload),
   retrySoap: (sessionId: string) => apiClient.post(`/proxy/api/summary/${sessionId}/retry-soap`),
-  getPMHSchema: () => apiClient.get("/proxy/api/pmh/schema"),
-  submitPMH: (payload: PMHSubmission) => apiClient.post("/proxy/api/pmh/submit", payload),
   getPatientOverview: (patientId: string) => apiClient.get(`/proxy/api/pmh/overview/${patientId}`),
 };
