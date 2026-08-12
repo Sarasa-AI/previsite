@@ -1,0 +1,84 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CardChrome > matches snapshot 1`] = `
+<article
+  class="rounded-lg border border-trust/15 bg-white p-3 text-ink shadow-sm"
+>
+  <header
+    class="mb-2 flex flex-wrap items-start gap-2"
+  >
+    <div
+      class="min-w-0 flex-1"
+    >
+      <div
+        class="text-sm font-semibold text-trust"
+      >
+        Snapshot
+      </div>
+    </div>
+    <div
+      class="shrink-0"
+    >
+      <span>
+        T
+      </span>
+    </div>
+  </header>
+  <div
+    class="min-w-0"
+  >
+    Content
+  </div>
+</article>
+`;
+
+exports[`PatientHeader > matches snapshot 1`] = `
+<article
+  aria-label="Patient header"
+  class="rounded-lg border border-trust/15 bg-white p-3 text-ink shadow-sm"
+>
+  <header
+    class="mb-2 flex flex-wrap items-start gap-2"
+  >
+    <div
+      class="min-w-0 flex-1"
+    >
+      <div
+        class="text-sm font-semibold text-trust"
+      >
+        Jane Doe
+      </div>
+      <div
+        class="mt-0.5 text-xs text-ink/70"
+      >
+        <span
+          class="flex flex-wrap gap-x-3 gap-y-1"
+        >
+          <span>
+            54
+            y · 
+            F
+          </span>
+          <span>
+            MRN 
+            MRN-10042
+          </span>
+          <span>
+            Follow-up
+          </span>
+        </span>
+      </div>
+    </div>
+    <div
+      class="flex flex-wrap items-center gap-1"
+    >
+      <span
+        aria-label="Status Arrived"
+        class="inline-flex items-center rounded border border-mint/50 bg-mint/30 px-1.5 py-0.5 text-xs font-medium text-trust"
+      >
+        Arrived
+      </span>
+    </div>
+  </header>
+</article>
+`;

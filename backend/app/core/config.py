@@ -155,6 +155,14 @@ class Settings(BaseSettings):
     )
     openrouter_http_referer: str = "http://localhost:3000"
     openrouter_app_title: str = "PreVisit MVP"
+    openrouter_inference_timeout: float = Field(
+        default=30.0,
+        validation_alias=AliasChoices(
+            "openrouter_inference_timeout",
+            "OPENROUTER_INFERENCE_TIMEOUT",
+            "OPENROUTER_TIMEOUT",
+        ),
+    )
     intake_llm_model: str = "google/gemini-2.5-flash-lite"
     intake_llm_timeout_seconds: float = 20.0
 

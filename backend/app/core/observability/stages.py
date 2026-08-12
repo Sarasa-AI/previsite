@@ -13,6 +13,8 @@ class PipelineModule:
     PMH = "pmh"
     DB = "db"
     TIMELINE = "timeline"
+    INTELLIGENCE = "intelligence"
+    INFERENCE = "inference"
 
 
 class PipelineStage:
@@ -26,3 +28,8 @@ class PipelineStage:
     CONFLICT_DETECT = "conflict.detect"
     DB_PERSIST_SOAP = "db.persist_soap"
     TIMELINE_BUILD = "timeline.build"
+    INTELLIGENCE_FINDING_CREATE = "intelligence.finding_create"
+    INTELLIGENCE_ORCHESTRATION = "intelligence.orchestration"
+    INTELLIGENCE_INTERPRETATION = "intelligence.interpretation"
+    INFERENCE_EXECUTION = "inference.execution"
+    INFERENCE_ADAPTER = "inference.adapter"

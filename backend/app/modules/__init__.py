@@ -1,1 +1,2 @@
-"""Clinical AI feature modules (Timeline, and future derived capabilities)."""
+"""Clinical AI feature modules (Timeline, Workspace, Intelligence, and future derived capabilities)."""
+

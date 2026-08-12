@@ -19,6 +19,7 @@ from app.core.startup_health import verify_llm_connection
 from app.db.database import get_async_session, get_db
 from app.db.init_db import init_db
 from app.models.user import User
+from app.modules.workspace.api import router as workspace_router
 from app.services.drug_matcher import drug_matcher
 
 setup_logging()
@@ -126,3 +127,4 @@ app.include_router(intake.router)
 app.include_router(patients.router)
 app.include_router(pmh.router)
 app.include_router(pdf.router)
+app.include_router(workspace_router)

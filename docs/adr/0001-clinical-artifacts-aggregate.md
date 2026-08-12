@@ -26,6 +26,7 @@ Scores, Recommendations, Explainability, etc.) risk stacking more derived output
    ```
    ClinicalArtifacts
      ├── timeline: ClinicalTimeline
+     ├── workspace_plan: WorkspacePlan   # orchestration (see architecture spec)
      ├── differential_diagnosis: ...   # future
      ├── risk_scores: ...              # future
      ├── recommendations: ...          # future
@@ -55,3 +56,5 @@ Scores, Recommendations, Explainability, etc.) risk stacking more derived output
 - `backend/app/modules/timeline/`
 - `backend/app/schemas/clinical_context.py`
 - `MIGRATION.md` (canonical clinical spine)
+- [`docs/architecture/doctor-workspace-orchestration.md`](../architecture/doctor-workspace-orchestration.md) — `WorkspacePlan` orchestration specification
+- [`docs/architecture/doctor-workspace-api-contract.md`](../architecture/doctor-workspace-api-contract.md) — `WorkspacePlan` API boundary and DTO contracts

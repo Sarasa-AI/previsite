@@ -36,6 +36,14 @@ from app.core import config as config_module
 from app.db.database import Base, get_db
 from app.main import app as fastapi_app
 from app.models import *  # noqa: F401,F403
+from app.modules.intelligence.infrastructure.models import (  # noqa: F401,F403
+    ClinicalFindingRecord,
+    RecommendationRecord,
+    RiskSignalRecord,
+)
+from app.modules.workspace.infrastructure.models import (  # noqa: F401,F403
+    WorkflowEventRecord,
+)
 
 # Ensure fail-fast / seed settings match the env we set above (pydantic may
 # also read a local .env; keep tests deterministic).
