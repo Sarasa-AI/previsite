@@ -9,10 +9,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Intake, Message, Session as DBSession, Summary
+from app.models import ArtifactKind, ArtifactStatus, DocumentArtifact
+from app.models import File as FileModel
 from app.modules.timeline.application.timeline_builder import TimelineBuilder
 from app.schemas.clinical_context import (
     ClinicalChatMessage,
     ClinicalContext,
+    DocumentEvidence,
+    DocumentValueEvidence,
+    EvidenceProvenance,
     FileAnalysisEvidence,
     LabEvidence,
     LabResultEvidence,
@@ -279,6 +284,208 @@ def _compose_pmh_context(
     return "\n\n".join(parts).strip() or None
 
 
+def _bbox_from_payload(raw: object) -> tuple[int, int, int, int] | None:
+    if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+        return None
+    try:
+        left, top, width, height = (int(value) for value in raw)
+    except (TypeError, ValueError):
+        return None
+    return (left, top, width, height)
+
+
+def _document_values(
+    payload: dict,
+    *,
+    document_id: int,
+    document_name: str,
+) -> tuple[DocumentValueEvidence, ...]:
+    raw_values = payload.get("values")
+    if not isinstance(raw_values, list):
+        return ()
+
+    values: list[DocumentValueEvidence] = []
+    for raw in raw_values:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        value = str(raw.get("value") or "").strip()
+        if not name or not value:
+            continue
+        provenance_raw = raw.get("provenance")
+        provenance_raw = provenance_raw if isinstance(provenance_raw, dict) else {}
+        page_raw = provenance_raw.get("page")
+        try:
+            page = int(page_raw) if page_raw is not None else None
+        except (TypeError, ValueError):
+            page = None
+        confidence_raw = provenance_raw.get("confidence")
+        try:
+            confidence = float(confidence_raw) if confidence_raw is not None else None
+        except (TypeError, ValueError):
+            confidence = None
+
+        unit = raw.get("unit")
+        review_reason = raw.get("review_reason")
+        values.append(
+            DocumentValueEvidence(
+                name=name,
+                value=value,
+                unit=str(unit).strip() if unit else None,
+                abnormal=bool(raw.get("abnormal")),
+                needs_review=bool(raw.get("needs_review")),
+                review_reason=str(review_reason) if review_reason else None,
+                provenance=EvidenceProvenance(
+                    document_id=document_id,
+                    document_name=document_name,
+                    page=page,
+                    bbox=_bbox_from_payload(provenance_raw.get("bbox")),
+                    source_text=str(provenance_raw.get("source_text") or ""),
+                    confidence=confidence,
+                    method=str(provenance_raw.get("method") or ""),
+                ),
+            )
+        )
+    return tuple(values)
+
+
+async def _load_document_evidence(
+    db: AsyncSession, session_id: int
+) -> tuple[DocumentEvidence, ...]:
+    """Project persisted DocumentArtifacts into source evidence for the aggregate.
+
+    Reads the extraction artifact per file and joins the paired OCR artifact's
+    status so a failed/unavailable transcription stays visible rather than looking
+    like "this document simply had no values".
+    """
+    file_result = await db.execute(
+        select(FileModel).where(FileModel.session_id == session_id).order_by(FileModel.id)
+    )
+    files_by_id = {row.id: row for row in file_result.scalars().all()}
+    if not files_by_id:
+        return ()
+
+    artifact_result = await db.execute(
+        select(DocumentArtifact)
+        .where(DocumentArtifact.session_id == session_id)
+        .order_by(DocumentArtifact.file_id.asc(), DocumentArtifact.id.asc())
+    )
+    artifacts = list(artifact_result.scalars().all())
+    if not artifacts:
+        return ()
+
+    # Last artifact per (file, kind) wins — reprocessing appends, never mutates.
+    latest: dict[tuple[int, str], DocumentArtifact] = {}
+    for artifact in artifacts:
+        latest[(artifact.file_id, artifact.kind)] = artifact
+
+    evidence: list[DocumentEvidence] = []
+    for file_id in sorted({key[0] for key in latest}):
+        db_file = files_by_id.get(file_id)
+        if db_file is None:
+            continue
+        ocr = latest.get((file_id, ArtifactKind.OCR))
+        extraction = latest.get((file_id, ArtifactKind.EXTRACTION))
+        if ocr is None and extraction is None:
+            continue
+
+        filename = db_file.filename or ""
+        values: tuple[DocumentValueEvidence, ...] = ()
+        payload: dict = {}
+        if extraction is not None and extraction.payload_json:
+            try:
+                loaded = json.loads(extraction.payload_json)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Unparsable extraction payload artifact_id=%s file_id=%s",
+                    extraction.id,
+                    file_id,
+                )
+                loaded = None
+            if isinstance(loaded, dict):
+                payload = loaded
+                values = _document_values(
+                    payload, document_id=file_id, document_name=filename
+                )
+
+        needs_review = bool(payload.get("needs_review")) or any(
+            value.needs_review for value in values
+        )
+        statuses = {
+            artifact.status
+            for artifact in (ocr, extraction)
+            if artifact is not None
+        }
+        if ArtifactStatus.NEEDS_REVIEW in statuses or ArtifactStatus.FAILED in statuses:
+            needs_review = True
+
+        error_detail = next(
+            (
+                artifact.error_detail
+                for artifact in (extraction, ocr)
+                if artifact is not None and artifact.error_detail
+            ),
+            None,
+        )
+
+        evidence.append(
+            DocumentEvidence(
+                document_id=file_id,
+                filename=filename,
+                ocr_status=ocr.status if ocr is not None else "",
+                extraction_status=extraction.status if extraction is not None else "",
+                engine=(ocr.engine if ocr is not None else "") or "",
+                page_count=(ocr.page_count if ocr is not None else None),
+                needs_review=needs_review,
+                error_detail=error_detail,
+                values=values,
+            )
+        )
+
+    return tuple(evidence)
+
+
+def _document_derived_evidence(
+    documents: tuple[DocumentEvidence, ...],
+) -> tuple[tuple[LabEvidence, ...], tuple[FileAnalysisEvidence, ...]]:
+    """Derive lab + file-analysis evidence from document extractions.
+
+    Values still flagged ``needs_review`` are deliberately excluded from the
+    trusted lab surfaces: an unconfirmed transcription must not read as a
+    confirmed result. They remain visible on ``document_evidence`` so the
+    physician can review them with their provenance.
+    """
+    labs: list[LabEvidence] = []
+    analyses: list[FileAnalysisEvidence] = []
+
+    for document in documents:
+        trusted = [value for value in document.values if not value.needs_review]
+        if not trusted:
+            continue
+
+        lab_rows: list[LabResultEvidence] = []
+        for value in trusted:
+            rendered = value.value if not value.unit else f"{value.value} {value.unit}"
+            labs.append(
+                LabEvidence(
+                    lab_id=f"doc-{document.document_id}-{value.name.lower().replace(' ', '-')}",
+                    name=value.name,
+                    extracted_data=rendered,
+                )
+            )
+            lab_rows.append(
+                LabResultEvidence(
+                    test_name=value.name,
+                    value=value.value,
+                    unit=value.unit,
+                )
+            )
+
+        analyses.append(FileAnalysisEvidence(lab_results=tuple(lab_rows)))
+
+    return tuple(labs), tuple(analyses)
+
+
 class ClinicalContextBuilder:
     """Assemble a single immutable ClinicalContext for SOAP and future Clinical AI modules."""
 
@@ -345,7 +552,24 @@ class ClinicalContextBuilder:
 
         lab_evidence, lab_analyses = _derive_lab_and_file_evidence(overview)
         medication_evidence, med_analyses = _derive_medication_evidence(overview)
-        file_analyses = lab_analyses + med_analyses
+
+        # Document artifacts are the canonical, provenance-carrying source for
+        # anything transcribed from an uploaded file. Intake-bound lab slots stay
+        # in play for values the patient typed or that the synchronous upload OCR
+        # echoed back.
+        document_evidence = await _load_document_evidence(db, session_id)
+        doc_labs, doc_analyses = _document_derived_evidence(document_evidence)
+
+        seen_lab_names = {lab.name.strip().lower() for lab in lab_evidence if lab.name}
+        merged_labs = list(lab_evidence)
+        for lab in doc_labs:
+            if lab.name.strip().lower() in seen_lab_names:
+                continue
+            seen_lab_names.add(lab.name.strip().lower())
+            merged_labs.append(lab)
+        lab_evidence = tuple(merged_labs)
+
+        file_analyses = lab_analyses + med_analyses + doc_analyses
 
         overview_assertions = (
             build_overview_assertion_registry(overview) if overview else []
@@ -375,6 +599,7 @@ class ClinicalContextBuilder:
             file_analyses=file_analyses,
             lab_evidence=lab_evidence,
             medication_evidence=medication_evidence,
+            document_evidence=document_evidence,
         )
 
         anchor_at = datetime.now(timezone.utc)

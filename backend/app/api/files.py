@@ -1,6 +1,15 @@
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from fastapi.responses import RedirectResponse, Response
 from loguru import logger
 from sqlalchemy import select
@@ -8,11 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.auth.session_access import get_authorized_session
+from app.core.observability.context import get_correlation_id
 from app.db.database import get_db
 from app.models import File as FileModel
 from app.models import Session as SessionModel
 from app.models import User
 from app.schemas.intake import FileConditionLink
+from app.services.document_pipeline import trigger_document_processing
 from app.services.file_processor import file_processor
 from app.services.medical_overview_service import (
     is_lab_bind_id,
@@ -43,6 +54,7 @@ async def _get_authorized_session(
 @router.post("/{session_id}/upload")
 async def upload_file(
     session_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     condition_id: str | None = Form(default=None),
     condition_type: str | None = Form(default=None),
@@ -191,6 +203,19 @@ async def upload_file(
         response["extracted_medications"] = extracted_medications
     elif medication_ocr_attempted:
         response["extracted_medications"] = None
+
+    # Canonical document pipeline: EVERY uploaded document is transcribed and
+    # extracted into DocumentArtifacts with provenance, not only the
+    # condition-bound lab/medication slots handled synchronously above. The
+    # synchronous block exists solely so the intake UI can echo a result
+    # immediately; the artifacts are what ClinicalContext and the Doctor
+    # Workspace read from.
+    trigger_document_processing(
+        background_tasks,
+        session_id,
+        db_file.id,
+        correlation_id=get_correlation_id(),
+    )
     return response
 
 

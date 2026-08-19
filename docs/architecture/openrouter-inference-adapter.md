@@ -102,7 +102,7 @@ Provider-local Pydantic models (`OpenRouterMessage`, `OpenRouterProviderFinding`
 
 ### Mapper Boundary
 
-`mapper.py` is the **only** file that crosses the provider/domain boundary:
+`mapper.py` is the **only** file that performs provider-wire → domain **data mapping**:
 
 ```text
 OpenRouterStructuredOutput
@@ -112,7 +112,24 @@ map_structured_output_to_findings()
 tuple[InferenceFinding, ...]
 ```
 
-All other provider modules must remain domain-agnostic.
+`adapter.py` is the **port implementation**: it satisfies the `InferenceAdapter`
+protocol and therefore constructs the `InferenceResult` / `ExecutionTrace` it is
+contracted to return. It delegates *all* wire→domain field mapping to `mapper.py`
+and never reshapes provider payloads itself.
+
+The provider **wire layer** — `models.py`, `client.py`, `prompts.py`, `errors.py` —
+must remain strictly domain-agnostic.
+
+Enforced by `tests/test_openrouter_boundaries.py`:
+`test_mapper_is_only_domain_boundary` (only mapper + adapter may import domain) and
+`test_provider_wire_layer_is_domain_free`.
+
+### Structured Output Is Fail-Closed
+
+`OpenRouterStructuredOutput.findings` is a **required** field. A provider reply that
+omits or misspells it raises `OpenRouterStructuredOutputError` rather than degrading
+to an empty result set — a malformed response must never be indistinguishable from
+"the model found nothing". `{"findings": []}` is the only valid way to say "nothing found".
 
 ---
 

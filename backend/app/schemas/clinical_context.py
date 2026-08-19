@@ -66,6 +66,55 @@ class FileAnalysisEvidence(BaseModel):
     imaging_findings: str | None = None
 
 
+class EvidenceProvenance(BaseModel):
+    """Where a document-derived value came from — the audit trail for one fact."""
+
+    model_config = ConfigDict(frozen=True)
+
+    document_id: int
+    document_name: str = ""
+    page: int | None = None
+    #: (left, top, width, height) on the rendered page; None for PDF text layers.
+    bbox: tuple[int, int, int, int] | None = None
+    #: Verbatim transcribed substring the value was read from.
+    source_text: str = ""
+    confidence: float | None = None
+    method: str = ""
+
+
+class DocumentValueEvidence(BaseModel):
+    """A single analyte reading extracted from an uploaded document."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    #: Verbatim as transcribed — never rounded or unit-converted.
+    value: str
+    unit: str | None = None
+    #: Document-declared abnormality only; never inferred from reference ranges.
+    abnormal: bool = False
+    #: True when a human must confirm before this is treated as a clinical value.
+    needs_review: bool = False
+    review_reason: str | None = None
+    provenance: EvidenceProvenance
+
+
+class DocumentEvidence(BaseModel):
+    """Per-document extraction outcome, including explicit failure states."""
+
+    model_config = ConfigDict(frozen=True)
+
+    document_id: int
+    filename: str = ""
+    ocr_status: str = ""
+    extraction_status: str = ""
+    engine: str = ""
+    page_count: int | None = None
+    needs_review: bool = False
+    error_detail: str | None = None
+    values: tuple[DocumentValueEvidence, ...] = ()
+
+
 class ClinicalContext(BaseModel):
     """
     Immutable clinical context assembled once per session.
@@ -89,5 +138,9 @@ class ClinicalContext(BaseModel):
     file_analyses: tuple[FileAnalysisEvidence, ...] = ()
     lab_evidence: tuple[LabEvidence, ...] = ()
     medication_evidence: tuple[MedicationEvidence, ...] = ()
+    #: Source evidence extracted from uploaded documents, with provenance.
+    #: This is *source* clinical evidence (transcribed facts), not a derived AI
+    #: output, so it belongs on the aggregate — see ADR 0001.
+    document_evidence: tuple[DocumentEvidence, ...] = ()
     # First derived clinical artifact (additive; see ADR 0001).
     timeline: ClinicalTimeline | None = None

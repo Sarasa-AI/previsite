@@ -28,11 +28,17 @@ class OpenRouterProviderFinding(BaseModel):
 
 
 class OpenRouterStructuredOutput(BaseModel):
-    """Provider structured output — validated model JSON response."""
+    """Provider structured output — validated model JSON response.
+
+    ``findings`` is REQUIRED. A reply that omits or misspells it is a schema
+    violation, not "no findings": defaulting to an empty tuple would let a
+    malformed provider response reach the domain as a silently-empty result.
+    An explicit ``{"findings": []}`` is the only way to express "nothing found".
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    findings: tuple[OpenRouterProviderFinding, ...] = ()
+    findings: tuple[OpenRouterProviderFinding, ...]
 
 
 class OpenRouterChoiceMessage(BaseModel):

@@ -25,6 +25,7 @@ from app.modules.workspace.application.generate_workspace import (
     GenerateWorkspaceUseCase,
     generate_workspace,
 )
+from app.modules.workspace.application.inputs import OrchestratorInputs
 from app.modules.workspace.application.projections.adapters import ClinicalContentAdapters
 from app.modules.workspace.application.workflow.service import WorkflowEventService
 from app.modules.workspace.domain.enums import ClinicalObjectId, RoleProfile, SpecialtyLens
@@ -36,6 +37,10 @@ from app.modules.workspace.infrastructure.workflow_repository import (
 )
 from app.modules.workspace.interface.clinical_content_mappers import (
     load_clinical_content_adapters,
+)
+from app.modules.workspace.interface.orchestrator_inputs import (
+    context_only_orchestrator_inputs,
+    load_orchestrator_inputs,
 )
 from app.schemas.clinical_context import ClinicalContext
 from app.services.clinical_context_builder import clinical_context_builder
@@ -145,6 +150,22 @@ async def resolve_clinical_context(
         return await clinical_context_builder.build(db, session_id)
     except ValueError as exc:
         raise map_workspace_error(WorkspaceSessionNotFound(str(exc))) from exc
+
+
+async def resolve_orchestrator_inputs(
+    session_id: int,
+    context: ClinicalContext = Depends(resolve_clinical_context),
+    db: AsyncSession = Depends(get_db),
+) -> OrchestratorInputs:
+    """Build the adapter-signal bundle the orchestrator consumes.
+
+    Without this the router computed every plan from ``OrchestratorInputs()``
+    defaults, which permanently hid RED_FLAGS / CONFLICTS / DOCUMENTS regardless of
+    the session's real data. Override in tests to inject deterministic signals.
+    """
+    if db is None:  # pragma: no cover — defensive; FastAPI always supplies a session
+        return context_only_orchestrator_inputs(context)
+    return await load_orchestrator_inputs(db, session_id, context)
 
 
 async def resolve_authorized_workspace_read(

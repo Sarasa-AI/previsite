@@ -109,3 +109,22 @@ export async function GET(request: Request, { params }: { params: { path: string
 export async function POST(request: Request, { params }: { params: { path: string[] } }) {
   return forward(request, params);
 }
+
+// The backend exposes PATCH (e.g. PATCH /api/files/{session_id}/files/{file_id}) and
+// PUT/DELETE. Without these handlers Next.js answers 405 before the proxy ever runs,
+// which silently broke document↔condition unlinking from the intake UI.
+export async function PATCH(request: Request, { params }: { params: { path: string[] } }) {
+  return forward(request, params);
+}
+
+export async function PUT(request: Request, { params }: { params: { path: string[] } }) {
+  return forward(request, params);
+}
+
+export async function DELETE(request: Request, { params }: { params: { path: string[] } }) {
+  return forward(request, params);
+}
+
+export async function HEAD(request: Request, { params }: { params: { path: string[] } }) {
+  return forward(request, params);
+}

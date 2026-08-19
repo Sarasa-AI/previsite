@@ -15,6 +15,7 @@ class PipelineModule:
     TIMELINE = "timeline"
     INTELLIGENCE = "intelligence"
     INFERENCE = "inference"
+    DOCUMENT = "document"
 
 
 class PipelineStage:
@@ -33,3 +34,7 @@ class PipelineStage:
     INTELLIGENCE_INTERPRETATION = "intelligence.interpretation"
     INFERENCE_EXECUTION = "inference.execution"
     INFERENCE_ADAPTER = "inference.adapter"
+    DOCUMENT_PIPELINE = "document.pipeline"
+    DOCUMENT_OCR = "document.ocr"
+    DOCUMENT_EXTRACT = "document.extract"
+    DOCUMENT_PERSIST = "document.persist"

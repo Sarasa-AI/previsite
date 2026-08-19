@@ -12,6 +12,7 @@ import re
 from collections import defaultdict
 
 from app.modules.workspace.application.context_hash import compute_context_hash
+from app.modules.workspace.application.context_signals import parse_red_flags
 from app.modules.workspace.application.projections.adapters import (
     ClinicalContentAdapters,
     SoapAdapter,
@@ -41,9 +42,6 @@ from app.modules.workspace.interface.clinical_content_dto import (
 )
 from app.schemas.clinical_context import ClinicalContext
 
-_RED_FLAGS_LINE_RE = re.compile(
-    r"^Red flags:\s*(.+)$", re.IGNORECASE | re.MULTILINE
-)
 _SAFETY_KEYWORDS = frozenset(
     {
         "chest pain",
@@ -144,14 +142,9 @@ def _project_chief_complaint(
 
 
 def _parse_red_flags_from_notes(notes: str | None) -> tuple[str, ...]:
-    if not notes:
-        return ()
-    match = _RED_FLAGS_LINE_RE.search(notes)
-    if not match:
-        return ()
-    raw = match.group(1).strip()
-    flags = [part.strip() for part in raw.split(";") if part.strip()]
-    return tuple(flags)
+    # Single shared parser with the WorkspacePlan signal path — if these two ever
+    # disagree the plan hides a card whose body content exists.
+    return parse_red_flags(notes)
 
 
 def _red_flag_severity(title: str) -> str:

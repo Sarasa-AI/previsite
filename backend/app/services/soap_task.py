@@ -31,6 +31,7 @@ def _archive_soap_to_legacy(
     soap_note: str,
     citations: list,
     verification_status: str | None,
+    conflicts: list | None = None,
 ) -> None:
     payload = {
         "soap_note": soap_note,
@@ -42,6 +43,9 @@ def _archive_soap_to_legacy(
     summary.soap_note = soap_note
     summary.soap_citations_json = json.dumps(citations, ensure_ascii=False)
     summary.soap_verification_status = verification_status
+    # Always write (including the empty list) so a re-run that resolves all
+    # conflicts clears stale ones instead of leaving them to resurface.
+    summary.soap_conflicts_json = json.dumps(conflicts or [], ensure_ascii=False)
 
 
 def _context_counts(clinical_context) -> dict:
@@ -111,6 +115,7 @@ async def run_soap_generation(
                 soap_note_content = soap_note_result.get("soap_note")
                 citations = soap_note_result.get("citations") or []
                 verification_status = soap_note_result.get("verification_status")
+                conflicts = soap_note_result.get("conflicts") or []
                 async with pipeline_stage(
                     PipelineStage.DB_PERSIST_SOAP,
                     module=PipelineModule.DB,
@@ -129,6 +134,7 @@ async def run_soap_generation(
                             soap_note_content,
                             citations,
                             verification_status,
+                            conflicts,
                         )
                     else:
                         summary = Summary(session_id=session_id)
@@ -137,6 +143,7 @@ async def run_soap_generation(
                             soap_note_content,
                             citations,
                             verification_status,
+                            conflicts,
                         )
                         db.add(summary)
                     session.soap_status = "ready"

@@ -19,6 +19,10 @@ class Summary(Base):
     soap_note = Column(Text, nullable=True)
     soap_citations_json = Column(Text, nullable=True)
     soap_verification_status = Column(Text, nullable=True)
+    # Structured, PMH-validated discrepancies produced by the SOAP conflict stage.
+    # Persisted so the Doctor Workspace can surface conflicts as first-class
+    # signals instead of only as prose appended to the SOAP markdown.
+    soap_conflicts_json = Column(Text, nullable=True)
     legacy_soap_json = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

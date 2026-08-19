@@ -114,7 +114,15 @@ class TestOpenRouterArchitectureBoundaries:
         )
 
     def test_mapper_is_only_domain_boundary(self):
-        """Only mapper.py should import both provider models and domain models."""
+        """Only mapper.py (data mapping) and adapter.py (port impl) touch domain.
+
+        ``mapper.py`` is the sole provider-wire → domain *data mapping* boundary.
+        ``adapter.py`` implements the ``InferenceAdapter`` port, so it must build
+        the domain ``InferenceResult``/``ExecutionTrace`` it is contracted to
+        return — see docs/architecture/openrouter-inference-adapter.md ("Request
+        Flow"). Every remaining provider module (wire models, HTTP client,
+        prompts, errors) must stay domain-free.
+        """
         if not OPENROUTER_PROVIDER_ROOT.exists():
             return
 
@@ -128,12 +136,36 @@ class TestOpenRouterArchitectureBoundaries:
                     domain_importers.append(file_path)
                     break
 
-        # Only mapper.py should import domain
-        non_mapper_violations = [f for f in domain_importers if "mapper.py" not in f]
+        allowed = ("mapper.py", "adapter.py")
+        violations = [
+            f
+            for f in domain_importers
+            if not any(name in f for name in allowed)
+        ]
 
-        assert not non_mapper_violations, (
-            "Only mapper.py should import domain models, but found:\n"
-            + "\n".join(non_mapper_violations)
+        assert not violations, (
+            "Only mapper.py and adapter.py may import domain models, but found:\n"
+            + "\n".join(violations)
+        )
+
+    def test_provider_wire_layer_is_domain_free(self):
+        """Wire transport/serialisation modules must never import domain models."""
+        if not OPENROUTER_PROVIDER_ROOT.exists():
+            return
+
+        wire_modules = ("models.py", "client.py", "prompts.py", "errors.py")
+        violations = []
+
+        for module_name in wire_modules:
+            module_path = OPENROUTER_PROVIDER_ROOT / module_name
+            if not module_path.exists():
+                continue
+            for imp in _collect_imports_from_file(module_path):
+                if "app.core.inference.domain" in imp:
+                    violations.append(f"{module_name}: imports {imp}")
+
+        assert not violations, (
+            "Provider wire layer must remain domain-agnostic:\n" + "\n".join(violations)
         )
 
     def test_inference_domain_does_not_import_openrouter(self):

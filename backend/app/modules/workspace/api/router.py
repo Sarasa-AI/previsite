@@ -22,6 +22,7 @@ from app.modules.workspace.api.dependencies import (
     resolve_authorized_workspace_read,
     resolve_clinical_content_inputs,
     resolve_clinical_context,
+    resolve_orchestrator_inputs,
     resolve_session_locked,
 )
 from app.modules.workspace.api.errors import (
@@ -41,7 +42,11 @@ from app.modules.workspace.api.errors import (
 from app.modules.workspace.api.responses import apply_workspace_headers
 from app.modules.workspace.application.context_hash import compute_context_hash
 from app.modules.workspace.application.generate_workspace import GenerateWorkspaceUseCase
-from app.modules.workspace.application.inputs import ReviewAcknowledgements, SessionState
+from app.modules.workspace.application.inputs import (
+    OrchestratorInputs,
+    ReviewAcknowledgements,
+    SessionState,
+)
 from app.modules.workspace.application.workflow.eligibility import (
     is_acknowledgeable,
     is_dismissible,
@@ -119,6 +124,7 @@ async def _compute_plan_response(
     use_case: GenerateWorkspaceUseCase,
     lens: str,
     role: str,
+    inputs: OrchestratorInputs | None = None,
     offline: bool = False,
     include_trace: bool = False,
 ):
@@ -135,6 +141,7 @@ async def _compute_plan_response(
         role=role_profile,
         session_state=session_state,
         review_state=folded.review_state,
+        inputs=inputs,
         include_trace=include_trace,
     )
     dto = to_workspace_plan_response(
@@ -190,6 +197,7 @@ async def get_workspace(
     offline: bool = Query(default=False),
     auth: AuthorizedWorkspaceSession = Depends(resolve_authorized_workspace_read),
     context: ClinicalContext = Depends(resolve_clinical_context),
+    inputs: OrchestratorInputs = Depends(resolve_orchestrator_inputs),
     use_case: GenerateWorkspaceUseCase = Depends(get_generate_workspace_use_case),
     workflow: WorkflowEventService = Depends(get_workflow_event_service),
 ) -> WorkspacePlanResponse:
@@ -213,6 +221,7 @@ async def get_workspace(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
             offline=offline,
             include_trace=False,
         )
@@ -250,6 +259,7 @@ async def get_workspace_trace(
     offline: bool = Query(default=False),
     auth: AuthorizedWorkspaceSession = Depends(resolve_authorized_workspace_read),
     context: ClinicalContext = Depends(resolve_clinical_context),
+    inputs: OrchestratorInputs = Depends(resolve_orchestrator_inputs),
     use_case: GenerateWorkspaceUseCase = Depends(get_generate_workspace_use_case),
     workflow: WorkflowEventService = Depends(get_workflow_event_service),
     trace_enabled: bool = Depends(get_trace_enabled),
@@ -265,6 +275,7 @@ async def get_workspace_trace(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
             offline=offline,
             include_trace=True,
         )
@@ -331,6 +342,7 @@ async def post_acknowledgement(
     if_match: str = Depends(require_if_match),
     auth: AuthorizedWorkspaceSession = Depends(resolve_authorized_workspace_mutate),
     context: ClinicalContext = Depends(resolve_clinical_context),
+    inputs: OrchestratorInputs = Depends(resolve_orchestrator_inputs),
     use_case: GenerateWorkspaceUseCase = Depends(get_generate_workspace_use_case),
     workflow: WorkflowEventService = Depends(get_workflow_event_service),
 ) -> WorkspacePlanResponse:
@@ -344,6 +356,7 @@ async def post_acknowledgement(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
         folded = await workflow.get_folded_state(
             session_id, before_dto.metadata.context_hash
@@ -381,6 +394,7 @@ async def post_acknowledgement(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
     except Exception as exc:
         _reraise_as_http(exc)
@@ -416,6 +430,7 @@ async def post_resolve_decision_item(
     if_match: str = Depends(require_if_match),
     auth: AuthorizedWorkspaceSession = Depends(resolve_authorized_workspace_mutate),
     context: ClinicalContext = Depends(resolve_clinical_context),
+    inputs: OrchestratorInputs = Depends(resolve_orchestrator_inputs),
     use_case: GenerateWorkspaceUseCase = Depends(get_generate_workspace_use_case),
     workflow: WorkflowEventService = Depends(get_workflow_event_service),
 ) -> WorkspacePlanResponse:
@@ -429,6 +444,7 @@ async def post_resolve_decision_item(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
         folded = await workflow.get_folded_state(
             session_id, before_dto.metadata.context_hash
@@ -466,6 +482,7 @@ async def post_resolve_decision_item(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
     except Exception as exc:
         _reraise_as_http(exc)
@@ -501,6 +518,7 @@ async def post_dismiss_decision_item(
     if_match: str = Depends(require_if_match),
     auth: AuthorizedWorkspaceSession = Depends(resolve_authorized_workspace_mutate),
     context: ClinicalContext = Depends(resolve_clinical_context),
+    inputs: OrchestratorInputs = Depends(resolve_orchestrator_inputs),
     use_case: GenerateWorkspaceUseCase = Depends(get_generate_workspace_use_case),
     workflow: WorkflowEventService = Depends(get_workflow_event_service),
 ) -> WorkspacePlanResponse:
@@ -514,6 +532,7 @@ async def post_dismiss_decision_item(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
         folded = await workflow.get_folded_state(
             session_id, before_dto.metadata.context_hash
@@ -551,6 +570,7 @@ async def post_dismiss_decision_item(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
     except Exception as exc:
         _reraise_as_http(exc)
@@ -579,6 +599,7 @@ async def post_story_refresh(
     if_match: str = Depends(require_if_match),
     auth: AuthorizedWorkspaceSession = Depends(resolve_authorized_workspace_mutate),
     context: ClinicalContext = Depends(resolve_clinical_context),
+    inputs: OrchestratorInputs = Depends(resolve_orchestrator_inputs),
     use_case: GenerateWorkspaceUseCase = Depends(get_generate_workspace_use_case),
     workflow: WorkflowEventService = Depends(get_workflow_event_service),
 ) -> WorkspacePlanResponse:
@@ -591,6 +612,7 @@ async def post_story_refresh(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
         folded = await workflow.get_folded_state(
             session_id, before_dto.metadata.context_hash
@@ -618,6 +640,7 @@ async def post_story_refresh(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
         if after_plan.story is not None:
             await workflow.append_event(
@@ -654,6 +677,7 @@ async def post_story_refresh(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
     except Exception as exc:
         _reraise_as_http(exc)
@@ -680,6 +704,7 @@ async def get_story_status(
     role: str = Query(default="doctor"),
     auth: AuthorizedWorkspaceSession = Depends(resolve_authorized_workspace_read),
     context: ClinicalContext = Depends(resolve_clinical_context),
+    inputs: OrchestratorInputs = Depends(resolve_orchestrator_inputs),
     use_case: GenerateWorkspaceUseCase = Depends(get_generate_workspace_use_case),
     workflow: WorkflowEventService = Depends(get_workflow_event_service),
 ) -> StoryStatusResponse:
@@ -692,6 +717,7 @@ async def get_story_status(
             use_case=use_case,
             lens=lens,
             role=role,
+            inputs=inputs,
         )
         folded = await workflow.get_folded_state(session_id, dto.metadata.context_hash)
         stale = bool(plan.story.stale) if plan.story is not None else review.story_frozen

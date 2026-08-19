@@ -682,6 +682,10 @@ If no conflicts: <<<CLINICAL_CONFLICTS>>>[]<<<END_CLINICAL_CONFLICTS>>>
                     "verification_status": soap.verification_status,
                     "confidence_score": summary.confidence_score,
                     "conflict_count": conflict_count,
+                    # Structured discrepancies so the Doctor Workspace can surface
+                    # conflicts as first-class signals instead of only as prose
+                    # appended to the SOAP markdown.
+                    "conflicts": [d.model_dump() for d in (discrepancies or [])],
                     "latency_ms": latency_ms,
                     "generated_at": datetime.utcnow().isoformat(),
                 }
