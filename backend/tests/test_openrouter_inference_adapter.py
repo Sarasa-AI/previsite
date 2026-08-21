@@ -542,9 +542,9 @@ class TestPrompts:
 
         assert len(messages) == 2
         assert messages[0].role == "system"
-        assert "structured inference" in messages[0].content.lower()
+        assert "structured clinical inference" in messages[0].content.lower()
         assert messages[1].role == "user"
-        assert "ctx-ref-123" in messages[1].content
+        assert "test-product" in messages[1].content
         assert "test-product" in messages[1].content
 
 

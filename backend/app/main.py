@@ -11,6 +11,10 @@ from app.auth.dependencies import get_current_active_admin
 from app.core.config import settings, validate_startup_config
 from app.core.error_handler import register_exception_handlers
 from app.core.health_checks import check_database, check_llm_provider, check_ollama
+from app.core.inference.infrastructure.composition import (
+    close_inference_runtime,
+    init_inference_runtime,
+)
 from app.core.logging_config import setup_logging
 from app.core.observability.metrics import metrics_response
 from app.core.observability.middleware import CorrelationIdMiddleware
@@ -39,7 +43,20 @@ async def lifespan(_: FastAPI):
         logger.warning("Skipping mandatory LLM health check due to configuration.")
     else:
         await verify_llm_connection()
+
+    # Initialize inference runtime (registry + pipeline)
+    try:
+        registry, pipeline = init_inference_runtime()
+        registered = registry.registered_products()
+        logger.info("Inference runtime initialized with products: %s", registered)
+    except Exception as exc:
+        logger.exception("Failed to initialize inference runtime: %s", exc)
+
     yield
+
+    # Graceful shutdown
+    await close_inference_runtime()
+
 
 # ─────────── ایجاد FastAPI Application ───────────
 app = FastAPI(

@@ -4,6 +4,7 @@
       → run_document_ocr            → DocumentArtifact(kind='ocr')
       → extract_clinical_values     → DocumentArtifact(kind='extraction')
       → intake lab back-fill (only for condition-bound lab slots)
+      → clinical intelligence pipeline (inference → intelligence)
 
 Runs as a FastAPI background task after the upload request commits, so the HTTP
 response stays fast while every uploaded document still reaches processing.
@@ -31,6 +32,7 @@ from app.core.sentry import capture_categorized_error
 from app.db.database import get_async_session
 from app.models import ArtifactKind, ArtifactStatus, DocumentArtifact, Intake
 from app.models import File as FileModel
+from app.services.clinical_intelligence_pipeline import trigger_clinical_intelligence_processing
 from app.services.document_extraction import ExtractionResult, extract_clinical_values
 from app.services.document_ocr import (
     DocumentOcrError,
@@ -144,71 +146,29 @@ async def process_document_artifacts(
                 )
             )
             db_file = file_result.scalar_one_or_none()
-            if db_file is None:
-                logger.warning(
-                    "Document pipeline skipped: file not found file_id={} session_id={}",
-                    file_id,
-                    session_id,
-                )
+            if not db_file:
+                logger.warning("File not found for document processing: file_id=%s", file_id)
                 return
 
-            mime_type = db_file.content_type or ""
-            if not is_ocr_supported(mime_type):
-                logger.info(
-                    "Document pipeline skipped: unsupported mime_type={} file_id={}",
-                    mime_type,
-                    file_id,
-                )
+            # Idempotency: skip if artifacts already exist for this file
+            existing_kinds = await _existing_artifact_kinds(db, file_id)
+            if ArtifactKind.OCR in existing_kinds and ArtifactKind.EXTRACTION in existing_kinds:
+                logger.info("Artifacts already exist for file_id=%s, skipping", file_id)
                 return
 
-            existing = await _existing_artifact_kinds(db, file_id)
-            if ArtifactKind.OCR in existing and ArtifactKind.EXTRACTION in existing:
-                logger.debug(
-                    "Document pipeline skipped: artifacts already present file_id={}",
-                    file_id,
-                )
-                return
-
+            # ---- OCR ----------------------------------------------------------
             async with pipeline_stage(
-                PipelineStage.DOCUMENT_PIPELINE,
+                PipelineStage.DOCUMENT_OCR,
                 module=PipelineModule.DOCUMENT,
                 session_id=session_id,
+                file_id=file_id,
                 recoverable_on_error=True,
-                retryable_on_error=True,
-            ) as outer:
-                outer.attrs["file_id"] = file_id
-
-                # ---- storage read -------------------------------------------
+            ) as ocr_stage:
                 try:
-                    content = await storage_service.download_file(db_file.s3_key)
-                except Exception as exc:
-                    await _persist_failure(
-                        db,
-                        session_id=session_id,
-                        file_id=file_id,
-                        kind=ArtifactKind.OCR,
-                        error=f"storage_unavailable: {type(exc).__name__}",
-                    )
-                    logger.error(
-                        "Document pipeline storage read failed file_id={} error={}",
-                        file_id,
-                        exc,
-                    )
-                    return
-
-                # ---- OCR -----------------------------------------------------
-                try:
-                    async with pipeline_stage(
-                        PipelineStage.DOCUMENT_OCR,
-                        module=PipelineModule.OCR,
-                        session_id=session_id,
-                        ocr_type="document",
-                        recoverable_on_error=True,
-                        retryable_on_error=True,
-                    ) as ocr_stage:
-                        document = run_document_ocr(content, mime_type)
-                        ocr_stage.attrs["confidence"] = document.confidence
+                    file_bytes = await storage_service.download_file(db_file.s3_key)
+                    document = run_document_ocr(file_bytes, db_file.content_type or "application/octet-stream")
                 except DocumentOcrError as exc:
+                    # Fail-closed: record the failure but do not invent OCR text
                     status = (
                         ArtifactStatus.NEEDS_REVIEW
                         if isinstance(exc, DocumentOcrUnavailable)
@@ -223,7 +183,7 @@ async def process_document_artifacts(
                         status=status,
                     )
                     logger.warning(
-                        "Document OCR unavailable/failed file_id={} status={} error={}",
+                        "Document OCR unavailable/failed file_id=%s status=%s error=%s",
                         file_id,
                         status,
                         exc,
@@ -243,55 +203,54 @@ async def process_document_artifacts(
                 )
                 db.add(ocr_artifact)
 
-                # ---- extraction ---------------------------------------------
-                async with pipeline_stage(
-                    PipelineStage.DOCUMENT_EXTRACT,
-                    module=PipelineModule.DOCUMENT,
-                    session_id=session_id,
-                    recoverable_on_error=True,
-                ) as extract_stage:
-                    extraction = extract_clinical_values(document)
-                    extract_stage.attrs["lab_count"] = len(extraction.values)
+            # ---- extraction ---------------------------------------------
+            async with pipeline_stage(
+                PipelineStage.DOCUMENT_EXTRACT,
+                module=PipelineModule.DOCUMENT,
+                session_id=session_id,
+                recoverable_on_error=True,
+            ) as extract_stage:
+                extraction = extract_clinical_values(document)
+                extract_stage.attrs["lab_count"] = len(extraction.values)
 
-                extraction_artifact = DocumentArtifact(
-                    session_id=session_id,
-                    file_id=file_id,
-                    kind=ArtifactKind.EXTRACTION,
-                    status=_extraction_status(extraction),
-                    engine=extraction.to_payload()["method"],
-                    engine_version=extraction.to_payload()["method_version"],
-                    page_count=document.page_count,
-                    payload_json=json.dumps(extraction.to_payload(), ensure_ascii=False),
-                    confidence=document.confidence,
-                )
-                db.add(extraction_artifact)
+            extraction_artifact = DocumentArtifact(
+                session_id=session_id,
+                file_id=file_id,
+                kind=ArtifactKind.EXTRACTION,
+                status=_extraction_status(extraction),
+                engine=extraction.to_payload()["method"],
+                engine_version=extraction.to_payload()["method_version"],
+                page_count=document.page_count,
+                payload_json=json.dumps(extraction.to_payload(), ensure_ascii=False),
+                confidence=document.confidence,
+            )
+            db.add(extraction_artifact)
 
-                # ---- persist -------------------------------------------------
-                async with pipeline_stage(
-                    PipelineStage.DOCUMENT_PERSIST,
-                    module=PipelineModule.DB,
-                    session_id=session_id,
-                    lab_count=len(extraction.values),
-                ):
-                    await _back_fill_intake_lab(db, db_file, extraction)
-                    await db.commit()
+            # ---- persist -------------------------------------------------
+            async with pipeline_stage(
+                PipelineStage.DOCUMENT_PERSIST,
+                module=PipelineModule.DB,
+                session_id=session_id,
+                lab_count=len(extraction.values),
+            ):
+                await _back_fill_intake_lab(db, db_file, extraction)
+                await db.commit()
 
-                outer.attrs["lab_count"] = len(extraction.values)
-                logger.info(
-                    "Document processed file_id={} session_id={} engine={} pages={} "
-                    "values={} ocr_status={} extraction_status={}",
-                    file_id,
-                    session_id,
-                    document.engine,
-                    document.page_count,
-                    len(extraction.values),
-                    ocr_artifact.status,
-                    extraction_artifact.status,
-                )
+            logger.info(
+                "Document processed file_id=%s session_id=%s engine=%s pages=%s "
+                "values=%s ocr_status=%s extraction_status=%s",
+                file_id,
+                session_id,
+                document.engine,
+                document.page_count,
+                len(extraction.values),
+                ocr_artifact.status,
+                extraction_artifact.status,
+            )
         except Exception as exc:  # noqa: BLE001 — background task must not crash the worker
             await db.rollback()
             logger.exception(
-                "Document pipeline failed session_id={} file_id={}", session_id, file_id
+                "Document pipeline failed session_id=%s file_id=%s", session_id, file_id
             )
             capture_categorized_error(
                 exc,
@@ -333,6 +292,15 @@ def trigger_document_processing(
     """Queue document processing on the request's background task set."""
     cid = correlation_id or get_correlation_id() or new_correlation_id()
     background_tasks.add_task(process_document_artifacts, session_id, file_id, cid)
+
+    # Also trigger clinical intelligence processing after document processing
+    # This will run after the document artifacts are persisted
+    trigger_clinical_intelligence_processing(
+        background_tasks,
+        session_id,
+        product_key="document_intelligence",
+        correlation_id=cid,
+    )
 
 
 __all__ = [
