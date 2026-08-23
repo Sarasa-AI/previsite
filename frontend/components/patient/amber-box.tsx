@@ -12,8 +12,9 @@ import { cn } from "@/lib/utils";
  * being perceived. It states no diagnosis and makes no recommendation (§5.4);
  * all copy arrives from the caller.
  *
- * Deliberately not an acuity component: `--acuity-*` is clinician-only and is
- * never reused for patient-facing emphasis (§3).
+ * Deliberately not a severity-tier component: the clinician-only severity scale
+ * is intentionally not used on this screen, and is never reused for
+ * patient-facing emphasis (§3).
  */
 
 type AmberBoxProps = {

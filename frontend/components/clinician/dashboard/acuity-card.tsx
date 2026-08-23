@@ -20,9 +20,9 @@ import { cn } from "@/lib/utils";
  * off the risk ramp on purpose. An absent value is not a low-urgency value; it
  * is an unranked one.
  *
- * The tier list itself is still marked DRAFT in `globals.css`. This union is the
- * shape that draft implies, and it is the thing to re-check first if the tier
- * list is ever revised.
+ * The tier list is approved (§9) — codes, count, and Persian labels all
+ * confirmed. This union is the shape it takes, and it is the thing to re-check
+ * first if the tier list is ever revised.
  */
 export type AcuityTier = "P0" | "P1" | "P2" | "P3" | "unknown";
 

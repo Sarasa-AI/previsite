@@ -75,9 +75,9 @@
 /* ============================================================================
    CLINICIAN SEMANTIC LAYER — mounted by (clinician)/layout.tsx only.
 
-   DRAFT — tier names and tier count are UNCONFIRMED. §8 treats an ambiguous
-   acuity mapping as stop-and-ask, so nothing consumes these until the tier
-   list is approved. The directive names only the two endpoints
+   Tier count, codes, and Persian labels are all APPROVED (§9) and
+   acuity-card.tsx consumes this list. The directive names only the two
+   endpoints
    (--acuity-critical … --acuity-unknown); the three middle tiers below are
    inferred from Phase 3's "P0 sorts to top / unknown never reads as P3".
 

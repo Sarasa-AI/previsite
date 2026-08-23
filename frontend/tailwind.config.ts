@@ -40,7 +40,7 @@ const config: Config = {
         },
 
         // Safety-critical. Resolves only under .clinician-theme, and is never
-        // used decoratively anywhere (§3). DRAFT pending tier confirmation.
+        // used decoratively anywhere (§3). Tier list approved per §9.
         acuity: {
           critical: "hsl(var(--acuity-critical) / <alpha-value>)",
           high: "hsl(var(--acuity-high) / <alpha-value>)",

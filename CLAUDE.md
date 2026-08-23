@@ -171,7 +171,7 @@ grep -rnE "\-(primary|warning|critical)\b" \
   "frontend/app/(clinician)/" "frontend/components/clinician/" \
   --include="*.tsx" | grep -v "acuity"
 
-grep -rnE "border-l|border-r|\bpl-|\bpr-|\bml-|\bmr-" \
+grep -rnE "\bborder-[lr]\b|\b[pm][lr]-" \
   "frontend/app/(patient)/" "frontend/app/(clinician)/" \
   "frontend/components/patient/" "frontend/components/clinician/"
 ```
@@ -186,6 +186,22 @@ correctly does not match; `bg-primary` or a comment containing
 `--acuity-critical` does. This applies inside comments and doc-strings
 too, not just executable code — describe a role in plain prose if you
 need to reference it without the token syntax.
+
+**Check 3 colour-utility exemption (confirmed, Phase 3):** the third
+grep must not fire on border *colour* classes. `border-red-200` contains
+the substring `border-r`, so an unanchored `border-r` pattern reports a
+false positive on every red/rose border in the codebase. `\bborder-[lr]\b`
+requires a word boundary after the direction letter, which `border-red`
+fails and `border-l` / `border-r-4` pass.
+
+Do not narrow the padding/margin half to numeric values only — a
+`[pm][lr]-[0-9]` form silently stops catching `ml-auto`, `mr-auto`,
+`pl-px`, and arbitrary values like `pr-[3px]`, all of which are real
+physical utilities. `\b[pm][lr]-` keeps them. Any future edit to this
+regex gets checked against both lists: it must still match `border-l`,
+`border-r-4`, `pl-4`, `ml-auto`, `pr-[3px]`, `-ml-2`, `sm:pl-6`, and must
+still ignore `border-red-200`, `border-rose-500`, `ps-4`, `pe-4`,
+`border-s-4`, `border-e-2`.
 
 **Gate implementation rule:** never pass multiple paths through an
 unquoted shell variable (`PATHS="a b"; grep ... $PATHS`) — bash and zsh
@@ -212,15 +228,28 @@ out every path explicitly in each grep invocation, as above.
   step below routine on the numeric ramp, exactly the wrong inference
   the anchors forbid.
 - **Labels are Persian**, not literal English — both route groups are
-  `dir="rtl"` on Vazirmatn. Format is `{code} · {Persian word}` with
-  the code wrapped in `<BidiText>`. An English-language code+word
+  `dir="rtl"` on Vazirmatn. The chip renders `{code}` then `{Persian word}`
+  with the code wrapped in `<BidiText>`. An English-language code+word
   example given earlier specified structure only, not literal English
   content.
+- **Separator is flex `gap-1.5`, not a literal `·` character** (approved,
+  Phase 3). An earlier `{code} · {Persian word}` formulation described the
+  reading order, not a required glyph: spacing the two spans apart keeps the
+  DOM free of a text node that carries no meaning and that a screen reader
+  would otherwise announce. Reading order is unaffected — in an RTL flex row
+  the first child paints rightmost, so the code still reads before the label.
+- **Tier labels are APPROVED (confirmed by Ali, native-speaker/clinical
+  register).** P0 = `بحرانی`, P1 = `فوری`, P2 = `متوسط`, P3 = `معمول`,
+  unknown = `نامشخص`. `پرخطر` was considered for P1 and **explicitly
+  rejected** under §5.4 — it characterises the patient's risk, which is a
+  clinical claim, whereas `فوری` describes only the queue position. Treat
+  this set as settled; do not relitigate it.
 - **Tier wording avoids diagnostic-sounding language** per §5's "no
-  clinical claims in copy" rule — e.g. a procedural/triage word over a
-  dramatic risk word for the high tier. Persian medical register is a
-  native-speaker judgment call each time; flag new tier or status
-  copy for review rather than deciding it unilaterally.
+  clinical claims in copy" rule — a procedural/triage word over a
+  dramatic risk word, as the `فوری` over `پرخطر` decision above shows.
+  Persian medical register is a native-speaker judgment call each time;
+  flag *new* tier or status copy for review rather than deciding it
+  unilaterally. The five labels above no longer need re-review.
 - **`UnknownField` defaults to "value not determined," never "not
   recorded."** The two are different claims — "not recorded" asserts
   the record is empty; "not determined" only says the value isn't
