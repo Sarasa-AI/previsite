@@ -34,6 +34,12 @@ type TierPresentation = {
   code: string | null;
   label: string;
   shape: TierShape;
+  /**
+   * Colours the inline-start edge only (`border-s-*`), never the whole box.
+   * A plain `border-acuity-*` would land in tailwind-merge's all-edges
+   * border-colour group and silently evict the neutral `border-ink/10` hairline,
+   * repainting all four sides in the tier colour.
+   */
   edge: string;
   chip: string;
   tint: string;
@@ -49,11 +55,11 @@ type TierPresentation = {
  * nothing about the patient's condition.
  */
 const TIER_PRESENTATION: Record<AcuityTier, TierPresentation> = {
-  P0: { code: "P0", label: "بحرانی", shape: "octagon", edge: "border-acuity-critical", chip: "bg-acuity-critical", tint: "text-acuity-critical" },
-  P1: { code: "P1", label: "فوری", shape: "triangle", edge: "border-acuity-high", chip: "bg-acuity-high", tint: "text-acuity-high" },
-  P2: { code: "P2", label: "متوسط", shape: "diamond", edge: "border-acuity-moderate", chip: "bg-acuity-moderate", tint: "text-acuity-moderate" },
-  P3: { code: "P3", label: "معمول", shape: "circle", edge: "border-acuity-routine", chip: "bg-acuity-routine", tint: "text-acuity-routine" },
-  unknown: { code: null, label: "نامشخص", shape: "square", edge: "border-acuity-unknown", chip: "bg-acuity-unknown", tint: "text-acuity-unknown" },
+  P0: { code: "P0", label: "بحرانی", shape: "octagon", edge: "border-s-acuity-critical", chip: "bg-acuity-critical", tint: "text-acuity-critical" },
+  P1: { code: "P1", label: "فوری", shape: "triangle", edge: "border-s-acuity-high", chip: "bg-acuity-high", tint: "text-acuity-high" },
+  P2: { code: "P2", label: "متوسط", shape: "diamond", edge: "border-s-acuity-moderate", chip: "bg-acuity-moderate", tint: "text-acuity-moderate" },
+  P3: { code: "P3", label: "معمول", shape: "circle", edge: "border-s-acuity-routine", chip: "bg-acuity-routine", tint: "text-acuity-routine" },
+  unknown: { code: null, label: "نامشخص", shape: "square", edge: "border-s-acuity-unknown", chip: "bg-acuity-unknown", tint: "text-acuity-unknown" },
 };
 
 /**

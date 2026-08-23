@@ -24,7 +24,7 @@ that.
 |---|---|---|
 | Audience | Patients, incl. elderly / low tech literacy | Doctors under time pressure / burnout |
 | Design mode | Mobile-first, progressive disclosure | Desktop-first, data-dense |
-| Route group | `frontend/app/(patient)/**` | `frontend/app/(clinician)/**` |
+| Route group | `src/app/(patient)/**` | `src/app/(clinician)/**` |
 | Theme class | `.patient-theme` | `.clinician-theme` |
 | Color tokens | `--primary`, `--accent`, `--warning`, `--critical` | `--acuity-critical` … `--acuity-unknown` |
 | Failure mode if violated | Elderly patient overwhelmed / misreads urgency | Doctor misreads acuity → patient safety risk |
@@ -63,15 +63,19 @@ Rules:
   cross into the other route group's files.
 - `--acuity-*` is safety-critical. Never reused for decoration.
 - Every semantic-to-primitive assignment carries a measured contrast
-  ratio before approval. Unmeasured is unapproved.
+  ratio before approval. Unmeasured is unapproved. Text/fill pairings
+  target WCAG AA 4.5:1 (AAA 7:1 preferred). Non-text UI elements —
+  focus rings, borders, icons — target WCAG 1.4.11's 3:1 non-text
+  minimum instead; don't hold `--ring` to the 4.5:1 text bar.
 - Two role tokens must never alias the *same* primitive across the two
-  themes — even though the two themes never render on the same page, a
-  shared raw value invites a wrong inference from anyone grepping the
-  codebase later. Give each its own primitive. The real Phase 1 instance
-  was patient `--critical` and clinician `--acuity-critical` both
-  resolving to `--pv-red-700`; resolved by moving `--acuity-critical` to
-  its own `--pv-red-800`. (`--acuity-unknown` was never red — it is
-  `--pv-violet-700`, deliberately off the risk ramp.)
+  themes — this includes non-color-role tokens like `--ring`, not just
+  `--primary`/`--critical`/etc. (Confirmed real instance, Phase 2: patient
+  `--primary` and clinician `--ring` both resolved to `--pv-navy-800`.
+  Fix is a distinct primitive for clinician `--ring`, own diff, measured
+  against both page and card background.) Even though the two themes
+  never render on the same page, a shared raw value invites a wrong
+  inference from anyone grepping the codebase later. Give each its own
+  primitive.
 - Need a color not yet defined? Propose the primitive-and-semantic pair
   as its own diff with a measured ratio — don't invent inline hex.
 - Logical direction properties only (`border-s`/`border-e`,
@@ -81,17 +85,16 @@ Rules:
   dates) in `<BidiText>` from `components/shared/bidi-text.tsx`. Never
   wrap a whole mixed-language sentence — value only.
 
-**Path-prefix note (RESOLVED, Phase 1 execution):** verified against the
-working tree. `frontend/` is the app root and sits directly at the repo
-root. A `src/` layer **does** exist beneath it (`frontend/src/`), so the
-answer is not a clean "no src/ layer" — but `frontend/src/app/` is *not*
-the router: Next.js uses root `app/` whenever both exist, so
-`frontend/app/` is live and `frontend/src/app/` (api routes only) is dead
-code. `frontend/src/` otherwise holds pre-existing non-router modules
-(`modules/workspace/`, `hooks/`, `lib/`, `schemas/`, `shared/`).
-UI work therefore lands in `frontend/app/` and `frontend/components/`.
-Note `frontend/hooks/` and `frontend/types/` do not exist; `frontend/lib/`
-does. §4 and §7 below are corrected to match.
+**Accepted exception:** Framer Motion `x`/`translateX` values are
+inherently physical — the library has no direction-agnostic transform
+primitive. Sign is chosen deliberately for RTL (forward motion enters
+from the left) and must be commented in-code as intentional. This is
+the only place physical motion-sign logic is permitted; it does not
+extend to Tailwind physical classes anywhere.
+
+**Path prefix (confirmed):** the repo root for this app is `frontend/`,
+with no `src/` layer beneath it. §4 and §7 below use `frontend/...`
+paths accordingly.
 
 ## 4. Folder structure — scaffolded, extend it, don't restructure it
 ```
@@ -101,16 +104,8 @@ frontend/components/ui/         shadcn primitives — generated, don't hand-edit
 frontend/components/patient/…   wizard, voice, upload
 frontend/components/clinician/… dashboard, data-table, soap, shortcuts
 frontend/components/shared/…    bidi-text, unknown-field, cross-persona utils
-frontend/lib/                   cn helper, api clients
+frontend/hooks/, frontend/lib/, frontend/types/
 ```
-Pre-existing, not part of this scaffold — extend only with cause:
-`frontend/src/modules/workspace/**` (clinician workspace module),
-`frontend/src/{hooks,lib,schemas,shared}/`, `frontend/src/app/api/**`
-(dead — Next ignores it while root `app/` exists).
-
-Import alias: `@/*` → `frontend/*` (per `frontend/tsconfig.json`), so
-`@/lib/utils` resolves to `frontend/lib/utils.ts`, not `frontend/src/lib/`.
-
 If a new file doesn't obviously belong in one of these, stop and ask
 where it goes rather than guessing.
 
@@ -170,50 +165,72 @@ past a fail silently.
 
 ## 7. Verification gate (run at the end of every phase)
 ```
-grep -rn "acuity-" frontend/app/\(patient\)/                  # expect: no matches
-grep -rnE "primary|warning|critical" frontend/app/\(clinician\)/ \
-  --include="*.tsx" | grep -v "acuity"                        # expect: no matches
+grep -rn "acuity-" "frontend/app/(patient)/" "frontend/components/patient/"
+
+grep -rnE "\-(primary|warning|critical)\b" \
+  "frontend/app/(clinician)/" "frontend/components/clinician/" \
+  --include="*.tsx" | grep -v "acuity"
+
 grep -rnE "border-l|border-r|\bpl-|\bpr-|\bml-|\bmr-" \
-  frontend/app/\(patient\)/ frontend/app/\(clinician\)/        # expect: no matches
+  "frontend/app/(patient)/" "frontend/app/(clinician)/" \
+  "frontend/components/patient/" "frontend/components/clinician/"
 ```
 Any match is a failure. Report it and stop — do not auto-fix and
 continue in the same pass; fixes get reviewed as their own diff.
 
-**PROPOSED EXTENSION — not yet approved, do not treat as the gate.**
-The three commands above scan only the route groups. Every persona
-component actually lives under `frontend/components/patient/**` and
-`frontend/components/clinician/**`, which those paths never reach — so as
-written the gate inspects layouts and pages only and would pass a
-persona-token violation sitting in any component. Proposed replacement
-scope, pending sign-off:
-```
-PATIENT="frontend/app/(patient)/ frontend/components/patient/"
-CLINICIAN="frontend/app/(clinician)/ frontend/components/clinician/"
-grep -rn "acuity-" $PATIENT                                   # expect: no matches
-grep -rnE "primary|warning|critical" $CLINICIAN \
-  --include="*.tsx" | grep -v "acuity"                        # expect: no matches
-grep -rnE "border-l|border-r|\bpl-|\bpr-|\bml-|\bmr-" \
-  $PATIENT $CLINICIAN                                         # expect: no matches
-```
-Note `border-r` also matches `border-red-*`; use `border-r-` or
-`border-r\b` to avoid false positives when reading results.
+**Gate scope (hard rule):** the forbidden pattern is CSS/Tailwind token
+*syntax* — a hyphen immediately before the name (`-primary`,
+`--critical`, `bg-warning`, `border-s-acuity-critical`) — not the bare
+English word. `className="primary-button"` (an unrelated legacy class)
+correctly does not match; `bg-primary` or a comment containing
+`--acuity-critical` does. This applies inside comments and doc-strings
+too, not just executable code — describe a role in plain prose if you
+need to reference it without the token syntax.
+
+**Gate implementation rule:** never pass multiple paths through an
+unquoted shell variable (`PATHS="a b"; grep ... $PATHS`) — bash and zsh
+word-split unquoted variables differently, and this exact pattern
+silently produces a gate that always passes regardless of shell. Spell
+out every path explicitly in each grep invocation, as above.
 
 ## 8. Known Issues — Blocking Phase 3
-- **Acuity scale luminance separation.** The five-tier `--acuity-*`
-  scale (critical/high/moderate/routine/unknown) separates almost
-  entirely by hue: machine-measured relative luminance spans only
-  0.076–0.163, with adjacent tiers 1.02–1.60:1 apart — and the
-  high→moderate→routine run is 1.05:1 and 1.02:1, effectively
-  indistinguishable without hue. Under deuteranopia or in grayscale that
-  ramp collapses. Given this scale's own stated failure mode
-  ("doctor misreads acuity → patient safety risk"), color cannot be the
-  only channel carrying that signal. `acuity-card.tsx` and
-  `priority-grid.tsx` must ship with a tier glyph plus text label, and
-  `priority-grid` must rank by position, not tint alone. This is a hard
-  gate condition for Phase 3 sign-off, not a nice-to-have — it survives
-  here even if the CSS comment referencing it gets lost in a refactor.
+- **Acuity scale luminance separation.** Machine-measured (Phase 2):
+  the five-tier `--acuity-*` scale separates almost entirely by hue —
+  relative luminance spans only 0.076–0.163, and the middle of the ramp
+  is the worst part: high-vs-moderate is 1.05:1 and moderate-vs-routine
+  is 1.02:1. Three of five tiers are effectively one color without hue.
+  RESOLVED in `acuity-card.tsx` (Phase 3): tier is now stated three
+  ways — glyph shape (octagon/triangle/diamond/circle, unknown as an
+  off-ramp square), text code+label, color as reinforcement only.
+  `priority-grid.tsx` still owes rank-by-position, not tint alone.
 
-## 9. When to stop and ask (non-exhaustive)
+## 9. Settled Content/Copy Conventions
+- **Acuity tier codes:** P0=critical and P3=routine are the fixed
+  anchors (P0 from clinical convention, P3 forced by "unknown never
+  reads as P3/routine"); P1/P2 are therefore forced to high/moderate.
+  `unknown` carries no P-number — numbering it P4 would place it one
+  step below routine on the numeric ramp, exactly the wrong inference
+  the anchors forbid.
+- **Labels are Persian**, not literal English — both route groups are
+  `dir="rtl"` on Vazirmatn. Format is `{code} · {Persian word}` with
+  the code wrapped in `<BidiText>`. An English-language code+word
+  example given earlier specified structure only, not literal English
+  content.
+- **Tier wording avoids diagnostic-sounding language** per §5's "no
+  clinical claims in copy" rule — e.g. a procedural/triage word over a
+  dramatic risk word for the high tier. Persian medical register is a
+  native-speaker judgment call each time; flag new tier or status
+  copy for review rather than deciding it unilaterally.
+- **`UnknownField` defaults to "value not determined," never "not
+  recorded."** The two are different claims — "not recorded" asserts
+  the record is empty; "not determined" only says the value isn't
+  known. Defaulting to the weaker, more honest claim is the fail-closed
+  choice. Don't reuse this string constant for other safety-critical
+  labels (e.g. an acuity tier) even if the wording currently matches —
+  keep them as separate constants so an unrelated copy edit can't
+  silently change both.
+
+## 10. When to stop and ask (non-exhaustive)
 - A new color/token is needed that isn't in `globals.css`.
 - An acuity mapping is ambiguous (is this finding P1 or P2?).
 - A component could plausibly belong to `shared/`, `patient/`, or
