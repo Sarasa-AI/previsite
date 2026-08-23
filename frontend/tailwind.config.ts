@@ -10,11 +10,47 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Legacy brand scale — consumed by existing pages, left as-is.
         clinical: "#F8F9FA",
         trust: "#1B3B5A",
         mint: "#A8E6CF",
         danger: "#DC2626",
         ink: "#0F172A",
+
+        // Patient semantic tokens — resolve only under .patient-theme.
+        primary: {
+          DEFAULT: "hsl(var(--primary) / <alpha-value>)",
+          hover: "hsl(var(--primary-hover) / <alpha-value>)",
+          foreground: "hsl(var(--primary-foreground) / <alpha-value>)",
+          surface: "hsl(var(--primary-surface) / <alpha-value>)",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent) / <alpha-value>)",
+          foreground: "hsl(var(--accent-foreground) / <alpha-value>)",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning) / <alpha-value>)",
+          foreground: "hsl(var(--warning-foreground) / <alpha-value>)",
+          surface: "hsl(var(--warning-surface) / <alpha-value>)",
+        },
+        critical: {
+          DEFAULT: "hsl(var(--critical) / <alpha-value>)",
+          foreground: "hsl(var(--critical-foreground) / <alpha-value>)",
+          surface: "hsl(var(--critical-surface) / <alpha-value>)",
+        },
+
+        // Safety-critical. Resolves only under .clinician-theme, and is never
+        // used decoratively anywhere (§3). DRAFT pending tier confirmation.
+        acuity: {
+          critical: "hsl(var(--acuity-critical) / <alpha-value>)",
+          high: "hsl(var(--acuity-high) / <alpha-value>)",
+          moderate: "hsl(var(--acuity-moderate) / <alpha-value>)",
+          routine: "hsl(var(--acuity-routine) / <alpha-value>)",
+          unknown: "hsl(var(--acuity-unknown) / <alpha-value>)",
+          foreground: "hsl(var(--acuity-foreground) / <alpha-value>)",
+        },
+
+        ring: "hsl(var(--ring) / <alpha-value>)",
       },
       boxShadow: {
         soft: "0 20px 45px -30px rgba(27, 59, 90, 0.35)",

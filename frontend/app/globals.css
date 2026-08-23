@@ -13,6 +13,100 @@
   --spring-easing: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* ============================================================================
+   PRIMITIVE LAYER — persona-neutral raw values.
+   HSL channel triplets (not hex) so Tailwind can compose `/ <alpha-value>`.
+   These are deliberately NOT persona tokens: no --primary / --accent /
+   --warning / --critical / --acuity-* appears at :root, so the §3 rule that
+   theme tokens never sit at :root holds. The five brand values above keep
+   their original hex and their existing consumers untouched.
+   ========================================================================= */
+:root {
+  --pv-navy-900: 209 57% 16%; /* #122A41 — primary hover/pressed */
+  --pv-navy-800: 210 54% 23%; /* #1B3B5A — brand `trust`, unchanged */
+  --pv-navy-50: 210 35% 93%; /* #E8EEF4 — navy tint for callout surfaces */
+  --pv-mint-200: 158 55% 78%; /* #A8E6CF — brand `mint`, unchanged */
+  --pv-red-800: 0 70% 35%; /* #991B1B — sole owner: clinician --acuity-critical */
+  --pv-red-700: 0 74% 42%; /* #B91C1C — sole owner: patient --critical */
+  --pv-red-600: 0 72% 51%; /* #DC2626 — brand `danger`, unchanged */
+  --pv-red-50: 0 93% 94%; /* #FEE2E2 */
+  --pv-amber-800: 23 83% 31%; /* #92400E */
+  --pv-amber-100: 48 96% 89%; /* #FEF3C7 */
+  --pv-orange-700: 17 88% 40%; /* #C2410C */
+  --pv-yellow-700: 35 92% 33%; /* #A16207 */
+  --pv-green-700: 142 72% 29%; /* #15803D */
+  --pv-violet-700: 263 70% 50%; /* #6D28D9 */
+  --pv-ink-950: 222 47% 11%; /* #0F172A — brand `ink`, unchanged */
+  --pv-clinical-50: 210 17% 98%; /* #F8F9FA — brand `clinical`, unchanged */
+  --pv-white: 0 0% 100%;
+}
+
+/* ============================================================================
+   PATIENT SEMANTIC LAYER — mounted by (patient)/layout.tsx only.
+   Contract per token family:
+     X             solid emphasis — fills, borders, icon strokes
+     X-foreground  text guaranteed to meet AA when placed ON X
+     X-surface     tinted callout background, paired with X as its text colour
+   A single hue per role cannot serve both fill and text at AA, which is why
+   each role carries the -foreground / -surface companions.
+   Ratios below are measured (sRGB, WCAG 2.1). AA floor 4.5, AAA 7.0.
+   ========================================================================= */
+.patient-theme {
+  --primary: var(--pv-navy-800);
+  --primary-hover: var(--pv-navy-900); /* 14.65:1 AAA vs white */
+  --primary-foreground: var(--pv-white); /* 11.54:1 AAA on --primary */
+  --primary-surface: var(--pv-navy-50); /*  9.87:1 AAA for --primary text */
+
+  --accent: var(--pv-mint-200);
+  --accent-foreground: var(--pv-ink-950); /* 12.65:1 AAA on --accent */
+
+  --warning: var(--pv-amber-800);
+  --warning-foreground: var(--pv-white); /*  7.09:1 AAA on --warning */
+  --warning-surface: var(--pv-amber-100); /*  6.37:1 AA  for --warning text */
+
+  --critical: var(--pv-red-700);
+  --critical-foreground: var(--pv-white); /*  6.47:1 AA  on --critical */
+  --critical-surface: var(--pv-red-50); /*  5.30:1 AA  for --critical text */
+
+  /* §5.3 requires a visible focus ring but no token existed for one. */
+  --ring: var(--pv-navy-800); /* 10.95:1 AAA on page background */
+}
+
+/* ============================================================================
+   CLINICIAN SEMANTIC LAYER — mounted by (clinician)/layout.tsx only.
+
+   DRAFT — tier names and tier count are UNCONFIRMED. §8 treats an ambiguous
+   acuity mapping as stop-and-ask, so nothing consumes these until the tier
+   list is approved. The directive names only the two endpoints
+   (--acuity-critical … --acuity-unknown); the three middle tiers below are
+   inferred from Phase 3's "P0 sorts to top / unknown never reads as P3".
+
+   SAFETY: measured relative luminance spans only 0.076–0.163 across these five
+   tiers, and adjacent tiers sit 1.02–1.60:1 apart — high/moderate/routine are
+   1.05:1 and 1.02:1, i.e. separated by hue almost alone. Under deuteranopia, or
+   in grayscale, the critical→high→moderate→routine ramp collapses. Acuity must
+   therefore never be encoded by colour alone: Phase 3 acuity-card has to carry
+   a tier glyph plus text label, and priority-grid has to carry rank by
+   position. `unknown` is violet — off the risk ramp entirely, rather than a
+   desaturated neutral — precisely so it cannot read as a low point on that
+   ramp, which is the §6 "unknown never visually reads as P3/routine" rule.
+   ========================================================================= */
+.clinician-theme {
+  /* Own primitive, not patient --critical's --pv-red-700 (§3 cross-theme
+     primitive-uniqueness rule). Darker than the patient red, which also raises
+     contrast on the white cards this tier is read against. */
+  --acuity-critical: var(--pv-red-800); /* 8.31:1 AAA vs white */
+  --acuity-high: var(--pv-orange-700); /* 5.18:1 AA vs white */
+  --acuity-moderate: var(--pv-yellow-700); /* 4.92:1 AA vs white */
+  --acuity-routine: var(--pv-green-700); /* 5.02:1 AA vs white */
+  --acuity-unknown: var(--pv-violet-700); /* 7.10:1 AAA vs white */
+
+  /* One shared foreground is safe: every tier above clears 4.5:1 on white. */
+  --acuity-foreground: var(--pv-white);
+
+  --ring: var(--pv-navy-800);
+}
+
 * {
   box-sizing: border-box;
 }
