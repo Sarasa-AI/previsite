@@ -75,9 +75,9 @@
 /* ============================================================================
    CLINICIAN SEMANTIC LAYER — mounted by (clinician)/layout.tsx only.
 
-   Tier count, codes, and Persian labels are all APPROVED (§9) and
-   acuity-card.tsx consumes this list. The directive names only the two
-   endpoints
+   The dashboard tier list is consumed by acuity-card.tsx. Its rank anchors
+   are defined, while the P1 Persian wording remains provisional pending Ali's
+   direct confirmation. The directive names only the two endpoints
    (--acuity-critical … --acuity-unknown); the three middle tiers below are
    inferred from Phase 3's "P0 sorts to top / unknown never reads as P3".
 

@@ -547,9 +547,6 @@ class ClinicalContextBuilder:
         elif summary_row:
             med_sum = _build_medical_summary_from_chat(summary_row)
 
-        if not med_sum:
-            raise ValueError("No clinical summary available for ClinicalContext")
-
         lab_evidence, lab_analyses = _derive_lab_and_file_evidence(overview)
         medication_evidence, med_analyses = _derive_medication_evidence(overview)
 
@@ -559,6 +556,21 @@ class ClinicalContextBuilder:
         # echoed back.
         document_evidence = await _load_document_evidence(db, session_id)
         doc_labs, doc_analyses = _document_derived_evidence(document_evidence)
+
+        if not med_sum:
+            # Evidence is gathered before this check on purpose. A document-only
+            # session — a file uploaded before, or without, an intake summary —
+            # carries real provenance-backed evidence, and raising here made the
+            # workspace answer 404 while that evidence sat in the database. What is
+            # missing in that case is the narrative summary, not the evidence.
+            if not (lab_evidence or medication_evidence or document_evidence):
+                # Genuinely nothing to show: stay fail-closed.
+                raise ValueError("No clinical summary available for ClinicalContext")
+            # Structural placeholder only. Every field stays empty, so no complaint,
+            # history, medication, or value is invented, and the missing-info
+            # projection still reports the real gaps (no chief complaint, HPI
+            # incomplete) rather than implying a complete record.
+            med_sum = MedicalSummary()
 
         seen_lab_names = {lab.name.strip().lower() for lab in lab_evidence if lab.name}
         merged_labs = list(lab_evidence)

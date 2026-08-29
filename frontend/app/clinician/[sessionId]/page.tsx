@@ -85,19 +85,27 @@ export default function ClinicianPage({ params }: { params: { sessionId: string 
               <p className="text-sm font-semibold text-trust">داشبورد پزشک</p>
               <h1 className="text-2xl font-bold text-slate-900">پرونده جلسه #{sessionId}</h1>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleDownloadPdf()}
-              disabled={pdfLoading || loading || !intake}
-              className="secondary-button inline-flex items-center justify-center gap-2 self-start"
-            >
-              {pdfLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4" />
-              )}
-              چاپ پرونده / دانلود PDF
-            </button>
+            <div className="flex flex-col gap-2 self-start sm:flex-row sm:items-center">
+              <Link
+                href={`/clinician/${sessionId}/workspace`}
+                className="primary-button inline-flex items-center justify-center gap-2"
+              >
+                میزکار بالینی
+              </Link>
+              <button
+                type="button"
+                onClick={() => void handleDownloadPdf()}
+                disabled={pdfLoading || loading || !intake}
+                className="secondary-button inline-flex items-center justify-center gap-2"
+              >
+                {pdfLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                چاپ پرونده / دانلود PDF
+              </button>
+            </div>
           </div>
           {pdfError ? <p className="mt-3 text-sm text-red-600">{pdfError}</p> : null}
         </section>

@@ -75,7 +75,7 @@ export default function PatientFileCard({ patient, expanded, onToggle }: Patient
                   </p>
                   {statusChip(session.status)}
                 </div>
-                <Link className="primary-button shrink-0 sm:w-auto" href={`/clinician/${session.id}`}>
+                <Link className="primary-button shrink-0 sm:w-auto" href={`/clinician/${session.id}/workspace`}>
                   داشبورد پزشک
                 </Link>
               </div>

@@ -12,9 +12,8 @@ import { cn } from "@/lib/utils";
  * being perceived. It states no diagnosis and makes no recommendation (§5.4);
  * all copy arrives from the caller.
  *
- * Deliberately not a severity-tier component: the clinician-only severity scale
- * is intentionally not used on this screen, and is never reused for
- * patient-facing emphasis (§3).
+ * Deliberately scoped to patient-side attention: clinician queue ordering never
+ * crosses into this callout's patient-facing emphasis semantics (§3).
  */
 
 type AmberBoxProps = {

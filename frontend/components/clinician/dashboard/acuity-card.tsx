@@ -20,9 +20,9 @@ import { cn } from "@/lib/utils";
  * off the risk ramp on purpose. An absent value is not a low-urgency value; it
  * is an unranked one.
  *
- * The tier list is approved (§9) — codes, count, and Persian labels all
- * confirmed. This union is the shape it takes, and it is the thing to re-check
- * first if the tier list is ever revised.
+ * This union is the current dashboard shape. The P1 Persian label remains
+ * provisional pending Ali's direct confirmation; re-check this mapping first
+ * if the tier list or wording is revised.
  */
 export type AcuityTier = "P0" | "P1" | "P2" | "P3" | "unknown";
 

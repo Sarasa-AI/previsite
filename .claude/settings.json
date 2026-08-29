@@ -1,9 +1,0 @@
-{
-    "env": {
-      "ANTHROPIC_BASE_URL": "https://agentrouter.org/",
-      "ANTHROPIC_API_KEY": "sk-sGutJaGAIfNp8uUTI5If8QCPSkdrFlT0dqbudH5VzZu8pFNs",
-      "ANTHROPIC_AUTH_TOKEN": ""
-    },
-    "defaultMode": "bypassPermissions",
-    "effortLevel": "xhigh"
-  }
