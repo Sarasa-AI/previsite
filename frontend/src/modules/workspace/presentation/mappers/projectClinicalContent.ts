@@ -7,6 +7,7 @@ import type {
   ClinicalContentBodyDTO,
   ClinicalContentResponse,
   DocumentsContentDTO,
+  HPIContentDTO,
   LabsContentDTO,
   MedicationsContentDTO,
   MissingInfoContentDTO,
@@ -16,6 +17,14 @@ import type {
   TimelineContentDTO,
 } from "../../api/types";
 import type { ClinicalContentViewModel } from "../../components/types";
+
+export type ClinicalContentProjection = {
+  readonly sessionId: number;
+  readonly contextHash: string;
+  readonly contentVersion: string;
+  readonly generatedAt: string;
+  readonly clinicalContent: ClinicalContentViewModel;
+};
 
 function mapPatientHeader(dto: PatientHeaderContentDTO | null) {
   if (!dto) return null;
@@ -48,6 +57,7 @@ function mapSnapshot(dto: SnapshotStripContentDTO | null) {
     problems: dto.problems,
     risk: dto.risk,
     allergies: dto.allergies,
+    allergyState: dto.allergy_state,
     medicationCount: dto.medication_count,
     timelineCount: dto.timeline_count,
   };
@@ -75,11 +85,25 @@ function mapMedications(dto: MedicationsContentDTO | null) {
       label: group.label,
       items: group.items.map((item) => ({
         id: item.id,
+        catalogId: item.catalog_id ?? null,
         name: item.name,
         dose: item.dose,
+        doseUnit: item.dose_unit ?? null,
         frequency: item.frequency,
         status: item.status,
         source: item.source,
+        genericName: item.generic_name ?? null,
+        brandName: item.brand_name ?? null,
+        strength: item.strength ?? null,
+        dosageForm: item.dosage_form ?? null,
+        manufacturer: item.manufacturer ?? null,
+        company: item.company ?? null,
+        quantity: item.quantity ?? null,
+        duration: item.duration ?? null,
+        route: item.route ?? null,
+        instructions: item.instructions ?? null,
+        confidence: item.confidence ?? null,
+        verificationStatus: item.verification_status ?? null,
       })),
     })),
   };
@@ -94,9 +118,11 @@ function mapLabs(dto: LabsContentDTO | null) {
       value: row.value,
       unit: row.unit,
       referenceRange: row.reference_range,
-      abnormal: row.abnormal,
+      state: row.state,
       trend: row.trend,
       detail: row.detail,
+      timestamp: row.timestamp,
+      source: row.source,
     })),
   };
 }
@@ -126,6 +152,13 @@ function mapDocuments(dto: DocumentsContentDTO | null) {
   };
 }
 
+function mapHPI(dto: HPIContentDTO | null) {
+  if (!dto) return null;
+  return {
+    hpiSummary: dto.hpi_summary,
+  };
+}
+
 function mapBody(content: ClinicalContentBodyDTO): ClinicalContentViewModel {
   return {
     patientHeader: mapPatientHeader(content.patient_header),
@@ -136,6 +169,7 @@ function mapBody(content: ClinicalContentBodyDTO): ClinicalContentViewModel {
           priority: content.chief_complaint.priority,
         }
       : null,
+    hpi: mapHPI(content.hpi),
     redFlags: mapRedFlags(content.red_flags),
     snapshot: mapSnapshot(content.snapshot),
     timeline: mapTimeline(content.timeline),
@@ -160,4 +194,16 @@ export function projectClinicalContent(
   response: ClinicalContentResponse,
 ): ClinicalContentViewModel {
   return mapBody(response.content);
+}
+
+export function projectClinicalContentEnvelope(
+  response: ClinicalContentResponse,
+): ClinicalContentProjection {
+  return {
+    sessionId: response.session_id,
+    contextHash: response.context_hash,
+    contentVersion: response.content_version,
+    generatedAt: response.generated_at,
+    clinicalContent: mapBody(response.content),
+  };
 }

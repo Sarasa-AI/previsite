@@ -29,6 +29,7 @@ ENV/
 # Database
 *.db
 *.db.bak
+!backend/data/darooyab.db
 
 # Frontend
 node_modules/

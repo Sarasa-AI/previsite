@@ -151,7 +151,7 @@ class TestClinicalContextBuilderUnit:
         assert "Metformin" in text
 
     @pytest.mark.asyncio
-    async def test_builder_assembles_immutable_context_with_labs_meds_pmh(
+    async def test_manual_and_ocr_medication_records_reach_clinical_context(
         self,
         async_client: AsyncClient,
         db: AsyncSession,
@@ -166,7 +166,22 @@ class TestClinicalContextBuilderUnit:
                 ChronicCondition(id="cond-dm", name="Diabetes", duration="10 years"),
             ],
             current_medications=[
-                CurrentMedication(id="med-1", name="Lisinopril", amount="10mg", frequency="daily"),
+                CurrentMedication(
+                    id="med-manual",
+                    catalog_id=101,
+                    name="Lisinopril",
+                    amount="10mg",
+                    frequency="daily",
+                    dose_unit="tablet",
+                ),
+                CurrentMedication(
+                    id="med-ocr",
+                    catalog_id=202,
+                    name="Metformin",
+                    amount="۱ قرص",
+                    frequency="هر ۲۴ ساعت",
+                    dose_unit="قرص",
+                ),
             ],
             lab_results=[
                 LabResult(
@@ -196,7 +211,29 @@ class TestClinicalContextBuilderUnit:
         assert "Cholecystectomy" in ctx.pmh_context
         assert len(ctx.lab_evidence) == 1
         assert ctx.lab_evidence[0].extracted_data and "WBC: 12.5" in ctx.lab_evidence[0].extracted_data
-        assert any(m.name == "Lisinopril" for m in ctx.medication_evidence)
+        medications = {m.medication_id: m for m in ctx.medication_evidence}
+        assert medications["med-manual"].model_dump() == {
+            "medication_id": "med-manual",
+            "catalog_id": 101,
+            "name": "Lisinopril",
+            "amount": "10mg",
+            "frequency": "daily",
+            "dose_unit": "tablet",
+            "catalog": None,
+            "prescription": None,
+            "provenance": None,
+        }
+        assert medications["med-ocr"].model_dump() == {
+            "medication_id": "med-ocr",
+            "catalog_id": 202,
+            "name": "Metformin",
+            "amount": "۱ قرص",
+            "frequency": "هر ۲۴ ساعت",
+            "dose_unit": "قرص",
+            "catalog": None,
+            "prescription": None,
+            "provenance": None,
+        }
         assert any(a.lab_results for a in ctx.file_analyses)
         assert any(a.medications for a in ctx.file_analyses)
         assert any(a.concept == "Diabetes" for a in ctx.pmh_assertions)

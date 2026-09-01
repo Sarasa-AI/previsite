@@ -20,6 +20,7 @@ import {
 import type { ErrorViewModel, WorkspaceViewModel } from "../viewmodels/types";
 import {
   keepWorkspaceSnapshotOn304,
+  clinicalContentSessionQueryKey,
   replaceWorkspaceSnapshot,
   workspaceBackoffDelay,
   workspaceQueryKey,
@@ -164,10 +165,11 @@ export function useWorkspacePlan({
       }) as CachedPlan;
       etagRef.current = next.etag;
       queryClient.setQueryData(queryKey, next);
+      void queryClient.invalidateQueries({ queryKey: clinicalContentSessionQueryKey(sessionId) });
       setErrorView(null);
       setErrorUiState(null);
     },
-    [queryClient, queryKey],
+    [queryClient, queryKey, sessionId],
   );
 
   const applyMutationError = useCallback(

@@ -93,6 +93,21 @@ def compute_base_priorities(
         _set_priority(cc, PriorityLevel.P3, "base_priority", "Chief complaint absent → routed via missing_data")
     out[cc.object_id] = cc
 
+    # hpi — present when HPI narrative exists, never hidden if present
+    has_hpi = bool(signals.hpi_summary)
+    hpi = ObjectPriority(
+        ClinicalObjectId.HPI, PriorityLevel.P1, present=has_hpi, hidden=False
+    )
+    if has_hpi:
+        _set_priority(hpi, PriorityLevel.P1, "base_priority", "HPI narrative present → P1")
+        hpi.hidden = False
+    else:
+        hpi.present = False
+        hpi.hidden = True
+        hpi.visibility_reason = VisibilityReason.NO_DATA
+        _set_priority(hpi, PriorityLevel.P3, "base_priority", "HPI narrative absent → hidden")
+    out[hpi.object_id] = hpi
+
     # red_flags
     rf = ObjectPriority(
         ClinicalObjectId.RED_FLAGS, PriorityLevel.P1, present=bool(signals.red_flags), hidden=False

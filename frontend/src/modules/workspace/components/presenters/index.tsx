@@ -10,7 +10,9 @@ import type {
   SoapContent,
   TimelineContent,
 } from "../types";
+import type { HPIContent } from "../types/content";
 import { ChiefComplaintCard } from "../cards/ChiefComplaintCard";
+import { HPICard } from "../cards/HPICard";
 import { RedFlagsCard } from "../cards/RedFlagsCard";
 import { MissingInformationCard } from "../cards/MissingInformationCard";
 import { SoapPreviewCard } from "../cards/SoapPreviewCard";
@@ -20,6 +22,7 @@ import { MedicationList } from "../medications/MedicationList";
 import { LabsPanel } from "../labs/LabsPanel";
 import { SourceDocumentsCard } from "../documents/SourceDocumentsCard";
 import { PresenterChrome, trustSlot } from "./presenterChrome";
+import { AllergiesCard, ProblemsCard } from "../clinical/ClinicalDataCards";
 
 /** Production presenters — layout/trust from CardViewModel; body from feature content slices. */
 
@@ -27,6 +30,15 @@ export function ChiefComplaintPresenter({ card, content }: CardPresenterProps) {
   return (
     <ChiefComplaintCard
       content={(content as ChiefComplaintContent | null | undefined) ?? null}
+      trust={trustSlot(card)}
+    />
+  );
+}
+
+export function HPIPresenter({ card, content }: CardPresenterProps) {
+  return (
+    <HPICard
+      content={(content as HPIContent | null | undefined) ?? null}
       trust={trustSlot(card)}
     />
   );
@@ -46,8 +58,9 @@ export function CriticalAlertsPresenter({ card }: CardPresenterProps) {
     <PresenterChrome
       card={card}
       title="Critical alerts"
-      emptyTitle="No critical alerts"
-      emptyMessage="No critical alerts are present."
+      emptyTitle="داده هشدارهای بحرانی در دسترس نیست"
+      emptyMessage="قرارداد محتوای فعلی داده‌ای برای تایید یا رد هشدار بحرانی ارائه نمی‌کند."
+      emptyState="unavailable"
     />
   );
 }
@@ -57,21 +70,16 @@ export function ConflictsPresenter({ card }: CardPresenterProps) {
     <PresenterChrome
       card={card}
       title="Conflicts"
-      emptyTitle="No conflicts"
-      emptyMessage="No clinical conflicts are present."
+      emptyTitle="داده تعارض‌ها در دسترس نیست"
+      emptyMessage="نبود داده ساختاریافته به معنی نبود یا حل‌شدن تعارض بالینی نیست."
+      emptyState="unavailable"
     />
   );
 }
 
-export function AllergiesPresenter({ card }: CardPresenterProps) {
-  return (
-    <PresenterChrome
-      card={card}
-      title="Allergies"
-      emptyTitle="No allergies"
-      emptyMessage="No allergy records are available."
-    />
-  );
+export function AllergiesPresenter({ card, content }: CardPresenterProps) {
+  const snapshot = (content as SnapshotStripContent | null | undefined) ?? null;
+  return <AllergiesCard content={snapshot} state={snapshot?.allergyState === "not_documented" ? "missing" : snapshot?.allergyState} trust={trustSlot(card)} />;
 }
 
 export function TimelinePresenter({ card, content }: CardPresenterProps) {
@@ -79,19 +87,13 @@ export function TimelinePresenter({ card, content }: CardPresenterProps) {
     <Timeline
       content={(content as TimelineContent | null | undefined) ?? null}
       trust={trustSlot(card)}
+      provenance={card.trust}
     />
   );
 }
 
 export function StoryPresenter({ card }: CardPresenterProps) {
-  return (
-    <PresenterChrome
-      card={card}
-      title="Story"
-      emptyTitle="Story"
-      emptyMessage="Prefer the top-level clinical story when present."
-    />
-  );
+  return null;
 }
 
 export function LabsPresenter({ card, content }: CardPresenterProps) {
@@ -108,8 +110,9 @@ export function CriticalLabsPresenter({ card }: CardPresenterProps) {
     <PresenterChrome
       card={card}
       title="Critical labs"
-      emptyTitle="No critical labs"
-      emptyMessage="No critical laboratory results are available."
+      emptyTitle="داده آزمایش بحرانی در دسترس نیست"
+      emptyMessage="این وضعیت به معنی طبیعی بودن یا نبود نتیجه بحرانی نیست."
+      emptyState="unavailable"
     />
   );
 }
@@ -123,15 +126,8 @@ export function MedicationsPresenter({ card, content }: CardPresenterProps) {
   );
 }
 
-export function PmhPresenter({ card }: CardPresenterProps) {
-  return (
-    <PresenterChrome
-      card={card}
-      title="Past medical history"
-      emptyTitle="No PMH"
-      emptyMessage="Past medical history is not available."
-    />
-  );
+export function PmhPresenter({ card, content }: CardPresenterProps) {
+  return <ProblemsCard content={(content as SnapshotStripContent | null | undefined) ?? null} trust={trustSlot(card)} />;
 }
 
 export function DocumentsPresenter({ card, content }: CardPresenterProps) {
@@ -139,6 +135,7 @@ export function DocumentsPresenter({ card, content }: CardPresenterProps) {
     <SourceDocumentsCard
       content={(content as DocumentsContent | null | undefined) ?? null}
       trust={trustSlot(card)}
+      provenance={card.trust}
     />
   );
 }
@@ -147,9 +144,9 @@ export function PatientQuestionsPresenter({ card }: CardPresenterProps) {
   return (
     <PresenterChrome
       card={card}
-      title="Patient questions"
-      emptyTitle="No questions"
-      emptyMessage="No patient questions are available."
+      title="پرسش‌های پیشنهادی"
+      emptyTitle="پیشنهادی در دسترس نیست"
+      emptyMessage="قرارداد فعلی متن پرسش پیشنهادی ارائه نمی‌کند؛ هیچ پرسشی در رابط کاربری استنباط نشده است."
     />
   );
 }
@@ -168,6 +165,7 @@ export function SoapPresenter({ card, content }: CardPresenterProps) {
     <SoapPreviewCard
       content={(content as SoapContent | null | undefined) ?? null}
       trust={trustSlot(card)}
+      provenance={card.trust}
       defaultExpanded={card.size === "expanded"}
     />
   );

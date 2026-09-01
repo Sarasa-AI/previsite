@@ -1,19 +1,14 @@
 {
-  "app": "reverent-antonelli-q68ozcda4",
-  "platform": "python",
-  "python": {
-    "version": "3.11"
-  },
+  "app": "previsit-api",
+  "platform": "docker",
   "port": 8000,
-  "env": {
-  },
   "build": {
     "location": "iran"
   },
   "disks": [
     {
-      "name": "upload-disc",
-      "mountTo": "uploads"
+      "name": "previsit-files",
+      "mountTo": "/app/uploads"
     }
   ],
   "run": "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"

@@ -132,9 +132,11 @@ def _context(**overrides) -> ClinicalContext:
         "medication_evidence": (
             MedicationEvidence(
                 medication_id="m1",
+                catalog_id=101,
                 name="Metformin",
                 amount="500mg",
                 frequency="BID",
+                dose_unit="tablet",
             ),
         ),
         "timeline": _timeline("Headache onset", "Nausea", with_absolute=True),
@@ -202,7 +204,7 @@ def test_full_projection_populates_all_slices():
     assert content.medications is not None
     assert content.medications.groups[0].items[0].name == "Metformin"
     assert content.labs is not None
-    assert content.labs.rows[0].abnormal is True
+    assert content.labs.rows[0].state == "unknown"
     assert content.missing_info is None
     assert content.soap is not None
     assert "migraine" in content.soap.assessment.lower()
@@ -318,6 +320,10 @@ def test_medications_prefer_clinical_context_evidence():
     response = project_clinical_content(ctx, _adapters())
     items = response.content.medications.groups[0].items
     assert items[0].id == "m1"
+    assert items[0].catalog_id == 101
+    assert items[0].dose == "500mg"
+    assert items[0].frequency == "BID"
+    assert items[0].dose_unit == "tablet"
     assert items[0].source == "clinical_context"
 
 
@@ -348,3 +354,34 @@ def test_soap_fallback_when_sections_missing():
     assert response.content.soap is not None
     assert response.content.soap.assessment == "Unstructured note without sections."
     assert response.content.soap.plan == ""
+
+
+def test_hpi_projection_from_summary():
+    """HPI narrative is projected from ClinicalContext.summary.hpi_summary."""
+    context = _context()
+    context.summary.hpi_summary = "HPI_AUDIT_SENTINEL_2026"
+    adapters = _adapters()
+    response = project_clinical_content(context, adapters)
+
+    assert response.content.hpi is not None
+    assert response.content.hpi.hpi_summary == "HPI_AUDIT_SENTINEL_2026"
+
+
+def test_hpi_projection_null_when_missing():
+    """HPI projection returns None when no HPI narrative exists."""
+    context = _context()
+    context.summary.hpi_summary = None
+    adapters = _adapters()
+    response = project_clinical_content(context, adapters)
+
+    assert response.content.hpi is None
+
+
+def test_hpi_projection_empty_string_yields_null():
+    """HPI projection returns None when HPI is empty string."""
+    context = _context()
+    context.summary.hpi_summary = ""
+    adapters = _adapters()
+    response = project_clinical_content(context, adapters)
+
+    assert response.content.hpi is None

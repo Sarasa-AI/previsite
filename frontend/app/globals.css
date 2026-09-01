@@ -8,7 +8,6 @@
   --mint: #a8e6cf;
   --danger: #dc2626;
   --ink: #0f172a;
-  --font-fluid: calc(1rem + 0.25vw);
   --spring-duration: 440ms;
   --spring-easing: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -39,6 +38,62 @@
   --pv-ink-950: 222 47% 11%; /* #0F172A — brand `ink`, unchanged */
   --pv-clinical-50: 210 17% 98%; /* #F8F9FA — brand `clinical`, unchanged */
   --pv-white: 0 0% 100%;
+
+  /* TreatAI foundations: raw tokens shared by every persona. */
+  --tai-navy: 220 53% 18%; /* #162647 */
+  --tai-navy-strong: 220 56% 14%;
+  --tai-teal: 183 99% 30%; /* #019199 */
+  --tai-teal-bright: 180 100% 33%; /* #00A6A6 */
+  --tai-teal-soft: 180 35% 94%;
+  --tai-white: 0 0% 100%;
+  --tai-neutral-25: 180 23% 97%; /* #F7FAFA */
+  --tai-neutral-50: 210 17% 98%;
+  --tai-neutral-100: 210 20% 95%;
+  --tai-neutral-200: 193 21% 92%; /* #E5ECEE */
+  --tai-neutral-500: 215 16% 47%;
+  --tai-neutral-700: 215 25% 27%;
+  --tai-neutral-950: 222 47% 11%;
+
+  --tai-success: 142 72% 29%;
+  --tai-success-surface: 138 76% 97%;
+  --tai-warning: 23 83% 31%;
+  --tai-warning-surface: 48 96% 89%;
+  --tai-critical: 0 70% 35%;
+  --tai-critical-surface: 0 93% 94%;
+  --tai-info: 210 70% 38%;
+  --tai-info-surface: 210 80% 96%;
+  --tai-unknown: 215 16% 47%;
+  --tai-unknown-surface: 210 20% 95%;
+  --tai-missing: 35 92% 33%;
+  --tai-missing-surface: 48 96% 89%;
+  --tai-unverified: 263 55% 45%;
+  --tai-unverified-surface: 270 100% 98%;
+  --tai-verified: 142 72% 29%;
+  --tai-verified-surface: 138 76% 97%;
+  --tai-conflict: 0 70% 35%;
+  --tai-conflict-surface: 0 93% 94%;
+  --tai-resolved: 174 62% 30%;
+  --tai-resolved-surface: 166 45% 92%;
+  --tai-stale: 23 83% 31%;
+  --tai-stale-surface: 48 96% 89%;
+  --tai-ai: 183 99% 30%;
+  --tai-ai-surface: 180 35% 95%;
+
+  --tai-space-1: 0.25rem;
+  --tai-space-2: 0.5rem;
+  --tai-space-3: 0.75rem;
+  --tai-space-4: 1rem;
+  --tai-space-5: 1.25rem;
+  --tai-space-6: 1.5rem;
+  --tai-space-8: 2rem;
+  --tai-radius-sm: 0.25rem;
+  --tai-radius-md: 0.375rem;
+  --tai-radius-lg: 0.5rem;
+  --tai-border: 1px solid hsl(var(--tai-neutral-200));
+  --tai-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+  --tai-shadow-md: 0 8px 24px -16px rgb(15 23 42 / 0.28);
+  --tai-font-sans: Vazirmatn, Tahoma, Arial, sans-serif;
+  --tai-font-latin: Inter, Arial, sans-serif;
 }
 
 /* ============================================================================
@@ -122,8 +177,9 @@ body {
     radial-gradient(circle at top right, rgba(168, 230, 207, 0.28), transparent 24%),
     linear-gradient(180deg, #ffffff 0%, var(--clinical) 100%);
   color: var(--ink);
-  font-family: Vazirmatn, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: clamp(1rem, var(--font-fluid), 1.18rem);
+  font-family: var(--tai-font-sans);
+  font-size: 1rem;
+  line-height: 1.75;
 }
 
 a {
@@ -136,6 +192,34 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid hsl(var(--tai-navy));
+  outline-offset: 2px;
+}
+
+/* Bidi-safe clinical values. `plaintext` keeps adjacent RTL prose isolated. */
+.tai-bidi-value {
+  unicode-bidi: plaintext;
+}
+
+.tai-ltr-value {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+  font-family: var(--tai-font-latin);
+  font-variant-numeric: tabular-nums;
+}
+
+.tai-numeric-value {
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.tai-clinical-copy {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 ::selection {

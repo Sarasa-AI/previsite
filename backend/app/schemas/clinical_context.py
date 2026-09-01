@@ -4,6 +4,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from app.modules.medications.domain.models import (
+    MedicationCatalogSnapshot,
+    MedicationPrescription,
+    MedicationProvenance,
+)
 from app.modules.timeline.domain.models import ClinicalTimeline
 from app.schemas.intake import MedicalOverview
 from app.schemas.medical import MedicalSummary
@@ -45,14 +50,24 @@ class LabEvidence(BaseModel):
 
 
 class MedicationEvidence(BaseModel):
-    """Structured medication evidence for Clinical AI modules (Drug Intelligence, SOAP, etc.)."""
+    """Structured medication evidence for Clinical AI modules (Drug Intelligence, SOAP, etc.).
+
+    ``catalog``, ``prescription`` and ``provenance`` are the canonical structured
+    blocks; the flat ``catalog_id``/``name``/``amount``/``frequency``/
+    ``dose_unit`` fields remain for backward compatibility and quick display.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     medication_id: str
+    catalog_id: int | None = None
     name: str
     amount: str = ""
     frequency: str = ""
+    dose_unit: str | None = None
+    catalog: MedicationCatalogSnapshot | None = None
+    prescription: MedicationPrescription | None = None
+    provenance: MedicationProvenance | None = None
 
 
 class FileAnalysisEvidence(BaseModel):

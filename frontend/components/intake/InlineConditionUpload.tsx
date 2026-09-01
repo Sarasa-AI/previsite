@@ -7,13 +7,38 @@ import { extractApiError } from "@/lib/api";
 import { frontendApi } from "@/lib/client";
 import { fileDownloadUrl } from "@/lib/files";
 import type { ConditionFile } from "@/lib/pmh/types";
+import type {
+  MedicationCatalogSnapshot,
+  MedicationPrescription,
+  MedicationProvenance,
+} from "@/lib/pmh/types";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
+export type ExtractedMedicationCandidate = {
+  catalog_id: number;
+  name: string;
+  generic_name?: string | null;
+  strength?: string | null;
+  form?: string | null;
+  manufacturer?: string | null;
+  company?: string | null;
+  dose_unit?: string | null;
+  catalog?: MedicationCatalogSnapshot | null;
+};
+
 export type ExtractedMedication = {
+  catalog_id?: number | null;
   name: string;
   amount: string;
   frequency: string;
+  dose_unit?: string | null;
+  catalog?: MedicationCatalogSnapshot | null;
+  prescription?: MedicationPrescription | null;
+  provenance?: MedicationProvenance | null;
+  ambiguous?: boolean;
+  candidate_count?: number;
+  candidates?: ExtractedMedicationCandidate[] | null;
 };
 
 export type ConditionUploadType = "lab" | "medication" | "chronic";

@@ -62,22 +62,10 @@ async def upload_file(
     current_user: User = Depends(get_current_user),
 ) -> Dict:
     """آپلود فایل برای یک session"""
-    result = await db.execute(
-        select(SessionModel).where(
-            SessionModel.id == session_id,
-            SessionModel.patient_id == current_user.id,
-        )
-    )
-    session = result.scalar_one_or_none()
-
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found or access denied",
-        )
+    await _get_authorized_session(db, session_id, current_user)
 
     extracted_data: str | None = None
-    extracted_medications: list[dict[str, str]] | None = None
+    extracted_medications: list[dict[str, object]] | None = None
     intake_for_ocr: Intake | None = None
 
     if condition_id:

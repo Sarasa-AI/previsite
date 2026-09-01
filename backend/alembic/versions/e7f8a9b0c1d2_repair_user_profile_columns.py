@@ -16,6 +16,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+
     op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS national_id VARCHAR(10)")
     op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR")
     op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name VARCHAR")
@@ -43,6 +47,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+
     op.execute("ALTER TABLE sessions DROP COLUMN IF EXISTS soap_error_detail")
     op.execute("ALTER TABLE sessions DROP COLUMN IF EXISTS soap_status")
 

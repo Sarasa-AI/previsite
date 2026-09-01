@@ -15,26 +15,15 @@ from __future__ import annotations
 
 import re
 
+from app.modules.workspace.application.allergy_state import (
+    allergies_status_unknown,
+    allergy_text_for_display,
+)
 from app.schemas.clinical_context import ClinicalContext
 
 _RED_FLAGS_LINE_RE = re.compile(r"^Red flags:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
 _PATIENT_QUESTIONS_LINE_RE = re.compile(
     r"^Patient questions:\s*(.+)$", re.IGNORECASE | re.MULTILINE
-)
-
-#: Values that explicitly document "no known allergies" rather than leaving it blank.
-_ALLERGY_NEGATIONS = frozenset(
-    {
-        "nkda",
-        "none",
-        "n/a",
-        "na",
-        "no known allergies",
-        "no known drug allergies",
-        "هیچ",
-        "ندارد",
-        "بدون حساسیت",
-    }
 )
 
 
@@ -82,26 +71,26 @@ def patient_questions_from_context(context: ClinicalContext) -> tuple[str, ...]:
     if questions:
         return questions
     overview = context.overview
-    if overview and overview.patient_questions.strip():
-        return (overview.patient_questions.strip(),)
+    patient_questions = overview.patient_questions if overview else None
+    if patient_questions and patient_questions.strip():
+        return (patient_questions.strip(),)
     return ()
 
 
 def allergy_text_from_context(context: ClinicalContext) -> str:
-    if context.overview and context.overview.allergies.strip():
-        return context.overview.allergies.strip()
-    allergies = context.summary.allergies or []
-    return ", ".join(a.strip() for a in allergies if a and str(a).strip()).strip()
+    """Get allergy text for display — uses centralized interpretation."""
+    return allergy_text_for_display(context)
 
 
+# Re-export the centralized function
+from app.modules.workspace.application.allergy_state import (
+    allergies_status_unknown as _allergies_status_unknown,
+)
+
+# The original implementation is now in allergy_state.py
+# This wrapper maintains backward compatibility
 def allergies_status_unknown(context: ClinicalContext) -> bool:
-    """True when allergy status was never established either way.
-
-    An explicit "no known allergies" is *documented*, so it is not unknown. Only a
-    blank field means the question was never answered — which is the P0 safety gap
-    the MISSING_DATA object exists to surface.
-    """
-    return not allergy_text_from_context(context)
+    return _allergies_status_unknown(context)
 
 
 def documents_needing_review(context: ClinicalContext) -> tuple[int, ...]:

@@ -35,6 +35,7 @@ describe("Golden Clinical Dataset integrity", () => {
   it("includes all required clinical slices for a realistic patient", () => {
     expect(GOLDEN_CLINICAL_CONTENT.patientHeader).not.toBeNull();
     expect(GOLDEN_CLINICAL_CONTENT.chiefComplaint).not.toBeNull();
+    expect(GOLDEN_CLINICAL_CONTENT.hpi).not.toBeNull();
     expect(GOLDEN_CLINICAL_CONTENT.redFlags).not.toBeNull();
     expect(GOLDEN_CLINICAL_CONTENT.snapshot).not.toBeNull();
     expect(GOLDEN_CLINICAL_CONTENT.timeline).not.toBeNull();

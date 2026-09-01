@@ -17,6 +17,10 @@ export function workspaceQueryKey(params: WorkspaceCacheKeyParams) {
 
 export const CLINICAL_CONTENT_QUERY_ROOT = "clinical-content" as const;
 
+export function clinicalContentSessionQueryKey(sessionId: number | string) {
+  return [CLINICAL_CONTENT_QUERY_ROOT, String(sessionId)] as const;
+}
+
 export type ClinicalContentCacheKeyParams = {
   sessionId: number | string;
   contextHash?: string | null;

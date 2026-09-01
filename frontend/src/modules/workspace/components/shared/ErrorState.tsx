@@ -14,7 +14,9 @@ export function ErrorState({ title, message, className }: ErrorStateProps) {
         className,
       )}
       role="alert"
+      aria-live="assertive"
       aria-label={title}
+      data-clinical-ui-state="error"
     >
       <p className="text-sm font-semibold text-danger">{title}</p>
       <p className="mt-1 text-xs text-ink/80">{message}</p>

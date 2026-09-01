@@ -20,6 +20,7 @@ function renderShell(
   const plan = makePlan({
     layout_directives: [
       makeDirective({ object_id: "critical_alerts", slot: "pin", priority: "p0", size: "expanded", pinned: true }),
+      makeDirective({ object_id: "story", slot: "primary", priority: "p1", size: "expanded" }),
       makeDirective({ object_id: "chief_complaint", slot: "primary", priority: "p1" }),
       makeDirective({ object_id: "red_flags", slot: "primary", priority: "p0" }),
       makeDirective({ object_id: "timeline", slot: "primary", priority: "p1" }),
@@ -56,6 +57,9 @@ describe("WorkspaceShell assembly", () => {
     expect(screen.getByLabelText("Secondary")).toBeInTheDocument();
     expect(screen.getByLabelText("Deferred cards")).toBeInTheDocument();
     expect(screen.getByLabelText("Decision queue")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Workspace navigation" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Encounter context")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "میزکار پزشک" })).toBeInTheDocument();
   });
 
   it("renders pinned cards from registry order", () => {
@@ -69,7 +73,7 @@ describe("WorkspaceShell assembly", () => {
     const { container } = renderShell();
     const primary = container.querySelector('[data-workspace-band="primary"]');
     expect(primary).toBeTruthy();
-    expect(within(primary as HTMLElement).getByLabelText("Clinical story")).toBeInTheDocument();
+    expect(within(primary as HTMLElement).getByLabelText("AI insights")).toBeInTheDocument();
     expect(within(primary as HTMLElement).getByLabelText("Chief complaint")).toBeInTheDocument();
     expect(within(primary as HTMLElement).getByLabelText("Timeline")).toBeInTheDocument();
     expect(within(primary as HTMLElement).getByLabelText("Labs")).toBeInTheDocument();
@@ -81,7 +85,7 @@ describe("WorkspaceShell assembly", () => {
     const secondary = container.querySelector('[data-workspace-band="secondary"]');
     expect(secondary).toBeTruthy();
     expect(within(secondary as HTMLElement).getByLabelText("Missing information")).toBeInTheDocument();
-    expect(within(secondary as HTMLElement).getByLabelText("SOAP preview")).toBeInTheDocument();
+    expect(within(secondary as HTMLElement).getByLabelText("SOAP draft")).toBeInTheDocument();
     expect(within(secondary as HTMLElement).getByLabelText("Clinical snapshot")).toBeInTheDocument();
   });
 
@@ -110,7 +114,7 @@ describe("WorkspaceShell assembly", () => {
 
   it("renders empty screen when plan missing", () => {
     renderShell({ uiState: "Ready", viewModel: null });
-    expect(screen.getByText("No workspace plan")).toBeInTheDocument();
+    expect(screen.getByText("برنامه میزکار موجود نیست")).toBeInTheDocument();
   });
 
   it("renders error screen with retry", async () => {
@@ -143,7 +147,7 @@ describe("WorkspaceShell assembly", () => {
         onRetry={noop}
       />,
     );
-    expect(screen.getByText("Access denied")).toBeInTheDocument();
+    expect(screen.getByText("دسترسی مجاز نیست")).toBeInTheDocument();
 
     rerender(
       <WorkspaceShell
@@ -155,7 +159,7 @@ describe("WorkspaceShell assembly", () => {
         onRetry={noop}
       />,
     );
-    expect(screen.getByText("Workspace not found")).toBeInTheDocument();
+    expect(screen.getByText("میزکار پیدا نشد")).toBeInTheDocument();
   });
 
   it("marks partial generating state", () => {
@@ -165,7 +169,7 @@ describe("WorkspaceShell assembly", () => {
     expect(container.querySelector('[data-partial="true"]')).toBeTruthy();
   });
 
-  it("supports RTL container without horizontal overflow classes", () => {
+  it("owns RTL direction and scrolls navigation without masking workspace overflow", () => {
     const { container } = render(
       <div dir="rtl">
         <WorkspaceShell
@@ -179,7 +183,8 @@ describe("WorkspaceShell assembly", () => {
       </div>,
     );
     expect(container.querySelector("[dir='rtl']")).toBeTruthy();
-    expect(container.querySelector(".overflow-x-hidden")).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Workspace navigation" })).toHaveClass("overflow-x-auto");
+    expect(container.querySelector(".overflow-x-hidden")).toBeNull();
     expect(screen.getByLabelText("Doctor workspace")).toBeInTheDocument();
   });
 
@@ -187,7 +192,7 @@ describe("WorkspaceShell assembly", () => {
     renderShell();
     expect(screen.getByRole("main", { name: "Doctor workspace" })).toBeInTheDocument();
     expect(screen.getByRole("banner", { name: "Workspace status" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Clinical story" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI insights" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Decision queue" })).toBeInTheDocument();
   });
 
@@ -195,7 +200,33 @@ describe("WorkspaceShell assembly", () => {
     const { container } = renderShell();
     const secondary = container.querySelector('[data-workspace-band="secondary"]');
     expect(secondary?.className).toMatch(/md:grid-cols-2/);
-    expect(secondary?.className).toMatch(/xl:grid-cols-3/);
+    expect(secondary?.className).toMatch(/2xl:grid-cols-3/);
+    expect(screen.getByLabelText("Workspace workflow").className).toMatch(/xl:sticky/);
+  });
+
+  it("keeps pinned content in normal flow so it cannot overlay clinical cards", () => {
+    const { container } = renderShell();
+    const pinned = container.querySelector('[data-workspace-band="pin"]');
+    expect(pinned).toBeTruthy();
+    expect(pinned?.parentElement?.className).not.toMatch(/\bsticky\b/);
+  });
+
+  it("renders AI story only when the Plan includes a visible story directive", () => {
+    const base = makePlan();
+    const plan = makePlan({
+      layout_directives: base.layout_directives.filter((directive) => directive.object_id !== "story"),
+    });
+    render(
+      <WorkspaceShell
+        uiState="Ready"
+        viewModel={projectPlan(plan, plan.plan_etag)}
+        error={null}
+        onAcknowledge={noop}
+        onRefreshStory={noop}
+        onRetry={noop}
+      />,
+    );
+    expect(screen.queryByLabelText("AI insights")).not.toBeInTheDocument();
   });
 
   it("composes production presenters via registry (no stubs)", () => {
@@ -339,6 +370,6 @@ describe("stub removal regression", () => {
     );
     expect(screen.getByLabelText("Chief complaint")).toBeInTheDocument();
     expect(screen.getByText("No chief complaint")).toBeInTheDocument();
-    expect(screen.getByLabelText(/Trust: verified/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Trust: verified/i)).not.toBeInTheDocument();
   });
 });

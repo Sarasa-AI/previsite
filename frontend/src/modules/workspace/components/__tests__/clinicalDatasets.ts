@@ -203,6 +203,9 @@ export const largeClinicalContent: ClinicalContentViewModel = freezeDeep({
     duration: "3 days",
     priority: "p0",
   }),
+  hpi: freezeDeep({
+    hpiSummary: "بیمار ۶۷ ساله زن با سابقه عروق کریونر و دیابت، از ۳ روز پیش درد قفسه سینه دارد که با فعالیت تشدید می‌شود. عوارض هم‌جوش و رگبار.",
+  }),
   redFlags: freezeDeep({
     items: freezeDeep([
       freezeDeep({
@@ -230,6 +233,7 @@ export const largeClinicalContent: ClinicalContentViewModel = freezeDeep({
     problems: "CAD, HTN, T2DM, HLD, CKD2",
     risk: "High CV — prior NSTEMI",
     allergies: "Penicillin (rash), Sulfa (hives)",
+    allergyState: "confirmed",
     medicationCount: 18,
     timelineCount: 48,
   }),
@@ -269,6 +273,9 @@ export const partialClinicalContent: ClinicalContentViewModel = freezeDeep({
     duration: "2 weeks",
     priority: "p2",
   }),
+  hpi: freezeDeep({
+    hpiSummary: "بیمار ۴۱ ساله مرد، از ۲ هفته پیش خفقان احساس می‌کند که در حالت استراحت هم هست.",
+  }),
   redFlags: null,
   snapshot: null,
   timeline: freezeDeep({ groups: freezeDeep([]) }),
@@ -288,6 +295,7 @@ export const partialClinicalContent: ClinicalContentViewModel = freezeDeep({
 export const emptyClinicalContent: ClinicalContentViewModel = freezeDeep({
   patientHeader: null,
   chiefComplaint: null,
+  hpi: null,
   redFlags: null,
   snapshot: null,
   timeline: null,

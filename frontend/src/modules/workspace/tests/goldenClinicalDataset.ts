@@ -46,7 +46,7 @@ export const GOLDEN_NARRATIVE = {
 
 /**
  * Canonical WorkspacePlanResponse aligned with GOLDEN_CLINICAL_CONTENT.
- * Includes all 16 catalog object_ids with deterministic slots/priorities/trust.
+ * Includes all catalog object_ids with deterministic slots/priorities/trust.
  */
 export const GOLDEN_WORKSPACE_PLAN: WorkspacePlanResponse = freezeDeep({
   contract_version: "1.0.0",
@@ -103,6 +103,19 @@ export const GOLDEN_WORKSPACE_PLAN: WorkspacePlanResponse = freezeDeep({
         confidence: 0.9,
         verification: "verified",
         evidence_refs: ["ev-cc-1"],
+      }),
+    }),
+    makeDirective({
+      object_id: "hpi",
+      slot: "primary",
+      priority: "p1",
+      size: "expanded",
+      pinned: false,
+      trust: makeTrust({
+        primary_provenance: "patient_reported",
+        confidence: 0.88,
+        verification: "partially_verified",
+        evidence_refs: ["summary.hpi_summary"],
       }),
     }),
     makeDirective({
@@ -247,8 +260,8 @@ export const GOLDEN_WORKSPACE_PLAN: WorkspacePlanResponse = freezeDeep({
   },
   pin_zone: ["critical_alerts", "red_flags", "allergies"],
   cognitive_budget: {
-    primary_count: 5,
-    expanded_count: 2,
+    primary_count: 6,
+    expanded_count: 3,
     deferred_count: 3,
   },
   metadata: {
@@ -264,9 +277,10 @@ export const GOLDEN_WORKSPACE_PLAN: WorkspacePlanResponse = freezeDeep({
   plan_etag: "golden-etag-v1",
 });
 
-/** Catalog object_ids expected in the golden plan (all 16). */
+/** Catalog object_ids expected in the golden plan. */
 export const GOLDEN_OBJECT_IDS = [
   "chief_complaint",
+  "hpi",
   "red_flags",
   "critical_alerts",
   "conflicts",

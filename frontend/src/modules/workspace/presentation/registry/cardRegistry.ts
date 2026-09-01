@@ -15,6 +15,7 @@ import {
   CriticalAlertsPresenter,
   CriticalLabsPresenter,
   DocumentsPresenter,
+  HPIPresenter,
   LabsPresenter,
   MedicationsPresenter,
   MissingDataPresenter,
@@ -31,6 +32,7 @@ export type { CardPresenter, CardPresenterProps } from "./types";
 
 const REGISTRY: Record<string, CardPresenter> = {
   chief_complaint: ChiefComplaintPresenter,
+  hpi: HPIPresenter,
   red_flags: RedFlagsPresenter,
   critical_alerts: CriticalAlertsPresenter,
   conflicts: ConflictsPresenter,

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from app.modules.workspace.application.allergy_state import (
+    AllergyState,
+    interpret_allergy_state,
+)
 from app.modules.workspace.application.inputs import ReviewAcknowledgements
 from app.modules.workspace.application.priority_engine import ObjectPriority
 from app.modules.workspace.application.role_profiles import RoleClamp
@@ -83,8 +87,14 @@ def generate_story(
             parts.append("Laboratory evidence is available for review.")
         refs.append("lab_evidence")
 
-    if signals.has_allergy_documented and len(parts) < 4:
+    # Handle allergy state correctly — distinguish positive, NKDA, unknown
+    if signals.has_allergy_documented:
+        # Positive allergy documented
         parts.append("Allergy information is documented.")
+        refs.append("overview.allergies")
+    elif signals.allergies_status_unknown and len(parts) < 4:
+        # Allergy status unknown — don't claim documentation
+        parts.append("Allergy status not documented.")
         refs.append("overview.allergies")
     elif signals.validated_conflicts and len(parts) < 4:
         parts.append(

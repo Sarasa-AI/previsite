@@ -3,7 +3,6 @@ import re
 from typing import List
 
 import httpx
-import ollama
 
 from app.core.config import is_openrouter_api_key_configured, settings
 
@@ -87,7 +86,7 @@ def chunk_medical_text(text: str, max_tokens: int | None = None) -> List[str]:
 
 class EmbeddingService:
     def __init__(self) -> None:
-        self._client = ollama.AsyncClient(host=settings.ollama_host)
+        pass
 
     def _validate_dimensions(self, embedding: List[float], *, provider: str) -> List[float]:
         if not embedding:
@@ -99,22 +98,6 @@ class EmbeddingService:
             )
         return embedding
 
-    async def _embed_with_ollama(self, prompt: str) -> List[float]:
-        try:
-            response = await self._client.embeddings(
-                model=settings.embedding_model,
-                prompt=prompt,
-            )
-        except Exception as exc:
-            logger.warning("Ollama embedding request failed: %s", exc)
-            raise EmbeddingServiceError(
-                f"Failed to generate embedding with Ollama model {settings.embedding_model}"
-            ) from exc
-
-        embedding = response.get("embedding") if isinstance(response, dict) else None
-        if embedding is None and hasattr(response, "embedding"):
-            embedding = response.embedding
-        return self._validate_dimensions(list(embedding or []), provider="Ollama")
 
     async def _embed_with_openrouter(self, prompt: str) -> List[float]:
         if not is_openrouter_api_key_configured():
@@ -162,34 +145,15 @@ class EmbeddingService:
             raise ValueError("Cannot generate embedding for empty text.")
 
         provider = (settings.embedding_provider or "auto").strip().lower()
-        errors: list[str] = []
 
-        if provider == "ollama":
-            return await self._embed_with_ollama(prompt)
 
         if provider == "openrouter":
             return await self._embed_with_openrouter(prompt)
-
-        if provider != "auto":
-            raise EmbeddingServiceError(
-                f"Unknown EMBEDDING_PROVIDER={provider!r}. Use auto, ollama, or openrouter."
-            )
-
-        # auto: prefer Ollama, fall back to OpenRouter when Ollama is unreachable.
-        try:
-            return await self._embed_with_ollama(prompt)
-        except EmbeddingServiceError as exc:
-            errors.append(str(exc))
-            logger.warning("Ollama embedding failed; attempting OpenRouter fallback")
-
-        try:
+        if provider == "auto":
             return await self._embed_with_openrouter(prompt)
-        except EmbeddingServiceError as exc:
-            errors.append(str(exc))
 
         raise EmbeddingServiceError(
-            "All embedding providers failed. "
-            + " | ".join(errors)
+            f"Unknown EMBEDDING_PROVIDER={provider!r}. Use auto or openrouter."
         )
 
     def chunk_medical_text(self, text: str, max_tokens: int | None = None) -> List[str]:

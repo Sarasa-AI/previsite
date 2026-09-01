@@ -108,6 +108,18 @@ export function mapWorkspaceError(
     };
   }
 
+  if (httpStatus === 401) {
+    return {
+      error: {
+        code: code ?? "WORKSPACE_AUTH_REQUIRED",
+        httpStatus,
+        presentation: "blocking_access_denied",
+      },
+      uiState: "Forbidden",
+      shouldRefetch: false,
+    };
+  }
+
   if (httpStatus === 404) {
     return {
       error: {
@@ -129,6 +141,18 @@ export function mapWorkspaceError(
       },
       uiState: "Error",
       shouldRefetch: false,
+    };
+  }
+
+  if (httpStatus === 409) {
+    return {
+      error: {
+        code: code ?? "WORKSPACE_CONSISTENCY_CONFLICT",
+        httpStatus,
+        presentation: "soft_conflict_refetch",
+      },
+      uiState: null,
+      shouldRefetch: true,
     };
   }
 

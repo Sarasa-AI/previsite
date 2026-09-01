@@ -5,7 +5,7 @@ import { getBackendApiUrl } from "@/lib/backend-config";
 process.env.NO_PROXY = "localhost,127.0.0.1";
 process.env.no_proxy = "localhost,127.0.0.1";
 
-const BACKEND_API_URL = getBackendApiUrl();
+export const dynamic = "force-dynamic";
 
 async function readJsonFromResponse(response: Response): Promise<unknown> {
   const text = await response.text();
@@ -35,6 +35,8 @@ function setAccessCookie(request: Request, token: string) {
 }
 
 export async function POST(request: Request) {
+  const backendApiUrl = getBackendApiUrl();
+
   let body: unknown;
   try {
     body = await request.json();
@@ -44,7 +46,8 @@ export async function POST(request: Request) {
 
   let response: Response;
   try {
-    response = await fetch(`${BACKEND_API_URL}/api/auth/login`, {
+    console.log("Attempting login to backend:", `${backendApiUrl}/api/auth/login`);
+    response = await fetch(`${backendApiUrl}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

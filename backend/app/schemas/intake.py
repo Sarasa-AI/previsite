@@ -4,6 +4,11 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.modules.medications.domain.models import (
+    MedicationCatalogSnapshot,
+    MedicationPrescription,
+    MedicationProvenance,
+)
 from app.utils.national_id import validate_iranian_national_id
 
 
@@ -67,9 +72,14 @@ class LabResult(BaseModel):
 
 class CurrentMedication(BaseModel):
     id: str = Field(min_length=1, max_length=36)
+    catalog_id: int | None = None
     name: str = ""
     amount: str = ""
     frequency: str = ""
+    dose_unit: str | None = None
+    catalog: MedicationCatalogSnapshot | None = None
+    prescription: MedicationPrescription | None = None
+    provenance: MedicationProvenance | None = None
 
 
 class MedicalOverview(BaseModel):

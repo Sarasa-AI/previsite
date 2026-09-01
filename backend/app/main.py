@@ -5,12 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import admin, chat, documents, files, intake, patients, pdf, pmh, summary
+from app.api import admin, chat, documents, files, intake, medications, patients, pdf, pmh, summary
 from app.api.routes import auth
 from app.auth.dependencies import get_current_active_admin
 from app.core.config import settings, validate_startup_config
 from app.core.error_handler import register_exception_handlers
-from app.core.health_checks import check_database, check_llm_provider, check_ollama
+from app.core.health_checks import check_database, check_llm_provider
 from app.core.inference.infrastructure.composition import (
     close_inference_runtime,
     init_inference_runtime,
@@ -113,11 +113,10 @@ async def health_detailed(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_active_admin),
 ):
-    """Admin-only dependency status (DB, Ollama, LLM provider)."""
+    """Admin-only dependency status (Database, LLM provider)."""
     db_status = await check_database(db)
-    ollama_status = await check_ollama()
     llm_status = await check_llm_provider()
-    statuses = [db_status["status"], ollama_status["status"], llm_status["status"]]
+    statuses = [db_status["status"], llm_status["status"]]
     if all(s == "ok" for s in statuses):
         overall = "ok"
     elif any(s == "down" for s in statuses):
@@ -128,7 +127,6 @@ async def health_detailed(
         "status": overall,
         "dependencies": {
             "database": db_status,
-            "ollama": ollama_status,
             "llm_provider": llm_status,
         },
     }
@@ -141,6 +139,7 @@ app.include_router(summary.router)
 app.include_router(files.router)
 app.include_router(documents.router)
 app.include_router(intake.router)
+app.include_router(medications.router)
 app.include_router(patients.router)
 app.include_router(pmh.router)
 app.include_router(pdf.router)

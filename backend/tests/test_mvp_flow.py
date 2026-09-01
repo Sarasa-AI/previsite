@@ -111,7 +111,11 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
             return "ممنون از همکاری شما. اطلاعات کافی جمع‌آوری شد."
         return "پاسخ پیش‌فرض"
 
-    async def fake_run_soap_generation(session_id: int) -> None:
+    async def fake_run_soap_generation(
+        session_id: int,
+        correlation_id: str | None = None,
+        entry: str = "unknown",
+    ) -> None:
         from sqlalchemy import select
 
         from app.db.database import get_async_session

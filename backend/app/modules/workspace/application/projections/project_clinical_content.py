@@ -8,11 +8,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections import defaultdict
 
+from app.modules.medications.domain.models import (
+    MedicationCatalogSnapshot,
+    MedicationPrescription,
+    MedicationProvenance,
+)
 from app.modules.workspace.application.context_hash import compute_context_hash
 from app.modules.workspace.application.context_signals import parse_red_flags
+from app.modules.workspace.application.allergy_state import (
+    AllergyState,
+    interpret_allergy_state,
+)
 from app.modules.workspace.application.projections.adapters import (
     ClinicalContentAdapters,
     SoapAdapter,
@@ -24,6 +32,7 @@ from app.modules.workspace.interface.clinical_content_dto import (
     ClinicalContentResponse,
     DocumentItemDTO,
     DocumentsContentDTO,
+    HPIContentDTO,
     LabRowDTO,
     LabsContentDTO,
     MedicationGroupDTO,
@@ -61,10 +70,7 @@ _SAFETY_KEYWORDS = frozenset(
         "panic",
     }
 )
-_ABNORMAL_LAB_RE = re.compile(
-    r"\b(critical|panic|abnormal|elevated|high|low|hh|ll|\*\*\*)\b",
-    re.IGNORECASE,
-)
+import re
 _ASSESSMENT_RE = re.compile(
     r"(?:\*\*)?(?:A\s*[-–—]\s*)?Assessment(?:\s*\([^)]*\))?(?:\*\*)?\s*\n(.*?)(?=(?:\*\*)?(?:P\s*[-–—]\s*)?Plan|\Z)",
     re.IGNORECASE | re.DOTALL,
@@ -83,6 +89,7 @@ def project_clinical_content(
     content = ClinicalContentBodyDTO(
         patient_header=_project_patient_header(adapters),
         chief_complaint=_project_chief_complaint(context),
+        hpi=_project_hpi(context),
         red_flags=_project_red_flags(context),
         snapshot=_project_snapshot(context),
         timeline=_project_timeline(context),
@@ -141,6 +148,15 @@ def _project_chief_complaint(
     )
 
 
+def _project_hpi(
+    context: ClinicalContext,
+) -> HPIContentDTO | None:
+    hpi = (context.summary.hpi_summary or "").strip()
+    if not hpi:
+        return None
+    return HPIContentDTO(hpi_summary=hpi)
+
+
 def _parse_red_flags_from_notes(notes: str | None) -> tuple[str, ...]:
     # Single shared parser with the WorkspacePlan signal path — if these two ever
     # disagree the plan hides a card whose body content exists.
@@ -173,10 +189,7 @@ def _project_red_flags(context: ClinicalContext) -> RedFlagsContentDTO | None:
 
 
 def _allergy_text(context: ClinicalContext) -> str:
-    if context.overview and (context.overview.allergies or "").strip():
-        return context.overview.allergies.strip()
-    allergies = context.summary.allergies or []
-    return ", ".join(a.strip() for a in allergies if a and str(a).strip())
+    return interpret_allergy_state(context).allergy_text
 
 
 def _problems_text(context: ClinicalContext) -> str:
@@ -209,7 +222,8 @@ def _timeline_count(context: ClinicalContext) -> int:
 
 
 def _project_snapshot(context: ClinicalContext) -> SnapshotStripContentDTO | None:
-    allergies = _allergy_text(context)
+    allergy = interpret_allergy_state(context)
+    allergies = allergy.allergy_text
     problems = _problems_text(context)
     med_count = _medication_count(context)
     tl_count = _timeline_count(context)
@@ -221,6 +235,13 @@ def _project_snapshot(context: ClinicalContext) -> SnapshotStripContentDTO | Non
         problems=problems,
         risk="",
         allergies=allergies,
+        allergy_state=(
+            "confirmed"
+            if allergy.state is AllergyState.POSITIVE
+            else "nkda"
+            if allergy.state is AllergyState.NEGATIVE_EXPLICIT
+            else "not_documented"
+        ),
         medication_count=med_count,
         timeline_count=tl_count,
     )
@@ -271,11 +292,36 @@ def _project_medications(context: ClinicalContext) -> MedicationsContentDTO | No
             items.append(
                 MedicationItemDTO(
                     id=med.medication_id,
+                    catalog_id=med.catalog_id,
                     name=med.name,
-                    dose=med.amount or "",
-                    frequency=med.frequency or "",
+                    dose=(
+                        _prescription_value(med.prescription, "dose")
+                        or med.amount
+                        or ""
+                    ),
+                    dose_unit=(
+                        _prescription_value(med.prescription, "dose_unit")
+                        or med.dose_unit
+                    ),
+                    frequency=(
+                        _prescription_value(med.prescription, "frequency")
+                        or med.frequency
+                        or ""
+                    ),
                     status="active",
                     source="clinical_context",
+                    generic_name=_medication_generic(med.catalog),
+                    brand_name=_medication_brand(med.catalog),
+                    strength=_medication_strength(med.catalog),
+                    dosage_form=_medication_dosage_form(med.catalog),
+                    manufacturer=_medication_manufacturer(med.catalog),
+                    company=_medication_company(med.catalog),
+                    quantity=_prescription_value(med.prescription, "quantity"),
+                    duration=_prescription_value(med.prescription, "duration"),
+                    route=_prescription_value(med.prescription, "route"),
+                    instructions=_prescription_value(med.prescription, "instructions"),
+                    confidence=_provenance_value(med.provenance, "confidence"),
+                    verification_status=_provenance_value(med.provenance, "verification_status"),
                 )
             )
     elif context.overview and context.overview.current_medications:
@@ -283,11 +329,36 @@ def _project_medications(context: ClinicalContext) -> MedicationsContentDTO | No
             items.append(
                 MedicationItemDTO(
                     id=med.id,
+                    catalog_id=med.catalog_id,
                     name=med.name,
-                    dose=med.amount or "",
-                    frequency=med.frequency or "",
+                    dose=(
+                        _prescription_value(med.prescription, "dose")
+                        or med.amount
+                        or ""
+                    ),
+                    dose_unit=(
+                        _prescription_value(med.prescription, "dose_unit")
+                        or med.dose_unit
+                    ),
+                    frequency=(
+                        _prescription_value(med.prescription, "frequency")
+                        or med.frequency
+                        or ""
+                    ),
                     status="active",
                     source="clinical_context",
+                    generic_name=_medication_generic(med.catalog),
+                    brand_name=_medication_brand(med.catalog),
+                    strength=_medication_strength(med.catalog),
+                    dosage_form=_medication_dosage_form(med.catalog),
+                    manufacturer=_medication_manufacturer(med.catalog),
+                    company=_medication_company(med.catalog),
+                    quantity=_prescription_value(med.prescription, "quantity"),
+                    duration=_prescription_value(med.prescription, "duration"),
+                    route=_prescription_value(med.prescription, "route"),
+                    instructions=_prescription_value(med.prescription, "instructions"),
+                    confidence=_provenance_value(med.provenance, "confidence"),
+                    verification_status=_provenance_value(med.provenance, "verification_status"),
                 )
             )
     else:
@@ -314,14 +385,63 @@ def _project_medications(context: ClinicalContext) -> MedicationsContentDTO | No
     )
 
 
-def _lab_abnormal(text: str) -> bool:
-    return bool(_ABNORMAL_LAB_RE.search(text or ""))
+def _medication_generic(catalog: MedicationCatalogSnapshot | None) -> str | None:
+    return catalog.generic_name if catalog else None
+
+
+def _medication_brand(catalog: MedicationCatalogSnapshot | None) -> str | None:
+    return catalog.brand_name if catalog else None
+
+
+def _medication_strength(catalog: MedicationCatalogSnapshot | None) -> str | None:
+    return catalog.strength_raw if catalog else None
+
+
+def _medication_dosage_form(catalog: MedicationCatalogSnapshot | None) -> str | None:
+    return catalog.dosage_form if catalog else None
+
+
+def _medication_manufacturer(catalog: MedicationCatalogSnapshot | None) -> str | None:
+    return catalog.manufacturer if catalog else None
+
+
+def _medication_company(catalog: MedicationCatalogSnapshot | None) -> str | None:
+    return catalog.company_name if catalog else None
+
+
+def _prescription_value(prescription: MedicationPrescription | None, field: str) -> str | None:
+    if prescription is None:
+        return None
+    return getattr(prescription, field, None)
+
+
+def _provenance_value(provenance: MedicationProvenance | None, field: str) -> float | str | None:
+    if provenance is None:
+        return None
+    return getattr(provenance, field, None)
 
 
 def _project_labs(context: ClinicalContext) -> LabsContentDTO | None:
     rows: list[LabRowDTO] = []
 
-    if context.lab_evidence:
+    if context.document_evidence:
+        for document in context.document_evidence:
+            for index, value in enumerate(document.values):
+                rows.append(
+                    LabRowDTO(
+                        id=_stable_id("document-lab", str(document.document_id), value.name, str(index)),
+                        name=value.name,
+                        value=value.value,
+                        unit=value.unit or "",
+                        reference_range="",
+                        state="abnormal" if value.abnormal else "unknown",
+                        trend="unknown",
+                        detail=value.review_reason or "",
+                        timestamp="",
+                        source=value.provenance.document_name or document.filename,
+                    )
+                )
+    elif context.lab_evidence:
         for lab in context.lab_evidence:
             extracted = (lab.extracted_data or "").strip()
             rows.append(
@@ -331,9 +451,11 @@ def _project_labs(context: ClinicalContext) -> LabsContentDTO | None:
                     value=extracted,
                     unit="",
                     reference_range="",
-                    abnormal=_lab_abnormal(extracted),
+                    state="unknown",
                     trend="unknown",
                     detail=extracted,
+                    timestamp="",
+                    source="clinical_context",
                 )
             )
     elif context.overview and context.overview.lab_results:
@@ -346,9 +468,11 @@ def _project_labs(context: ClinicalContext) -> LabsContentDTO | None:
                     value=extracted,
                     unit="",
                     reference_range="",
-                    abnormal=_lab_abnormal(extracted),
+                    state="unknown",
                     trend="unknown",
                     detail=extracted,
+                    timestamp="",
+                    source="clinical_context",
                 )
             )
 

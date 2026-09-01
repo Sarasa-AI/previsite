@@ -14,13 +14,13 @@ export function TrustBadge({ trust, className }: TrustBadgeProps) {
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-1 rounded border border-trust/20 bg-clinical px-1.5 py-0.5 text-xs text-trust",
+        "inline-flex items-center gap-1 rounded-tai-sm border border-tai-border bg-tai-surface px-1.5 py-0.5 text-[11px] font-medium text-tai-subdued",
         className,
       )}
       title={`${trust.primaryProvenance} · ${trust.verification}`}
       aria-label={`Trust: ${trust.verification}, confidence ${confidenceLabel}, source ${trust.primaryProvenance}`}
     >
-      <span className="font-medium">{trust.verification}</span>
+      <span className="text-tai-navy">{trust.verification}</span>
       <span className="text-ink/60" aria-hidden="true">
         ·
       </span>

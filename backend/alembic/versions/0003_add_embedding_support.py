@@ -19,6 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+
     op.execute("CREATE EXTENSION IF NOT EXISTS vector;")
 
     bind = op.get_bind()
@@ -66,6 +70,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+
     inspector = sa.inspect(bind)
     if "medical_knowledge" not in inspector.get_table_names():
         return

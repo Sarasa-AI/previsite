@@ -1,7 +1,6 @@
 import logging
 
 import httpx
-import ollama
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -21,11 +20,10 @@ class Tier2LLMError(Exception):
 
 
 class Tier2LLMClient:
-    """Configurable secondary LLM provider (GapGPT, Ollama, or OpenRouter secondary)."""
+    """Configurable secondary LLM provider (GapGPT or OpenRouter secondary)."""
 
     def __init__(self) -> None:
         self._openai_client: AsyncOpenAI | None = None
-        self._ollama_client: ollama.AsyncClient | None = None
 
     @property
     def provider(self) -> str:
@@ -35,8 +33,6 @@ class Tier2LLMClient:
         provider = self.provider
         if provider == "gapgpt":
             return bool(settings.gapgpt_api_key and settings.gapgpt_api_key.strip())
-        if provider == "ollama":
-            return bool(settings.ollama_host and settings.ollama_host.strip())
         if provider == "openrouter":
             return bool(
                 settings.openrouter_api_key
@@ -63,10 +59,6 @@ class Tier2LLMClient:
         )
         return self._openai_client
 
-    def _ensure_ollama_client(self) -> ollama.AsyncClient:
-        if self._ollama_client is None:
-            self._ollama_client = ollama.AsyncClient(host=settings.ollama_host)
-        return self._ollama_client
 
     async def complete(
         self,
@@ -88,12 +80,6 @@ class Tier2LLMClient:
                     json_mode=json_mode,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                )
-            if self.provider == "ollama":
-                return await self._complete_ollama(
-                    messages,
-                    json_mode=json_mode,
-                    temperature=temperature,
                 )
             if self.provider == "openrouter":
                 return await self._complete_openrouter(
@@ -142,24 +128,6 @@ class Tier2LLMClient:
             response = await client.chat.completions.create(**request_kwargs)
         return response.choices[0].message.content or ""
 
-    async def _complete_ollama(
-        self,
-        messages: list[dict],
-        *,
-        json_mode: bool,
-        temperature: float,
-    ) -> str:
-        client = self._ensure_ollama_client()
-        options: dict = {"temperature": temperature}
-        if json_mode:
-            options["format"] = "json"
-
-        response = await client.chat(
-            model=settings.llm_tier2_ollama_model,
-            messages=messages,
-            options=options,
-        )
-        return response.message.content or ""
 
     async def _complete_openrouter(
         self,

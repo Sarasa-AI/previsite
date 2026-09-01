@@ -3,8 +3,7 @@
 import { WorkspaceErrorBoundary } from "@/src/shared/ui/WorkspaceErrorBoundary";
 import { WorkspaceLoadingBoundary } from "@/src/shared/ui/WorkspaceLoadingBoundary";
 import { WorkspaceShell } from "../components/WorkspaceShell";
-import { useClinicalContent } from "../presentation/hooks/useClinicalContent";
-import { useWorkspacePlan } from "../presentation/hooks/useWorkspacePlan";
+import { useWorkspaceScreen } from "../presentation/hooks/useWorkspaceScreen";
 
 type Props = {
   sessionId: string;
@@ -17,13 +16,7 @@ export function WorkspaceRoute({
   lens = "general_medicine",
   role = "doctor",
 }: Props) {
-  const workspace = useWorkspacePlan({ sessionId, lens, role });
-  const contextHash = workspace.viewModel?.metadata.contextHash ?? null;
-  const content = useClinicalContent({
-    sessionId,
-    contextHash,
-    enabled: !!workspace.viewModel,
-  });
+  const workspace = useWorkspaceScreen({ sessionId, lens, role });
 
   return (
     <WorkspaceErrorBoundary>
@@ -41,7 +34,7 @@ export function WorkspaceRoute({
           refreshStoryPending={workspace.refreshStoryPending}
           resolvePending={workspace.resolvePending}
           dismissPending={workspace.dismissPending}
-          clinicalContent={content.clinicalContent}
+          clinicalContent={workspace.clinicalContent}
         />
       </WorkspaceLoadingBoundary>
     </WorkspaceErrorBoundary>

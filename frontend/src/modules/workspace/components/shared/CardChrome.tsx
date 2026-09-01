@@ -33,25 +33,25 @@ export function CardChrome({
   return (
     <article
       className={cx(
-        "rounded-lg border border-trust/15 bg-white p-3 text-ink shadow-sm",
+        "min-w-0 overflow-x-clip rounded-tai-lg border border-tai-border bg-white p-3.5 text-tai-text shadow-tai-sm transition-[border-color,box-shadow,transform] duration-200 [overflow-wrap:anywhere] hover:border-tai-teal/30 hover:shadow-tai-md motion-reduce:transition-none sm:p-4",
         className,
       )}
       aria-label={ariaLabel}
     >
       {hasHeader ? (
-        <header className="mb-2 flex flex-wrap items-start gap-2">
+        <header className="mb-3 flex flex-wrap items-start gap-2 border-b border-tai-border pb-2.5">
           <div className="min-w-0 flex-1">
             {title != null ? (
-              <div className="text-sm font-semibold text-trust">{title}</div>
+              <h2 className="text-sm font-bold text-tai-navy">{title}</h2>
             ) : null}
             {subtitle != null ? (
-              <div className="mt-0.5 text-xs text-ink/70">{subtitle}</div>
+              <div className="mt-0.5 text-[11px] font-medium text-tai-subdued">{subtitle}</div>
             ) : null}
           </div>
           {badges != null ? (
             <div className="flex flex-wrap items-center gap-1">{badges}</div>
           ) : null}
-          {trust != null ? <div className="shrink-0">{trust}</div> : null}
+          {trust != null ? <div className="shrink-0 opacity-85 transition-opacity hover:opacity-100">{trust}</div> : null}
           {actions != null ? (
             <div className="flex shrink-0 flex-wrap items-center gap-1">{actions}</div>
           ) : null}
@@ -59,7 +59,7 @@ export function CardChrome({
       ) : null}
       {children != null ? <div className="min-w-0">{children}</div> : null}
       {footer != null ? (
-        <footer className="mt-2 border-t border-trust/10 pt-2 text-xs text-ink/70">
+        <footer className="mt-3 border-t border-tai-border pt-2.5 text-xs text-tai-subdued">
           {footer}
         </footer>
       ) : null}

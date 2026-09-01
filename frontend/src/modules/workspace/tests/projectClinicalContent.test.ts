@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ClinicalContentResponse } from "../api/types";
-import { projectClinicalContent } from "../presentation/mappers/projectClinicalContent";
+import { projectClinicalContent, projectClinicalContentEnvelope } from "../presentation/mappers/projectClinicalContent";
 
 const FULL_RESPONSE: ClinicalContentResponse = {
   session_id: 42,
@@ -25,6 +25,9 @@ const FULL_RESPONSE: ClinicalContentResponse = {
       duration: "3 days",
       priority: "",
     },
+    hpi: {
+      hpi_summary: "Patient presents with chest tightness for 3 days, worsening with exertion.",
+    },
     red_flags: {
       items: [
         {
@@ -40,6 +43,7 @@ const FULL_RESPONSE: ClinicalContentResponse = {
       problems: "HTN, T2DM",
       risk: "",
       allergies: "Penicillin",
+      allergy_state: "confirmed",
       medication_count: 2,
       timeline_count: 4,
     },
@@ -65,8 +69,10 @@ const FULL_RESPONSE: ClinicalContentResponse = {
           items: [
             {
               id: "m1",
+              catalog_id: 101,
               name: "Metformin",
               dose: "500mg",
+              dose_unit: "tablet",
               frequency: "BID",
               status: "active",
               source: "clinical_context",
@@ -83,9 +89,11 @@ const FULL_RESPONSE: ClinicalContentResponse = {
           value: "Potassium 6.5 critical",
           unit: "",
           reference_range: "",
-          abnormal: true,
+          state: "abnormal",
           trend: "unknown",
           detail: "Potassium 6.5 critical",
+          timestamp: "",
+          source: "clinical_context",
         },
       ],
     },
@@ -119,8 +127,15 @@ describe("projectClinicalContent", () => {
     expect(vm.snapshot?.timelineCount).toBe(4);
     expect(vm.timeline?.groups[0]?.events[0]?.title).toBe("Onset");
     expect(vm.medications?.groups[0]?.items[0]?.name).toBe("Metformin");
+    expect(vm.medications?.groups[0]?.items[0]).toMatchObject({
+      catalogId: 101,
+      dose: "500mg",
+      doseUnit: "tablet",
+      frequency: "BID",
+    });
     expect(vm.labs?.rows[0]?.referenceRange).toBe("");
-    expect(vm.labs?.rows[0]?.abnormal).toBe(true);
+    expect(vm.labs?.rows[0]?.state).toBe("abnormal");
+    expect(vm.labs?.rows[0]?.source).toBe("clinical_context");
     expect(vm.soap?.assessment).toBe("Possible ACS");
     expect(vm.documents?.items[0]?.uploadedAt).toBe("2026-07-27T10:00:00+00:00");
     expect(vm.missingInfo).toBeNull();
@@ -135,6 +150,7 @@ describe("projectClinicalContent", () => {
       content: {
         patient_header: null,
         chief_complaint: null,
+        hpi: null,
         red_flags: null,
         snapshot: null,
         timeline: null,
@@ -160,5 +176,13 @@ describe("projectClinicalContent", () => {
     expect(vm.snapshot?.vitals).toBe("");
     expect(vm.snapshot?.risk).toBe("");
     expect(vm.chiefComplaint?.priority).toBe("");
+  });
+
+  it("projects transport metadata separately from component content", () => {
+    const projection = projectClinicalContentEnvelope(FULL_RESPONSE);
+    expect(projection).toMatchObject({ sessionId: 42, contextHash: "abc123", contentVersion: "1.0.0", generatedAt: "2026-07-28T15:00:00+00:00" });
+    expect(projection.clinicalContent.chiefComplaint?.title).toBe("Chest tightness");
+    expect(projection.clinicalContent).not.toHaveProperty("context_hash");
+    expect(projection.clinicalContent).not.toHaveProperty("content_version");
   });
 });

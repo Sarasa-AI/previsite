@@ -8,7 +8,15 @@ from loguru import logger
 
 from app.core.observability.stages import PipelineModule, PipelineStage
 from app.core.observability.timing import pipeline_stage_sync
-from app.services.drug_matcher import drug_matcher
+from app.modules.medications.application.resolver import MedicationResolver
+from app.modules.medications.domain.models import (
+    Medication,
+    MedicationPrescription,
+    MedicationProvenance,
+    MedicationSource,
+    ResolvedMedication,
+)
+from app.modules.medications.infrastructure.catalog import CatalogUnavailableError
 from app.services.file_processor import file_processor
 
 LAB_VALUE_RE = re.compile(
@@ -40,8 +48,126 @@ _NOISE_LINE_RE = re.compile(r"^[\d\s:.\-–—|,]+$")
 _OSD_ROTATE_RE = re.compile(r"Rotate:\s*(\d+)", re.IGNORECASE)
 _HANDWRITING_CONFIDENCE_THRESHOLD = 60
 _MIN_CGM_READINGS = 2
-DEFAULT_MEDICATION_AMOUNT = "۱ عدد"
-DEFAULT_MEDICATION_FREQUENCY = "روزی ۱ بار"
+OCR_MEDICATION_CANDIDATE_LIMIT = 3
+
+# --- Conservative prescription-phrase extraction (same block as the match) ---
+#
+# DrugYab catalog data carries no dose/frequency/duration/route/quantity and
+# the OCR pipeline must not invent them. The patterns below only capture
+# explicit, unambiguous prescription phrases that appear in the same OCR block
+# as the matched drug name. Everything else stays None.
+
+_PERSIAN_TO_ASCII_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
+_ASCII_TO_PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+_PERSIAN_NUMBER_WORDS = {
+    "یک": "۱",
+    "دو": "۲",
+    "سه": "۳",
+    "چهار": "۴",
+    "پنج": "۵",
+    "شش": "۶",
+    "هفت": "۷",
+    "هشت": "۸",
+    "نه": "۹",
+    "نصف": "۰٫۵",
+    "نیم": "۰٫۵",
+}
+_DISCRETE_DOSE_UNITS = ("قرص", "کپسول", "عدد", "قطره", "پاف", "آمپول")
+_DOSE_UNITS = _DISCRETE_DOSE_UNITS + ("میلی‌لیتر", "میلی لیتر", "ساشه", "گرم")
+
+_DOSE_PHRASE_RE = re.compile(
+    r"(?:هر\s*بار\s*)?(?P<dose>یک|دو|سه|چهار|نصف|نیم|[\d۰-۹]+(?:[./٫][\d۰-۹]+)?)\s*"
+    r"(?P<unit>" + "|".join(_DOSE_UNITS) + ")"
+)
+_FREQUENCY_DAILY_RE = re.compile(
+    r"روزی\s*(?P<value>یک|دو|سه|چهار|پنج|شش|[\d۰-۹]+)\s*(?:بار|نوبت)"
+)
+_FREQUENCY_INTERVAL_RE = re.compile(r"هر\s*(?P<value>[\d۰-۹]+)\s*ساعت")
+_INSTRUCTION_PHRASE_RE = re.compile(
+    r"قبل از غذا|بعد از غذا|همراه با غذا|همراه غذا|ناشتا|قبل از خواب|در صورت نیاز|صبح و شب"
+)
+
+
+def _to_ascii_digits(value: str) -> str:
+    return value.translate(_PERSIAN_TO_ASCII_DIGITS)
+
+
+def _to_persian_number(value: str) -> str:
+    word = _PERSIAN_NUMBER_WORDS.get(value.strip())
+    if word:
+        return word
+    return value.strip().translate(_ASCII_TO_PERSIAN_DIGITS)
+
+
+def _extract_prescription_instructions(text: str) -> dict[str, str]:
+    """Conservatively extract explicit prescription phrases from OCR text.
+
+    Only unambiguous phrases are captured; anything uncertain stays absent so
+    the caller keeps the field None. quantity, duration and
+    route are never inferred here.
+    """
+
+    extracted: dict[str, str] = {}
+
+    frequency_match = _FREQUENCY_DAILY_RE.search(text) or _FREQUENCY_INTERVAL_RE.search(text)
+    if frequency_match:
+        if _FREQUENCY_DAILY_RE.search(text):
+            match = _FREQUENCY_DAILY_RE.search(text)
+            extracted["frequency"] = f"روزی {_to_persian_number(match.group('value'))} بار"
+        else:
+            match = _FREQUENCY_INTERVAL_RE.search(text)
+            extracted["frequency"] = f"هر {_to_persian_number(match.group('value'))} ساعت"
+
+    instruction_match = _INSTRUCTION_PHRASE_RE.search(text)
+    if instruction_match:
+        extracted["instructions"] = instruction_match.group(0)
+
+    for dose_match in _DOSE_PHRASE_RE.finditer(text):
+        raw_dose = dose_match.group("dose")
+        unit = dose_match.group("unit").replace("میلی لیتر", "میلی‌لیتر")
+        prefixed = dose_match.group(0).startswith("هر بار")
+        numeric = _to_ascii_digits(raw_dose)
+        if unit in _DISCRETE_DOSE_UNITS:
+            if (
+                raw_dose not in ("نصف", "نیم")
+                and not prefixed
+                and numeric.isdigit()
+                and int(numeric) > 10
+            ):
+                continue
+        elif not prefixed:
+            # Grams/ml/sachets without an explicit "هر بار" phrase are too
+            # ambiguous (product size vs dose) to record as prescription dose.
+            continue
+        extracted["dose"] = _to_persian_number(raw_dose)
+        extracted["dose_unit"] = unit
+        break
+
+    return extracted
+
+
+def _strip_prescription_phrases(text: str) -> str:
+    """Remove explicit prescription phrases so a block can re-match by drug name."""
+
+    stripped = _FREQUENCY_DAILY_RE.sub(" ", text)
+    stripped = _FREQUENCY_INTERVAL_RE.sub(" ", stripped)
+    stripped = _INSTRUCTION_PHRASE_RE.sub(" ", stripped)
+    stripped = _DOSE_PHRASE_RE.sub(" ", stripped)
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+def _candidate_payload(medication: ResolvedMedication) -> dict[str, object]:
+    return {
+        "catalog_id": medication.id,
+        "name": medication.display_name,
+        "generic_name": medication.generic_name_en,
+        "strength": medication.strength,
+        "form": medication.form,
+        "manufacturer": medication.manufacturer,
+        "company": medication.company_name,
+        "dose_unit": medication.dose_unit,
+        "catalog": medication.catalog.model_dump() if medication.catalog else None,
+    }
 
 
 @dataclass
@@ -289,47 +415,141 @@ def _parse_lab_text(
     return None
 
 
-def _medication_ocr_item(generic_name: str) -> dict[str, str]:
-    return {
-        "name": generic_name,
-        "amount": DEFAULT_MEDICATION_AMOUNT,
-        "frequency": DEFAULT_MEDICATION_FREQUENCY,
-    }
+def _medication_resolver() -> MedicationResolver:
+    return MedicationResolver()
+
+
+def _medication_ocr_item(
+    medication: ResolvedMedication,
+    *,
+    prescription: MedicationPrescription | None = None,
+    candidates: tuple[ResolvedMedication, ...] = (),
+) -> dict[str, object]:
+    """Build the canonical OCR medication payload without fabricated instructions."""
+
+    if prescription is None:
+        prescription = MedicationPrescription(dose_unit=medication.dose_unit)
+    ambiguous = len(candidates) > 1
+    composed = Medication.from_resolved(
+        medication,
+        prescription=prescription,
+        provenance=MedicationProvenance(
+            source=MedicationSource.OCR,
+            verification_status="ambiguous" if ambiguous else "needs_review",
+        ),
+    )
+    payload = composed.model_dump()
+    payload["ambiguous"] = ambiguous
+    payload["candidate_count"] = len(candidates) or 1
+    payload["candidates"] = [_candidate_payload(candidate) for candidate in candidates]
+    return payload
 
 
 def _match_medications_from_text(
     raw_text: str,
     *,
     handwriting_likely: bool = False,
-) -> list[dict[str, str]] | None:
+) -> list[dict[str, object]] | None:
     if not raw_text.strip():
         return None
 
-    matched_names: list[str] = []
-    seen_generics: set[str] = set()
+    resolver = _medication_resolver()
+    matched_medications: list[
+        tuple[ResolvedMedication, MedicationPrescription | None, tuple[ResolvedMedication, ...]]
+    ] = []
+    seen_catalog_ids: set[int] = set()
+    resolved_queries: set[str] = set()
 
-    def _record_match(match: dict | None) -> None:
-        if match is None:
-            return
-        generic_name = match["generic_name"]
-        if generic_name in seen_generics:
-            return
-        seen_generics.add(generic_name)
-        matched_names.append(generic_name)
+    def _resolve_and_record(
+        query: str,
+        extracted: dict[str, str] | None = None,
+    ) -> bool:
+        if query in resolved_queries:
+            return True
+        resolved_queries.add(query)
+        resolution = resolver.resolve_ocr(query, limit=OCR_MEDICATION_CANDIDATE_LIMIT)
+        if not resolution.medications:
+            return False
+        medication = resolution.medications[0]
+        if medication.id in seen_catalog_ids:
+            return True
+        seen_catalog_ids.add(medication.id)
+        prescription = None
+        if extracted:
+            prescription = MedicationPrescription(
+                dose=extracted.get("dose"),
+                dose_unit=extracted.get("dose_unit") or medication.dose_unit,
+                frequency=extracted.get("frequency"),
+                instructions=extracted.get("instructions"),
+            )
+        matched_medications.append((medication, prescription, resolution.medications))
+        return True
 
     blocks = _split_ocr_blocks(raw_text)
     force_blocks = handwriting_likely or len(blocks) >= 2
 
     if not force_blocks:
-        _record_match(drug_matcher.match_drug(raw_text))
-        if matched_names:
-            return [_medication_ocr_item(matched_names[0])]
+        prescription = _extract_prescription_instructions(raw_text)
+        if not _resolve_and_record(raw_text, prescription):
+            stripped = _strip_prescription_phrases(raw_text)
+            if stripped and stripped != raw_text:
+                _resolve_and_record(stripped, prescription)
+        if matched_medications:
+            medication, prescription, candidates = matched_medications[0]
+            return [_medication_ocr_item(medication, prescription=prescription, candidates=candidates)]
 
     for block in blocks:
-        _record_match(drug_matcher.match_drug(block))
+        prescription = _extract_prescription_instructions(block)
+        if not _resolve_and_record(block, prescription):
+            stripped = _strip_prescription_phrases(block)
+            if stripped and stripped != block:
+                _resolve_and_record(stripped, prescription)
 
-    if matched_names:
-        return [_medication_ocr_item(name) for name in matched_names]
+    # A single-product label often carries instructions on their own lines
+    # (e.g. Persian instructions below an English brand name). Block-scoped
+    # extraction above cannot see phrases outside each line, so when every
+    # matched product is the same drug and none captured instructions, attach
+    # the phrases extracted from the full text. The rule only fires when all
+    # matched products share one generic, so instructions are never
+    # cross-associated between different drugs.
+    if matched_medications and all(
+        prescription is None for _, prescription, _ in matched_medications
+    ):
+        generics = {medication.generic_name_en for medication, _, _ in matched_medications}
+        if len(generics) == 1 and next(iter(generics)):
+            full_text_prescription = _extract_prescription_instructions(raw_text)
+            if full_text_prescription:
+
+                def _attach_full_text_prescription(
+                    medication: ResolvedMedication,
+                    candidates: tuple[ResolvedMedication, ...],
+                ) -> tuple[ResolvedMedication, MedicationPrescription | None, tuple[ResolvedMedication, ...]]:
+                    return (
+                        medication,
+                        MedicationPrescription(
+                            dose=full_text_prescription.get("dose"),
+                            dose_unit=full_text_prescription.get("dose_unit")
+                            or medication.dose_unit,
+                            frequency=full_text_prescription.get("frequency"),
+                            instructions=full_text_prescription.get("instructions"),
+                        ),
+                        candidates,
+                    )
+
+                matched_medications = [
+                    _attach_full_text_prescription(medication, candidates)
+                    for medication, _, candidates in matched_medications
+                ]
+
+    if matched_medications:
+        return [
+            _medication_ocr_item(
+                medication,
+                prescription=prescription,
+                candidates=candidates,
+            )
+            for medication, prescription, candidates in matched_medications
+        ]
 
     if handwriting_likely:
         _vision_handwriting_todo(
@@ -395,7 +615,7 @@ def _route_lab_extraction(file_bytes: bytes, mime_type: str) -> str | None:
     )
 
 
-def _route_medication_extraction(file_bytes: bytes, mime_type: str) -> list[dict[str, str]] | None:
+def _route_medication_extraction(file_bytes: bytes, mime_type: str) -> list[dict[str, object]] | None:
     _ = mime_type
     processed = preprocess_image_for_ocr(file_bytes)
     raw_text, meta = _run_tesseract_with_meta(processed)
@@ -412,7 +632,7 @@ def _route_medication_extraction(file_bytes: bytes, mime_type: str) -> list[dict
     )
 
 
-def extract_medication_ocr(file_bytes: bytes, mime_type: str) -> list[dict[str, str]] | None:
+def extract_medication_ocr(file_bytes: bytes, mime_type: str) -> list[dict[str, object]] | None:
     if not mime_type.startswith("image/"):
         return None
     try:
@@ -424,6 +644,14 @@ def extract_medication_ocr(file_bytes: bytes, mime_type: str) -> list[dict[str, 
             retryable_on_error=True,
         ):
             return _route_medication_extraction(file_bytes, mime_type)
+    except CatalogUnavailableError as exc:
+        logger.warning(
+            "Medication OCR resolution unavailable mime_type={} pipeline=medication "
+            "resolution_status=unavailable error={}",
+            mime_type,
+            exc,
+        )
+        return None
     except Exception:
         logger.exception(
             "Medication OCR pipeline failed mime_type={} pipeline=medication",

@@ -38,6 +38,7 @@ export function makePlan(
     workspace_state: "verified",
     layout_directives: [
       makeDirective({ object_id: "critical_alerts", slot: "pin", priority: "p0", size: "expanded", pinned: true }),
+      makeDirective({ object_id: "story", slot: "primary", priority: "p1", size: "expanded" }),
       makeDirective({ object_id: "chief_complaint", slot: "primary", priority: "p1" }),
       makeDirective({ object_id: "pmh", slot: "secondary", priority: "p2", size: "compressed" }),
       makeDirective({ object_id: "documents", slot: "deferred", priority: "p3", size: "compressed" }),

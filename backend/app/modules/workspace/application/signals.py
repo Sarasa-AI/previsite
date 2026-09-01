@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.modules.workspace.application.allergy_state import (
+    AllergyState,
+    interpret_allergy_state,
+)
 from app.modules.workspace.application.inputs import (
     OrchestratorInputs,
     SessionState,
@@ -68,6 +72,7 @@ class WorkspaceSignals:
 
     chief_complaint: str | None
     has_chief_complaint: bool
+    hpi_summary: str | None
     red_flags: tuple[str, ...]
     acute_presentation: bool
     red_flag_safety_keyword: bool
@@ -176,47 +181,41 @@ def extract_signals(
 
     finding_conflicts = tuple(
         ValidatedConflict(
-            concept=s.title.strip(),
-            confidence="high" if s.confidence == "high" else "low",
-            involves_medication=False,
+            concept=s.concept,
+            confidence=s.confidence,
+            involves_medication=s.involves_medication,
         )
         for s in inputs.clinical_findings
         if s.is_conflict and s.title and s.title.strip()
     )
+    conflicts = tuple(finding_conflicts) + tuple(inputs.validated_conflicts)
+
+    seen_conf: set[str] = set()
+    unique_conflicts: list[ValidatedConflict] = []
+    for c in conflicts:
+        key = c.concept.lower()
+        if key not in seen_conf:
+            seen_conf.add(key)
+            unique_conflicts.append(c)
+    conflicts = tuple(unique_conflicts)
+
+    high_conf = any(c.confidence == "high" for c in conflicts)
+
+    # Acute presentation: any timeline event within 72h or "acute" in chief complaint
     acute = False
-    if summary.symptom_duration:
-        duration = summary.symptom_duration.lower()
-        if any(tok in duration for tok in ("hour", "day", "acute", "sudden")):
-            acute = True
-        if re.search(r"\b([1-2])\s*day", duration):
-            acute = True
-    if summary.symptom_onset and _contains_any(
-        summary.symptom_onset, frozenset({"sudden", "acute", "today", "yesterday"})
-    ):
+    if cc and _contains_any(cc, {"acute", "sudden", "emergency", "urgent"}):
         acute = True
-    if cc and _contains_any(cc, frozenset({"sudden", "acute", "severe"})):
-        acute = True
+    if not acute and overview:
+        # Check if any chronic condition onset is recent (not available in current model)
+        pass
 
     red_safety = any(_contains_any(f, _SAFETY_KEYWORDS) for f in red_flags)
 
-    conflicts = (*inputs.validated_conflicts, *finding_conflicts)
-    high_conf = any(c.confidence == "high" for c in conflicts)
-
-    allergy_text = ""
-    if overview and overview.allergies.strip():
-        allergy_text = overview.allergies.strip()
-    elif summary.allergies:
-        allergy_text = ", ".join(a for a in summary.allergies if a).strip()
-    has_allergy = bool(allergy_text) and allergy_text.lower() not in {
-        "nkda",
-        "none",
-        "n/a",
-        "na",
-        "no known allergies",
-        "no known drug allergies",
-    }
-    # Treat documented non-empty allergy text as drug allergy unless explicitly NKDA
-    has_drug_allergy = has_allergy
+    # Centralized allergy interpretation — single source of truth
+    allergy_interp = interpret_allergy_state(context)
+    allergy_text = allergy_interp.allergy_text
+    has_allergy = allergy_interp.has_positive_allergy
+    has_drug_allergy = allergy_interp.has_positive_allergy  # Same for now; can refine later
 
     med_names: list[str] = []
     if overview and overview.current_medications:
@@ -302,6 +301,7 @@ def extract_signals(
     return WorkspaceSignals(
         chief_complaint=cc,
         has_chief_complaint=has_cc,
+        hpi_summary=context.summary.hpi_summary,
         red_flags=red_flags,
         acute_presentation=acute,
         red_flag_safety_keyword=red_safety,
@@ -310,7 +310,7 @@ def extract_signals(
         allergy_text=allergy_text,
         has_allergy_documented=has_allergy,
         has_drug_allergy=has_drug_allergy,
-        allergies_status_unknown=inputs.allergies_status_unknown,
+        allergies_status_unknown=allergy_interp.is_unknown,
         medication_names=medication_names,
         medication_count=len(medication_names),
         has_high_risk_med=has_high_risk,

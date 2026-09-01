@@ -33,11 +33,16 @@ export interface RedFlagsContent {
   readonly items: readonly RedFlagItem[];
 }
 
+export interface HPIContent {
+  readonly hpiSummary: string;
+}
+
 export interface SnapshotStripContent {
   readonly vitals: string;
   readonly problems: string;
   readonly risk: string;
   readonly allergies: string;
+  readonly allergyState: "confirmed" | "nkda" | "unknown" | "not_documented" | "conflict";
   readonly medicationCount: number;
   readonly timelineCount: number;
 }
@@ -60,11 +65,25 @@ export interface TimelineContent {
 
 export interface MedicationItem {
   readonly id: string;
+  readonly catalogId?: number | null;
   readonly name: string;
   readonly dose: string;
+  readonly doseUnit?: string | null;
   readonly frequency: string;
   readonly status: string;
   readonly source: string;
+  readonly genericName?: string | null;
+  readonly brandName?: string | null;
+  readonly strength?: string | null;
+  readonly dosageForm?: string | null;
+  readonly manufacturer?: string | null;
+  readonly company?: string | null;
+  readonly quantity?: string | null;
+  readonly duration?: string | null;
+  readonly route?: string | null;
+  readonly instructions?: string | null;
+  readonly confidence?: number | null;
+  readonly verificationStatus?: string | null;
 }
 
 export interface MedicationGroup {
@@ -82,9 +101,11 @@ export interface LabRow {
   readonly value: string;
   readonly unit: string;
   readonly referenceRange: string;
-  readonly abnormal: boolean;
+  readonly state: "normal" | "abnormal" | "critical" | "unknown";
   readonly trend: TrendDirection;
   readonly detail: string;
+  readonly timestamp: string;
+  readonly source: string;
 }
 
 export interface LabsContent {
@@ -139,6 +160,7 @@ export interface ErrorStateContent {
 export interface ClinicalContentViewModel {
   readonly patientHeader: PatientHeaderContent | null;
   readonly chiefComplaint: ChiefComplaintContent | null;
+  readonly hpi: HPIContent | null;
   readonly redFlags: RedFlagsContent | null;
   readonly snapshot: SnapshotStripContent | null;
   readonly timeline: TimelineContent | null;
@@ -153,6 +175,7 @@ export interface ClinicalContentViewModel {
 export type CardBodyContent =
   | ChiefComplaintContent
   | RedFlagsContent
+  | HPIContent
   | SnapshotStripContent
   | TimelineContent
   | MedicationsContent

@@ -75,6 +75,8 @@ describe("selectClinicalSlice", () => {
     expect(selectClinicalSlice("timeline", largeClinicalContent)).toBe(largeClinicalContent.timeline);
     expect(selectClinicalSlice("labs", largeClinicalContent)).toBe(largeClinicalContent.labs);
     expect(selectClinicalSlice("medications", largeClinicalContent)).toBe(largeClinicalContent.medications);
+    expect(selectClinicalSlice("pmh", largeClinicalContent)).toBe(largeClinicalContent.snapshot);
+    expect(selectClinicalSlice("allergies", largeClinicalContent)).toBe(largeClinicalContent.snapshot);
     expect(selectClinicalSlice("critical_alerts", largeClinicalContent)).toBeNull();
     expect(selectClinicalSlice("timeline", null)).toBeNull();
   });
@@ -167,18 +169,19 @@ describe("Presenter feature-slice rendering", () => {
       <SnapshotPresenter card={makeCard("snapshot")} content={largeClinicalContent.snapshot} />,
     );
     expect(screen.getByText(/BP 148\/92/i)).toBeInTheDocument();
-    expect(screen.getByText(/High CV/i)).toBeInTheDocument();
+    expect(screen.getAllByText("در دسترس نیست")).toHaveLength(6);
+    expect(screen.queryByText(/High CV/i)).not.toBeInTheDocument();
   });
 
   it("handles null content with empty states", () => {
     render(<TimelinePresenter card={makeCard("timeline")} content={null} />);
-    expect(screen.getByText("No timeline events")).toBeInTheDocument();
+    expect(screen.getByText("رویدادی ثبت نشده است")).toBeInTheDocument();
 
     render(<LabsPresenter card={makeCard("labs")} content={null} />);
-    expect(screen.getByText("No labs")).toBeInTheDocument();
+    expect(screen.getByText("نتیجه آزمایش در دسترس نیست")).toBeInTheDocument();
 
     render(<MedicationsPresenter card={makeCard("medications")} content={null} />);
-    expect(screen.getByText("No medications")).toBeInTheDocument();
+    expect(screen.getByText("دارویی در دسترس نیست")).toBeInTheDocument();
   });
 });
 
@@ -198,7 +201,7 @@ describe("WorkspaceShell clinical content integration", () => {
     );
 
     expect(screen.getByText("Margaret Chen")).toBeInTheDocument();
-    expect(screen.getByText(/MRN-884201/)).toBeInTheDocument();
+    expect(screen.getAllByText(/MRN-884201/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Exertional chest tightness/i)).toBeInTheDocument();
     expect(screen.getByText("Exertional dyspnea")).toBeInTheDocument();
     expect(screen.getByText("Lisinopril")).toBeInTheDocument();
@@ -230,11 +233,11 @@ describe("WorkspaceShell clinical content integration", () => {
 
     expect(screen.getByText("Alex Rivera")).toBeInTheDocument();
     expect(screen.getByText("Palpitations")).toBeInTheDocument();
-    expect(screen.getByText("No timeline events")).toBeInTheDocument();
-    expect(screen.getByText("No medications")).toBeInTheDocument();
-    expect(screen.getByText("No labs")).toBeInTheDocument();
-    expect(screen.getByText("No SOAP preview")).toBeInTheDocument();
-    expect(screen.getByText("No documents")).toBeInTheDocument();
+    expect(screen.getByText("رویدادی ثبت نشده است")).toBeInTheDocument();
+    expect(screen.getByText("دارویی در دسترس نیست")).toBeInTheDocument();
+    expect(screen.getByText("نتیجه آزمایش در دسترس نیست")).toBeInTheDocument();
+    expect(screen.getByText("پیش‌نویس SOAP موجود نیست")).toBeInTheDocument();
+    expect(screen.getByText("سندی ثبت نشده است")).toBeInTheDocument();
     expect(screen.getByText("Baseline ECG")).toBeInTheDocument();
   });
 
@@ -252,7 +255,7 @@ describe("WorkspaceShell clinical content integration", () => {
       />,
     );
 
-    expect(screen.getByText(/Patient demographics are not available/i)).toBeInTheDocument();
+    expect(screen.getByText(/مشخصات جمعیت‌شناختی بیمار در دسترس نیست/)).toBeInTheDocument();
     expect(screen.getByText("No chief complaint")).toBeInTheDocument();
   });
 });
@@ -366,6 +369,31 @@ describe("Golden dataset: Shell semantic rendering", () => {
     const labs = container.querySelector('[data-workspace-card="labs"]');
     expect(labs?.textContent).toContain("Troponin I");
     expect(labs?.textContent).not.toContain("Lisinopril");
+  });
+
+  it("does not present unsupported alert or conflict data as a negative finding", () => {
+    const plan = makePlan({
+      layout_directives: [
+        makeDirective({ object_id: "critical_alerts", slot: "primary" }),
+        makeDirective({ object_id: "conflicts", slot: "primary" }),
+        makeDirective({ object_id: "critical_labs", slot: "primary" }),
+      ],
+    });
+    render(
+      <WorkspaceShell
+        uiState="Ready"
+        viewModel={projectPlan(plan, plan.plan_etag)}
+        error={null}
+        clinicalContent={largeClinicalContent}
+        onAcknowledge={noop}
+        onRefreshStory={noop}
+        onRetry={noop}
+      />,
+    );
+    expect(screen.getByLabelText("داده هشدارهای بحرانی در دسترس نیست")).toHaveAttribute("data-clinical-ui-state", "unavailable");
+    expect(screen.getByLabelText("داده تعارض‌ها در دسترس نیست")).toHaveAttribute("data-clinical-ui-state", "unavailable");
+    expect(screen.getByLabelText("داده آزمایش بحرانی در دسترس نیست")).toHaveAttribute("data-clinical-ui-state", "unavailable");
+    expect(screen.queryByText(/No critical|No conflicts/i)).not.toBeInTheDocument();
   });
 });
 

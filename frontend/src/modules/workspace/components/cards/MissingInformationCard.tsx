@@ -3,6 +3,8 @@ import type { MissingInfoContent } from "../types";
 import { CardChrome } from "../shared/CardChrome";
 import { EmptyState } from "../shared/EmptyState";
 import { PriorityBadge } from "../shared/PriorityBadge";
+import { StatusBadge } from "@/components/ui/design-system";
+import { BidiText } from "@/components/ui/bidi";
 
 export type MissingInformationCardProps = {
   content: MissingInfoContent | null;
@@ -26,7 +28,7 @@ export function MissingInformationCard({
         trust={trust}
         aria-label="Missing information"
       >
-        <EmptyState title="Nothing missing" message="No outstanding information requests." />
+        <EmptyState title="شکاف اطلاعاتی ثبت نشده" message="این وضعیت به تنهایی کامل بودن پرونده را تایید نمی‌کند." />
       </CardChrome>
     );
   }
@@ -48,22 +50,15 @@ export function MissingInformationCard({
       }
       aria-label="Missing information"
     >
-      <ul className="space-y-1" aria-label="Missing information checklist">
+      <ul className="divide-y divide-tai-border rounded-tai-md border border-tai-border" aria-label="Missing information checklist">
         {content.items.map((item) => (
           <li
             key={item.id}
-            className="flex items-center justify-between gap-2 rounded border border-trust/10 px-2 py-1.5"
+            className="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,0.65fr)_auto] sm:items-center"
           >
-            <label className="flex min-w-0 items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                className="size-3.5 shrink-0 rounded border-trust/40 text-trust focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-trust"
-                disabled
-                aria-label={item.label}
-              />
-              <span className="truncate">{item.label}</span>
-            </label>
-            <PriorityBadge priority={item.priority} />
+            <div className="min-w-0"><div className="text-[11px] text-tai-subdued">اطلاعات مفقود</div><BidiText className="text-sm font-semibold text-tai-text">{item.label}</BidiText></div>
+            <div><div className="text-[11px] text-tai-subdued">دلیل اهمیت</div><span data-semantic-state="unknown" className="text-xs text-tai-subdued">در قرارداد فعلی موجود نیست</span></div>
+            <div className="flex flex-wrap items-center gap-2"><StatusBadge state="missing">مفقود</StatusBadge><PriorityBadge priority={item.priority} /></div>
           </li>
         ))}
       </ul>

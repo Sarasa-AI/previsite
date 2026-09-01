@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AxiosError } from "axios";
 import { ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -27,6 +27,15 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
   const { data: profile, error: profileQueryError } = usePatientProfile();
 
   const currentLayer = intake?.current_layer ?? 1;
+
+  // Effective layer accounts for missing prerequisites.
+  // If backend claims layer >= 4 but clinical_summary is missing,
+  // we must treat the UI as being in Layer 3 (generating) and trigger generation.
+  const effectiveLayer = useMemo(() => {
+    if (!intake) return 1;
+    if (intake.current_layer >= 4 && !intake.clinical_summary) return 3;
+    return intake.current_layer;
+  }, [intake]);
 
   const loadIntake = useCallback(async () => {
     try {
@@ -55,8 +64,17 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
     void loadIntake();
   }, [loadIntake]);
 
+  // Auto-trigger clinical summary generation when:
+  // - Layer is 3 (normal flow) OR
+  // - Backend claims layer >= 4 but clinical_summary is missing (recovery path)
   useEffect(() => {
-    if (intake?.current_layer === 3 && !intake.clinical_summary && !loading) {
+    const needsGeneration =
+      intake?.current_layer === 3 ||
+      (intake?.current_layer !== undefined &&
+        intake.current_layer >= 4 &&
+        !intake.clinical_summary)
+
+    if (needsGeneration && !loading) {
       const generate = async () => {
         setLoading(true);
         try {
@@ -167,7 +185,7 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
             </div>
           )}
 
-          {currentLayer <= 1 && (
+          {effectiveLayer <= 1 && (
             <Layer1Demographics
               initial={intake?.demographics}
               sessionInitialComplaint={intake?.session_initial_complaint}
@@ -182,7 +200,7 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
             />
           )}
 
-          {currentLayer === 2 && intake?.hpi_questions && (
+          {effectiveLayer === 2 && intake?.hpi_questions && (
             <Layer2HPIQuestions
               questions={intake.hpi_questions}
               answers={intake.hpi_answers ?? {}}
@@ -191,14 +209,14 @@ export default function IntakePage({ params }: { params: { sessionId: string } }
             />
           )}
 
-          {currentLayer === 3 && (
+          {effectiveLayer === 3 && (
             <div className="flex items-center justify-center gap-3 py-12 text-slate-500">
               <Loader2 className="h-6 w-6 animate-spin" />
               در حال تولید خلاصه بالینی...
             </div>
           )}
 
-          {currentLayer >= 4 && intake?.clinical_summary && (
+          {effectiveLayer >= 4 && intake?.clinical_summary && (
             <div className="space-y-6">
               <div className="rounded-2xl border border-mint/30 bg-mint/10 p-4">
                 <p className="text-sm font-semibold text-trust mb-1">خلاصه بالینی (لایه ۳)</p>

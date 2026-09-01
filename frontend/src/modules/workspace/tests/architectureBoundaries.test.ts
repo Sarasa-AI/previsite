@@ -99,13 +99,14 @@ describe("Architecture boundaries: forbidden imports", () => {
     }
   });
 
-  it("WorkspaceRoute does not compose multiple clinical APIs", () => {
+  it("WorkspaceRoute delegates all server-state composition to useWorkspaceScreen", () => {
     const source = readFileSync(
       path.join(MODULE_ROOT, "routes", "WorkspaceRoute.tsx"),
       "utf8",
     );
-    expect(source).toMatch(/useClinicalContent/);
+    expect(source).toMatch(/useWorkspaceScreen/);
     expect(source).toMatch(/clinicalContent=/);
+    expect(source).not.toMatch(/useClinicalContent|useWorkspacePlan/);
     expect(source).not.toMatch(/getIntake|listFiles|summary\(/);
     expect(source).not.toMatch(/clinicalDatasets|GOLDEN_CLINICAL|Fixture/);
   });

@@ -45,6 +45,6 @@ async def test_detailed_health_as_admin(async_client: AsyncClient, db: AsyncSess
     body = response.json()
     assert "dependencies" in body
     assert "database" in body["dependencies"]
-    assert "ollama" in body["dependencies"]
     assert "llm_provider" in body["dependencies"]
+    assert "ollama" not in body["dependencies"]
     assert body["dependencies"]["database"]["status"] == "ok"

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { ChiefComplaintContent } from "../types";
-import { CardChrome } from "../shared/CardChrome";
+import { MessageSquareText } from "lucide-react";
+import { BidiText } from "@/components/ui";
 import { PriorityBadge } from "../shared/PriorityBadge";
 import { EmptyState } from "../shared/EmptyState";
 
@@ -13,27 +14,22 @@ export type ChiefComplaintCardProps = {
 export function ChiefComplaintCard({ content, trust, className }: ChiefComplaintCardProps) {
   if (content == null) {
     return (
-      <CardChrome
-        className={className}
-        title="Chief complaint"
-        trust={trust}
-        aria-label="Chief complaint"
-      >
-        <EmptyState title="No chief complaint" message="Chief complaint has not been recorded." />
-      </CardChrome>
+      <section className={`rounded-tai-lg border border-semantic-missing/30 bg-white p-4 ${className ?? ""}`} aria-label="Chief complaint">
+        <><span className="sr-only">No chief complaint</span><EmptyState title="شکایت اصلی ثبت نشده" message="شکایت اصلی بیمار در داده‌های موجود ثبت نشده است." /></>
+      </section>
     );
   }
 
   return (
-    <CardChrome
-      className={className}
-      title="Chief complaint"
-      subtitle={content.duration}
-      badges={<PriorityBadge priority={content.priority} />}
-      trust={trust}
-      aria-label="Chief complaint"
-    >
-      <p className="text-sm text-ink">{content.title}</p>
-    </CardChrome>
+    <article className={`rounded-tai-lg border border-tai-teal/30 bg-white shadow-tai-sm ${className ?? ""}`} aria-label="Chief complaint">
+      <div className="flex items-center justify-between gap-3 border-b border-tai-border bg-tai-teal-soft/50 px-4 py-2.5">
+        <h2 className="flex items-center gap-2 text-sm font-bold text-tai-navy"><MessageSquareText className="size-4 text-tai-teal" aria-hidden="true" />شکایت اصلی</h2>
+        <div className="flex items-center gap-2"><PriorityBadge priority={content.priority} />{trust}</div>
+      </div>
+      <div className="p-4">
+        <p className="text-lg font-bold leading-8 text-tai-text"><BidiText>{content.title}</BidiText></p>
+        <div className="mt-3 flex items-center gap-2 text-sm"><span className="text-tai-subdued">مدت / شروع:</span>{content.duration.trim() ? <BidiText className="font-semibold text-tai-text">{content.duration}</BidiText> : <span className="font-semibold text-semantic-unknown">نامشخص</span>}</div>
+      </div>
+    </article>
   );
 }

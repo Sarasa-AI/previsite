@@ -4,6 +4,7 @@
  */
 
 import type { CardBodyContent, ClinicalContentViewModel } from "./types";
+import type { HPIContent } from "./types/content";
 
 export function selectClinicalSlice(
   objectId: string,
@@ -14,9 +15,14 @@ export function selectClinicalSlice(
   switch (objectId) {
     case "chief_complaint":
       return clinicalContent.chiefComplaint;
+    case "hpi":
+      return clinicalContent.hpi;
     case "red_flags":
       return clinicalContent.redFlags;
     case "snapshot":
+      return clinicalContent.snapshot;
+    case "pmh":
+    case "allergies":
       return clinicalContent.snapshot;
     case "timeline":
       return clinicalContent.timeline;

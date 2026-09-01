@@ -14,6 +14,7 @@ import { SoapPreviewCard } from "../cards/SoapPreviewCard";
 import { Timeline } from "../timeline/Timeline";
 import { MedicationList } from "../medications/MedicationList";
 import { LabsPanel } from "../labs/LabsPanel";
+import { AllergiesCard, ProblemsCard } from "../clinical/ClinicalDataCards";
 import { SourceDocumentsCard } from "../documents/SourceDocumentsCard";
 import {
   ChiefComplaintSkeleton,
@@ -91,13 +92,14 @@ describe("PatientHeader", () => {
     );
     expect(screen.getByText("Jane Doe")).toBeInTheDocument();
     expect(screen.getByText(/MRN MRN-10042/)).toBeInTheDocument();
+    expect(screen.getAllByText("نامشخص")).toHaveLength(2);
     expect(screen.getByLabelText(/Status Arrived/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Trust: verified/i)).toBeInTheDocument();
   });
 
   it("renders empty demographics state", () => {
     render(<PatientHeader content={null} />);
-    expect(screen.getByText(/demographics are not available/i)).toBeInTheDocument();
+    expect(screen.getByText(/مشخصات جمعیت‌شناختی بیمار در دسترس نیست/)).toBeInTheDocument();
   });
 
   it("supports RTL container", () => {
@@ -120,13 +122,15 @@ describe("ClinicalSnapshotStrip", () => {
   it("renders metrics", () => {
     render(<ClinicalSnapshotStrip content={snapshotStripFixture} />);
     expect(screen.getByText("Vitals")).toBeInTheDocument();
-    expect(screen.getByText("BP 138/86 · HR 88")).toBeInTheDocument();
-    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getAllByText("BP 138/86 · HR 88").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("در دسترس نیست")).toHaveLength(6);
+    expect(screen.queryByText("Normal")).not.toBeInTheDocument();
   });
 
   it("renders empty state", () => {
     render(<ClinicalSnapshotStrip content={null} />);
     expect(screen.getByText("No snapshot")).toBeInTheDocument();
+    expect(screen.queryByText(/No .*negative/i)).not.toBeInTheDocument();
   });
 });
 
@@ -141,6 +145,7 @@ describe("ChiefComplaintCard", () => {
   it("renders empty state", () => {
     render(<ChiefComplaintCard content={null} />);
     expect(screen.getByText("No chief complaint")).toBeInTheDocument();
+    expect(screen.getByText(/شکایت اصلی ثبت نشده/)).toBeInTheDocument();
   });
 });
 
@@ -158,24 +163,28 @@ describe("RedFlagsCard", () => {
   it("renders empty state", () => {
     render(<RedFlagsCard content={{ items: [] }} />);
     expect(screen.getByText("No red flags")).toBeInTheDocument();
+    expect(screen.getByText(/به معنی طبیعی بودن یا رد خطر نیست/)).toBeInTheDocument();
   });
 });
 
 describe("MissingInformationCard", () => {
   it("renders checklist and action placeholder", () => {
     render(<MissingInformationCard content={missingInfoFixture} />);
-    expect(screen.getByLabelText("Last ECG date")).toBeInTheDocument();
+    expect(screen.getByText("Last ECG date")).toBeInTheDocument();
+    expect(screen.getAllByText("مفقود")).toHaveLength(2);
+    expect(screen.getAllByText("در قرارداد فعلی موجود نیست")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Request update" })).toBeInTheDocument();
   });
 });
 
 describe("SoapPreviewCard", () => {
-  it("renders assessment and plan sections", async () => {
-    const user = userEvent.setup();
+  it("renders all four sections without inventing unavailable content", () => {
     render(<SoapPreviewCard content={soapFixture} />);
-    await user.click(screen.getByText("Assessment"));
+    expect(screen.getByLabelText("Subjective / ذهنی")).toHaveTextContent("در قرارداد فعلی موجود نیست");
+    expect(screen.getByLabelText("Objective / عینی")).toHaveTextContent("در قرارداد فعلی موجود نیست");
+    expect(screen.getByLabelText("Assessment / ارزیابی")).toBeInTheDocument();
     expect(screen.getByText(/unstable angina/i)).toBeInTheDocument();
-    await user.click(screen.getByText("Plan"));
+    expect(screen.getByLabelText("Plan / برنامه")).toBeInTheDocument();
     expect(screen.getByText(/Serial troponins/i)).toBeInTheDocument();
   });
 
@@ -187,14 +196,28 @@ describe("SoapPreviewCard", () => {
 });
 
 describe("Timeline", () => {
-  it("groups events by date with source", async () => {
+  it("groups events by date with source and provenance", async () => {
     const user = userEvent.setup();
-    render(<Timeline content={timelineFixture} />);
-    expect(screen.getByText("2026-08-01")).toBeInTheDocument();
+    render(<Timeline content={timelineFixture} provenance={trustFixture} />);
+    expect(screen.getAllByText("2026-08-01").length).toBeGreaterThan(0);
     expect(screen.getByText("ED visit")).toBeInTheDocument();
     expect(screen.getByLabelText("Source ehr")).toBeInTheDocument();
-    await user.click(screen.getByText("ED visit"));
     expect(screen.getByText(/troponin pending/i)).toBeInTheDocument();
+    expect(screen.getAllByText("در قرارداد موجود نیست")).toHaveLength(2);
+    await user.click(screen.getAllByText("منشأ و شواهد")[0]!);
+    expect(screen.getByLabelText("Provenance for ED visit")).toBeInTheDocument();
+    expect(screen.getAllByText("ev-1").length).toBeGreaterThan(0);
+  });
+
+  it("renders explicit loading, error, unavailable and empty states", () => {
+    const { rerender } = render(<Timeline content={null} state="loading" />);
+    expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+    rerender(<Timeline content={null} state="error" />);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    rerender(<Timeline content={null} state="unavailable" />);
+    expect(screen.getByText("خط زمانی در دسترس نیست")).toBeInTheDocument();
+    rerender(<Timeline content={null} />);
+    expect(screen.getByText("رویدادی ثبت نشده است")).toBeInTheDocument();
   });
 });
 
@@ -203,28 +226,68 @@ describe("MedicationList", () => {
     render(<MedicationList content={medicationsFixture} />);
     expect(screen.getByText("Cardiovascular")).toBeInTheDocument();
     expect(screen.getByText("Lisinopril")).toBeInTheDocument();
-    expect(screen.getByText(/10 mg · daily/)).toBeInTheDocument();
+    expect(screen.getByText("10 mg")).toBeInTheDocument();
+    expect(screen.getByText("daily")).toBeInTheDocument();
+    expect(screen.getAllByText("نامشخص").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Source ehr")).toBeInTheDocument();
   });
 });
 
 describe("LabsPanel", () => {
-  it("highlights abnormal rows and expands detail", async () => {
-    const user = userEvent.setup();
+  it("shows contract-backed status and explicit unavailable timestamp", () => {
     render(<LabsPanel content={labsFixture} />);
     expect(screen.getByText("Troponin I")).toHaveClass("text-danger");
-    await user.click(screen.getByText("Troponin I"));
     expect(screen.getByText(/Rising vs prior/i)).toBeInTheDocument();
+    expect(screen.getAllByText("در دسترس نیست")).toHaveLength(4);
+    expect(screen.getByText("غیرطبیعی")).toBeInTheDocument();
+    expect(screen.getByText("طبیعی")).toBeInTheDocument();
+  });
+});
+
+describe("Clinical data summary cards", () => {
+  it("shows problems without fabricating status or supporting evidence", () => {
+    render(<ProblemsCard content={snapshotStripFixture} />);
+    expect(screen.getByText("HTN, T2DM")).toBeInTheDocument();
+    expect(screen.getByText("نامشخص")).toBeInTheDocument();
+    expect(screen.getByText("در قرارداد فعلی موجود نیست")).toBeInTheDocument();
+  });
+
+  it("keeps allergy missing, unknown, NKDA and conflict distinct", () => {
+    const { rerender } = render(<AllergiesCard content={null} />);
+    expect(screen.getByText("مستندسازی موجود نیست")).toHaveAttribute("data-semantic-state", "missing");
+    rerender(<AllergiesCard content={snapshotStripFixture} />);
+    expect(screen.getByText("معنا/وضعیت نامشخص")).toHaveAttribute("data-semantic-state", "unknown");
+    rerender(<AllergiesCard content={snapshotStripFixture} state="nkda" />);
+    expect(screen.getByText("NKDA ثبت‌شده")).toHaveAttribute("data-semantic-state", "verified");
+    rerender(<AllergiesCard content={snapshotStripFixture} state="conflict" />);
+    expect(screen.getByText("تعارض حل‌نشده")).toHaveAttribute("data-semantic-state", "conflict");
   });
 });
 
 describe("SourceDocumentsCard", () => {
-  it("renders file metadata", async () => {
+  it("renders contract metadata, provenance and in-workspace detail", async () => {
     const user = userEvent.setup();
-    render(<SourceDocumentsCard content={documentsFixture} />);
+    render(<SourceDocumentsCard content={documentsFixture} provenance={trustFixture} />);
     expect(screen.getByText("ED triage note.pdf")).toBeInTheDocument();
+    expect(screen.getByText(/نوع: PDF/)).toBeInTheDocument();
+    expect(screen.getByText("تایید نشده")).toHaveAttribute("data-semantic-state", "unverified");
+    await user.click(screen.getByRole("button", { name: "View details ED triage note.pdf" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByLabelText("Confidence 88%")).toBeInTheDocument();
-    await user.click(screen.getByText("ED triage note.pdf"));
     expect(screen.getByText(/Extracted vitals/i)).toBeInTheDocument();
+    expect(screen.getByText("پیش‌نمایش اصل سند در دسترس نیست")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("renders explicit loading, error, unavailable and empty states", () => {
+    const { rerender } = render(<SourceDocumentsCard content={null} state="loading" />);
+    expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+    rerender(<SourceDocumentsCard content={null} state="error" />);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    rerender(<SourceDocumentsCard content={null} state="unavailable" />);
+    expect(screen.getByText("اسناد در دسترس نیست")).toBeInTheDocument();
+    rerender(<SourceDocumentsCard content={null} />);
+    expect(screen.getByText("سندی ثبت نشده است")).toBeInTheDocument();
   });
 });
 

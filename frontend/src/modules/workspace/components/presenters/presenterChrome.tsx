@@ -6,6 +6,7 @@ import { PriorityBadge } from "../shared/PriorityBadge";
 import { TrustBadge } from "../shared/TrustBadge";
 import { EmptyState } from "../shared/EmptyState";
 import { cx } from "../shared/cx";
+import type { EmptyStateProps } from "../shared/EmptyState";
 
 /** Size → attention chrome only (never invents priority/slot). */
 export function sizeClass(size: string): string {
@@ -29,6 +30,7 @@ export type PresenterChromeProps = {
   footer?: ReactNode;
   emptyTitle?: string;
   emptyMessage?: string;
+  emptyState?: EmptyStateProps["state"];
   className?: string;
 };
 
@@ -41,6 +43,7 @@ export function PresenterChrome({
   footer,
   emptyTitle,
   emptyMessage,
+  emptyState,
   className,
 }: PresenterChromeProps) {
   return (
@@ -57,6 +60,7 @@ export function PresenterChrome({
       <div data-object-id={card.objectId} data-size={card.size} data-priority={card.priority}>
         {children ?? (
           <EmptyState
+            state={emptyState}
             title={emptyTitle ?? title}
             message={emptyMessage ?? "Content will appear when clinical data is available."}
           />

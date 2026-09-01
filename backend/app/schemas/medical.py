@@ -43,6 +43,7 @@ class MedicalSummary(BaseModel):
     symptom_relieving_factors: Optional[List[str]] = Field(default_factory=list, description="Factors that relieve symptoms")
     symptom_radiation: Optional[str] = Field(None, description="Radiation of symptoms")
     symptom_timing: Optional[str] = Field(None, description="Timing of symptoms")
+    hpi_summary: Optional[str] = Field(None, description="Clinical narrative summary of the History of Present Illness")
     
     # Past Medical History
     past_medical_history: Optional[List[str]] = Field(default_factory=list, description="Previous diagnoses")

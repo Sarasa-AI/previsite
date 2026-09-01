@@ -24,21 +24,6 @@ async def check_database(db: AsyncSession) -> dict[str, Any]:
         return {"status": "down", "error": type(exc).__name__}
 
 
-async def check_ollama() -> dict[str, Any]:
-    host = (settings.ollama_host or "").rstrip("/")
-    if not host:
-        return {"status": "down", "error": "OLLAMA_HOST not configured"}
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.get(f"{host}/api/tags")
-            if response.status_code < 500:
-                return {"status": "ok", "http_status": response.status_code}
-            return {"status": "degraded", "http_status": response.status_code}
-    except Exception as exc:
-        logger.warning("Detailed health Ollama check failed: %s", type(exc).__name__)
-        return {"status": "down", "error": type(exc).__name__}
-
-
 async def check_llm_provider() -> dict[str, Any]:
     provider = settings.llm_provider
     if not is_openrouter_api_key_configured():

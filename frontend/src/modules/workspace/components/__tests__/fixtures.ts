@@ -57,6 +57,7 @@ export const snapshotStripFixture: SnapshotStripContent = Object.freeze({
   problems: "HTN, T2DM",
   risk: "Moderate CV",
   allergies: "Penicillin",
+  allergyState: "confirmed",
   medicationCount: 4,
   timelineCount: 12,
 });
@@ -127,9 +128,11 @@ export const labsFixture: LabsContent = Object.freeze({
       value: "0.08",
       unit: "ng/mL",
       referenceRange: "<0.04",
-      abnormal: true,
+      state: "abnormal",
       trend: "up" as const,
       detail: "Rising vs prior 0.03 (2026-07-01).",
+      timestamp: "",
+      source: "",
     }),
     Object.freeze({
       id: "lab-2",
@@ -137,9 +140,11 @@ export const labsFixture: LabsContent = Object.freeze({
       value: "0.9",
       unit: "mg/dL",
       referenceRange: "0.6–1.2",
-      abnormal: false,
+      state: "normal",
       trend: "stable" as const,
       detail: "Within reference range.",
+      timestamp: "",
+      source: "",
     }),
   ]),
 });

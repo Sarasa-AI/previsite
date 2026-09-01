@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { WorkspaceApiError } from "../../../api/client";
 import { makePlan } from "../../../tests/fixtures";
 import { useWorkspacePlan } from "../useWorkspacePlan";
+import { clinicalContentQueryKey } from "@/src/shared/query/workspaceCache";
 
 const fetchPlan = vi.fn();
 const acknowledge = vi.fn();
@@ -65,7 +66,9 @@ describe("useWorkspacePlan mutations", () => {
       contractVersion: "1.0.0",
     });
 
-    const { Wrapper } = createWrapper();
+    const { Wrapper, queryClient } = createWrapper();
+    const contentKey = clinicalContentQueryKey({ sessionId: 42, contextHash: "abc" });
+    queryClient.setQueryData(contentKey, { clinicalContent: "cached" });
     const { result } = renderHook(
       () => useWorkspacePlan({ sessionId: 42, pollIntervalMs: 0 }),
       { wrapper: Wrapper },
@@ -82,6 +85,7 @@ describe("useWorkspacePlan mutations", () => {
     expect(resolve).toHaveBeenCalledWith(42, "critical_alerts", "etag-v1");
     expect(result.current.viewModel?.workspaceState).toBe("verified");
     expect(result.current.viewModel?.queue).toHaveLength(0);
+    expect(queryClient.getQueryState(contentKey)?.isInvalidated).toBe(true);
     expect(result.current.viewModel?.planEtag).toBe("etag-v2");
   });
 

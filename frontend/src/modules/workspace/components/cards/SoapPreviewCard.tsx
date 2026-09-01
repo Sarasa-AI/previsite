@@ -1,49 +1,63 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { CheckCircle2, Edit3, Eye, RotateCcw, ShieldCheck } from "lucide-react";
+import { BidiText } from "@/components/ui/bidi";
+import { Button, ClinicalValueState, StatusBadge } from "@/components/ui";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import type { TrustViewModel } from "../../presentation/viewmodels/types";
 import type { SoapContent } from "../types";
 import { CardChrome } from "../shared/CardChrome";
 import { EmptyState } from "../shared/EmptyState";
-import { ExpandableBlock } from "../shared/ExpandableBlock";
+import { ErrorState } from "../shared/ErrorState";
+import { ProvenanceDisclosure } from "../shared/ProvenanceDisclosure";
 
 export type SoapPreviewCardProps = {
   content: SoapContent | null;
   trust?: ReactNode;
-  /** When true, sections start expanded (native details open). */
+  provenance?: TrustViewModel;
+  state?: "ready" | "loading" | "error" | "unavailable" | "stale";
+  confirmed?: boolean;
+  onConfirm?: (content: SoapContent) => void;
   defaultExpanded?: boolean;
   className?: string;
 };
 
+function SoapSection({ title, value, editing, onChange, unavailable = false }: { title: string; value: string; editing: boolean; onChange?: (value: string) => void; unavailable?: boolean }) {
+  return <section className="border-b border-tai-border p-3 last:border-b-0" aria-label={title}><h3 className="text-xs font-bold text-tai-navy">{title}</h3>{unavailable ? <p data-semantic-state="missing" className="mt-2 text-sm text-tai-subdued">در قرارداد فعلی موجود نیست</p> : editing ? <textarea value={value} onChange={(event) => onChange?.(event.target.value)} className="mt-2 min-h-28 w-full resize-y rounded-tai-md border border-tai-border bg-white p-3 text-sm leading-7 text-tai-text outline-none focus-visible:ring-2 focus-visible:ring-tai-navy" dir="auto" aria-label={`Edit ${title}`} /> : value.trim() ? <BidiText className="tai-clinical-copy mt-2 block text-sm leading-7 text-tai-text">{value}</BidiText> : <p data-semantic-state="missing" className="mt-2 text-sm text-tai-subdued">محتوایی ثبت نشده است.</p>}</section>;
+}
+
 export function SoapPreviewCard({
   content,
   trust,
-  defaultExpanded = false,
+  provenance,
+  state = "ready",
+  confirmed = false,
+  onConfirm,
   className,
 }: SoapPreviewCardProps) {
-  if (content == null) {
-    return (
-      <CardChrome className={className} title="SOAP preview" trust={trust} aria-label="SOAP preview">
-        <EmptyState title="No SOAP preview" message="Assessment and plan are not available." />
-      </CardChrome>
-    );
-  }
+  const [mode, setMode] = useState<"view" | "review" | "edit">("view");
+  const [assessment, setAssessment] = useState(content?.assessment ?? "");
+  const [plan, setPlan] = useState(content?.plan ?? "");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  useEffect(() => { setAssessment(content?.assessment ?? ""); setPlan(content?.plan ?? ""); setMode("view"); }, [content]);
+  const edited = useMemo(() => content != null && (assessment !== content.assessment || plan !== content.plan), [assessment, content, plan]);
+  const currentContent = useMemo(() => ({ assessment, plan }), [assessment, plan]);
+
+  if (state === "loading") return <CardChrome className={className} title="پیش‌نویس SOAP" trust={trust} aria-label="SOAP draft"><div role="status" aria-busy="true" className="rounded-tai-md border border-tai-border bg-tai-surface p-4 text-sm">در حال بارگذاری SOAP...</div></CardChrome>;
+  if (state === "error") return <CardChrome className={className} title="پیش‌نویس SOAP" trust={trust} aria-label="SOAP draft"><ErrorState title="بارگذاری SOAP ناموفق بود" message="پیش‌نویس در حال حاضر قابل نمایش نیست." /></CardChrome>;
+  if (state === "unavailable") return <CardChrome className={className} title="پیش‌نویس SOAP" trust={trust} aria-label="SOAP draft"><EmptyState title="SOAP در دسترس نیست" message="نبود پیش‌نویس به معنی تکمیل یا تایید مستندات نیست." /></CardChrome>;
+  if (content == null) return <CardChrome className={className} title="پیش‌نویس SOAP" trust={trust} aria-label="SOAP draft"><EmptyState title="پیش‌نویس SOAP موجود نیست" message="هیچ محتوایی برای بازبینی یا تایید وجود ندارد." /></CardChrome>;
 
   return (
-    <CardChrome className={className} title="SOAP preview" trust={trust} aria-label="SOAP preview">
-      <div className="rounded-md border border-trust/10">
-        <ExpandableBlock
-          open={defaultExpanded || undefined}
-          summary={<span className="font-medium text-trust">Assessment</span>}
-          className="px-2"
-        >
-          <p className="whitespace-pre-wrap">{content.assessment}</p>
-        </ExpandableBlock>
-        <ExpandableBlock
-          open={defaultExpanded || undefined}
-          summary={<span className="font-medium text-trust">Plan</span>}
-          className="px-2"
-        >
-          <p className="whitespace-pre-wrap">{content.plan}</p>
-        </ExpandableBlock>
-      </div>
+    <CardChrome className={className} title="پیش‌نویس SOAP" subtitle="SOAP Draft" trust={trust} aria-label="SOAP draft">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap gap-1.5">{confirmed ? <ClinicalValueState state="confirmed-by-physician" announce /> : <><ClinicalValueState state="ai-generated" /><ClinicalValueState state="draft" /><StatusBadge state="warning">نیازمند بازبینی</StatusBadge></>}{mode === "review" ? <StatusBadge state="info">در حال بازبینی</StatusBadge> : null}{edited ? <ClinicalValueState state="draft" label="ویرایش‌شده؛ ذخیره نشده" announce /> : null}{state === "stale" ? <ClinicalValueState state="stale" announce /> : null}</div><div className="flex flex-wrap gap-1.5"><Button type="button" size="sm" variant={mode === "view" ? "primary" : "secondary"} onClick={() => setMode("view")}><Eye className="size-4" aria-hidden="true" />مشاهده</Button><Button type="button" size="sm" variant={mode === "review" ? "primary" : "secondary"} onClick={() => setMode("review")}><ShieldCheck className="size-4" aria-hidden="true" />بازبینی</Button><Button type="button" size="sm" variant={mode === "edit" ? "primary" : "secondary"} onClick={() => setMode("edit")} disabled={confirmed}><Edit3 className="size-4" aria-hidden="true" />ویرایش</Button></div></div>
+      {confirmed ? <p className="mb-3 rounded-tai-md border border-[hsl(var(--tai-verified)/.35)] bg-[hsl(var(--tai-verified-surface))] p-3 text-xs text-[hsl(var(--tai-verified))]">این وضعیت فقط زمانی نمایش داده می‌شود که تایید صریح از قرارداد دریافت شود.</p> : <p className="mb-3 rounded-tai-md border border-[hsl(var(--tai-warning)/.35)] bg-[hsl(var(--tai-warning-surface))] p-3 text-xs text-[hsl(var(--tai-warning))]">این پیش‌نویس، نوشته یا تایید پزشک محسوب نمی‌شود. ویرایش محلی نیز به معنی تایید نیست.</p>}
+      <div className="rounded-tai-md border border-tai-border"><SoapSection title="Subjective / ذهنی" value="" editing={false} unavailable /><SoapSection title="Objective / عینی" value="" editing={false} unavailable /><SoapSection title="Assessment / ارزیابی" value={assessment} editing={mode === "edit"} onChange={setAssessment} /><SoapSection title="Plan / برنامه" value={plan} editing={mode === "edit"} onChange={setPlan} /></div>
+      {mode === "edit" ? <div className="mt-3 flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setAssessment(content.assessment); setPlan(content.plan); }} disabled={!edited}><RotateCcw className="size-4" aria-hidden="true" />بازنشانی</Button><span className="text-xs text-tai-subdued">ویرایش‌ها فقط در این نما هستند و ذخیره نمی‌شوند.</span></div> : null}
+      <ProvenanceDisclosure trust={provenance} scopeLabel="SOAP draft" />
+      <div className="mt-3 border-t border-tai-border pt-3"><Button type="button" variant="primary" onClick={() => setConfirmOpen(true)} disabled={confirmed || !onConfirm || edited} title={!onConfirm ? "قرارداد فعلی عملیات تایید SOAP ندارد" : edited ? "ابتدا ویرایش‌ها باید از طریق قرارداد ذخیره شوند" : undefined} aria-label="Confirm SOAP"><CheckCircle2 className="size-4" aria-hidden="true" />{confirmed ? "تایید شده" : "تایید پزشک"}</Button>{!onConfirm ? <p data-semantic-state="unavailable" className="mt-2 text-xs text-tai-subdued">تایید در قرارداد فعلی پشتیبانی نمی‌شود؛ هیچ وضعیت تاییدی در رابط کاربری ایجاد نشده است.</p> : null}</div>
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}><DialogContent dir="rtl"><DialogHeader><DialogTitle>تایید صریح SOAP</DialogTitle><DialogDescription>این اقدام پیش‌نویس را به عنوان محتوای تاییدشده توسط پزشک ثبت می‌کند. قبل از ادامه، Assessment و Plan را بازبینی کنید.</DialogDescription></DialogHeader><div className="rounded-tai-md border border-[hsl(var(--tai-warning)/.35)] bg-[hsl(var(--tai-warning-surface))] p-3 text-sm">ویرایش به تنهایی تایید نیست. تایید فقط پس از انتخاب دکمه نهایی انجام می‌شود.</div><DialogFooter><Button type="button" variant="secondary" onClick={() => setConfirmOpen(false)}>انصراف</Button><Button type="button" onClick={() => { onConfirm?.(currentContent); setConfirmOpen(false); }} aria-label="Explicitly confirm SOAP">تایید نهایی پزشک</Button></DialogFooter></DialogContent></Dialog>
     </CardChrome>
   );
 }

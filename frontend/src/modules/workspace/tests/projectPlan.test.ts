@@ -11,7 +11,7 @@ describe("projectPlan", () => {
   it("projects bands and skips hidden directives", () => {
     const vm = projectPlan(makePlan(), "etag-v1");
     expect(vm.pinCards.map((c) => c.objectId)).toEqual(["critical_alerts"]);
-    expect(vm.primaryCards.map((c) => c.objectId)).toEqual(["chief_complaint"]);
+    expect(vm.primaryCards.map((c) => c.objectId)).toEqual(["story", "chief_complaint"]);
     expect(vm.secondaryCards.map((c) => c.objectId)).toEqual(["pmh"]);
     expect(vm.deferredCards.map((c) => c.objectId)).toEqual(["documents"]);
     expect(vm.pinCards.concat(vm.primaryCards, vm.secondaryCards, vm.deferredCards).some((c) => c.objectId === "labs")).toBe(

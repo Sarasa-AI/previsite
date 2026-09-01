@@ -32,6 +32,7 @@ from app.services.medical_overview_service import (
     format_medication_for_summary,
     load_medical_overview_from_intake,
 )
+from app.modules.medications.domain.models import MedicationPrescription
 from app.core.observability.stages import PipelineModule, PipelineStage
 from app.core.observability.timing import pipeline_stage, pipeline_stage_sync
 from app.services.pmh_service import (
@@ -113,6 +114,7 @@ def _build_medical_summary_from_intake(intake: Intake) -> MedicalSummary | None:
         else [],
         allergies=_overview_allergies_list(overview.allergies) if overview else [],
         additional_notes=_build_additional_notes(clinical),
+        hpi_summary=clinical.get("hpi_summary"),
         is_hpi_complete=True,
     )
 
@@ -124,6 +126,7 @@ def _build_medical_summary_from_chat(summary: Summary) -> MedicalSummary:
         current_medications=_summary_text_field(summary.medications),
         allergies=_summary_text_field(summary.allergies),
         additional_notes=summary.history_present_illness,
+        hpi_summary=summary.history_present_illness,
         is_hpi_complete=getattr(summary, "is_hpi_complete", False) or False,
     )
 
@@ -244,19 +247,38 @@ def _derive_medication_evidence(
         if not name and not med.amount.strip() and not med.frequency.strip():
             continue
         display_name = name or "نامشخص - تصویر پیوست شد"
+        structured_dose = _structured_prescription_value(med.prescription, "dose")
+        frequency = (
+            _structured_prescription_value(med.prescription, "frequency")
+            or med.frequency.strip()
+            or None
+        )
+        dose_unit = (
+            _structured_prescription_value(med.prescription, "dose_unit") or med.dose_unit
+        )
+        if structured_dose:
+            amount = " ".join(part for part in (structured_dose, dose_unit) if part)
+        else:
+            amount = med.amount.strip()
+        legacy_dose = structured_dose or med.amount.strip() or None
         meds.append(
             MedicationEvidence(
                 medication_id=med.id,
+                catalog_id=med.catalog_id,
                 name=display_name,
-                amount=med.amount,
-                frequency=med.frequency,
+                amount=amount,
+                frequency=frequency or "",
+                dose_unit=dose_unit,
+                catalog=med.catalog,
+                prescription=med.prescription,
+                provenance=med.provenance,
             )
         )
         items.append(
             MedicationEvidenceItem(
                 name=display_name,
-                dose=med.amount.strip() or None,
-                frequency=med.frequency.strip() or None,
+                dose=legacy_dose,
+                frequency=frequency,
             )
         )
 
@@ -264,6 +286,16 @@ def _derive_medication_evidence(
         return tuple(meds), ()
 
     return tuple(meds), (FileAnalysisEvidence(medications=tuple(items)),)
+
+
+def _structured_prescription_value(
+    prescription: MedicationPrescription | None,
+    field: str,
+) -> str | None:
+    if prescription is None:
+        return None
+    value = getattr(prescription, field, None)
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def _compose_pmh_context(

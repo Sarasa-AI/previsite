@@ -3,23 +3,22 @@ from app.services.medical_overview_service import (
     validate_file_link_id,
 )
 from app.services import ocr_service
-from app.services.drug_matcher import DrugMatcher
+from app.modules.medications.application.resolver import MedicationResolver
+from app.modules.medications.domain.models import CatalogMedication
+from app.modules.medications.infrastructure.catalog import CatalogUnavailableError
 from app.services.ocr_service import (
-    DEFAULT_MEDICATION_AMOUNT,
-    DEFAULT_MEDICATION_FREQUENCY,
     TesseractMeta,
     _correct_image_orientation,
     _extract_cgm_readings,
     _extract_lab_pairs,
+    _extract_prescription_instructions,
     extract_lab_values_ocr,
     extract_medication_ocr,
     preprocess_image_for_ocr,
 )
 from app.schemas.intake import CurrentMedication, MedicalOverview
-from app.models.drug import BrandDrug, DrugAlias, GenericDrug
 import cv2
 import numpy as np
-import pytest
 
 
 def _mock_tesseract(text: str, meta: TesseractMeta | None = None):
@@ -27,60 +26,134 @@ def _mock_tesseract(text: str, meta: TesseractMeta | None = None):
     return lambda _processed: (text, resolved_meta)
 
 
-async def _seed_losartan_for_ocr(db) -> DrugMatcher:
-    generic = GenericDrug(generic_name="Losartan", category="Antihypertensive")
-    db.add(generic)
-    await db.flush()
-    db.add(BrandDrug(brand_name="لوزارتان", generic_id=generic.id))
-    db.add(DrugAlias(alias_name="لوزارتن", generic_id=generic.id))
-    await db.commit()
+class RecordingOcrCatalog:
+    def __init__(self, medications_by_query: dict[str, CatalogMedication]) -> None:
+        self.medications_by_query = medications_by_query
+        self.calls: list[tuple[str, int]] = []
 
-    matcher = DrugMatcher()
-    await matcher.refresh_cache(db)
-    return matcher
+    def search(self, query: str, limit: int = 20) -> tuple[CatalogMedication, ...]:
+        self.calls.append((query, limit))
+        medication = self.medications_by_query.get(query)
+        return (medication,) if medication is not None and limit > 0 else ()
 
 
-async def _seed_losartan_and_metformin_for_ocr(db) -> DrugMatcher:
-    losartan = GenericDrug(generic_name="Losartan", category="Antihypertensive")
-    metformin = GenericDrug(generic_name="Metformin", category="Diabet's Drug")
-    db.add(losartan)
-    db.add(metformin)
-    await db.flush()
-    db.add(BrandDrug(brand_name="لوزارتان", generic_id=losartan.id))
-    db.add(BrandDrug(brand_name="متفورمین", generic_id=metformin.id))
-    await db.commit()
+class MultiRecordingOcrCatalog:
+    def __init__(self, medications_by_query: dict[str, tuple[CatalogMedication, ...]]) -> None:
+        self.medications_by_query = medications_by_query
 
-    matcher = DrugMatcher()
-    await matcher.refresh_cache(db)
-    return matcher
+    def search(self, query: str, limit: int = 20) -> tuple[CatalogMedication, ...]:
+        return self.medications_by_query.get(query, ())[:limit]
 
 
-@pytest.mark.asyncio
-async def test_extract_medication_ocr_returns_standardized_name(monkeypatch, db) -> None:
-    matcher = await _seed_losartan_for_ocr(db)
-    monkeypatch.setattr(ocr_service, "drug_matcher", matcher)
+LOSARTAN = CatalogMedication(
+    id=1,
+    brand_name_fa="لوزارتان",
+    brand_name_en="Losartan",
+    generic_name_en="Losartan",
+    form="TAB",
+    strength="25 mg",
+    manufacturer="Example",
+)
+METFORMIN = CatalogMedication(
+    id=2,
+    brand_name_fa="متفورمین",
+    brand_name_en="Metformin",
+    generic_name_en="Metformin",
+    form="TAB",
+    strength="500 mg",
+    manufacturer="Example",
+)
+
+
+def _install_ocr_resolver(
+    monkeypatch,
+    medications_by_query: dict[str, CatalogMedication],
+) -> RecordingOcrCatalog:
+    catalog = RecordingOcrCatalog(medications_by_query)
+    resolver = MedicationResolver(catalog)
+    monkeypatch.setattr(ocr_service, "_medication_resolver", lambda: resolver)
+    return catalog
+
+
+def _expected_ocr_item(medication: CatalogMedication) -> dict[str, object]:
+    """Expected canonical OCR medication payload for a TAB catalog row.
+
+    OCR never fabricates dose/frequency; unknown prescription fields stay null
+    and the record is marked for review rather than confirmed.
+    """
+
+    catalog_snapshot = {
+        "catalog_id": medication.id,
+        "brand_name": medication.brand_name_en,
+        "brand_name_fa": medication.brand_name_fa,
+        "brand_name_en": medication.brand_name_en,
+        "generic_name": medication.generic_name_en,
+        "generic_name_en": medication.generic_name_en,
+        "generic_slug": None,
+        "brand_slug": None,
+        "strength_raw": medication.strength,
+        "dosage_form": medication.form,
+        "manufacturer": medication.manufacturer,
+        "company_name": None,
+        "company_slug": None,
+    }
+
+    return {
+        "catalog_id": medication.id,
+        "name": medication.brand_name_fa,
+        "amount": "",
+        "frequency": "",
+        "dose_unit": "قرص",
+        "catalog": catalog_snapshot,
+        "prescription": {
+            "dose": None,
+            "dose_unit": "قرص",
+            "quantity": None,
+            "frequency": None,
+            "duration": None,
+            "route": None,
+            "instructions": None,
+        },
+        "provenance": {
+            "source": "ocr",
+            "confidence": None,
+            "verification_status": "needs_review",
+        },
+        "ambiguous": False,
+        "candidate_count": 1,
+        "candidates": [
+            {
+                "catalog_id": medication.id,
+                "name": medication.brand_name_fa,
+                "generic_name": medication.generic_name_en,
+                "strength": medication.strength,
+                "form": medication.form,
+                "manufacturer": medication.manufacturer,
+                "company": None,
+                "dose_unit": "قرص",
+                "catalog": catalog_snapshot,
+            }
+        ],
+    }
+
+
+def test_extract_medication_ocr_uses_shared_resolver_and_canonical_drug(monkeypatch) -> None:
+    catalog = _install_ocr_resolver(monkeypatch, {"لوزارتان": LOSARTAN})
     monkeypatch.setattr(
         ocr_service,
         "_run_tesseract_with_meta",
-        _mock_tesseract("لوزارتن"),
+        _mock_tesseract("لوزارتان"),
     )
 
     img = np.zeros((40, 200, 3), dtype=np.uint8)
     _, encoded = cv2.imencode(".png", img)
     result = extract_medication_ocr(encoded.tobytes(), "image/png")
-    assert result == [
-        {
-            "name": "Losartan",
-            "amount": DEFAULT_MEDICATION_AMOUNT,
-            "frequency": DEFAULT_MEDICATION_FREQUENCY,
-        }
-    ]
+    assert catalog.calls == [("لوزارتان", 3)]
+    assert result == [_expected_ocr_item(LOSARTAN)]
 
 
-@pytest.mark.asyncio
-async def test_extract_medication_ocr_returns_none_when_no_match(monkeypatch, db) -> None:
-    matcher = await _seed_losartan_for_ocr(db)
-    monkeypatch.setattr(ocr_service, "drug_matcher", matcher)
+def test_extract_medication_ocr_returns_none_when_no_match(monkeypatch) -> None:
+    catalog = _install_ocr_resolver(monkeypatch, {})
     monkeypatch.setattr(
         ocr_service,
         "_run_tesseract_with_meta",
@@ -90,16 +163,18 @@ async def test_extract_medication_ocr_returns_none_when_no_match(monkeypatch, db
     img = np.zeros((40, 200, 3), dtype=np.uint8)
     _, encoded = cv2.imencode(".png", img)
     assert extract_medication_ocr(encoded.tobytes(), "image/png") is None
+    assert catalog.calls == [("Patient Name: John Doe", 3)]
 
 
 def test_extract_medication_ocr_invalid_bytes() -> None:
     assert extract_medication_ocr(b"not-an-image", "image/png") is None
 
 
-@pytest.mark.asyncio
-async def test_extract_medication_ocr_multi_drug_persian_list(monkeypatch, db) -> None:
-    matcher = await _seed_losartan_and_metformin_for_ocr(db)
-    monkeypatch.setattr(ocr_service, "drug_matcher", matcher)
+def test_extract_medication_ocr_multi_drug_persian_list(monkeypatch) -> None:
+    catalog = _install_ocr_resolver(
+        monkeypatch,
+        {"لوزارتان": LOSARTAN, "متفورمین": METFORMIN},
+    )
     monkeypatch.setattr(
         ocr_service,
         "_run_tesseract_with_meta",
@@ -109,24 +184,12 @@ async def test_extract_medication_ocr_multi_drug_persian_list(monkeypatch, db) -
     img = np.zeros((40, 200, 3), dtype=np.uint8)
     _, encoded = cv2.imencode(".png", img)
     result = extract_medication_ocr(encoded.tobytes(), "image/png")
-    assert result == [
-        {
-            "name": "Losartan",
-            "amount": DEFAULT_MEDICATION_AMOUNT,
-            "frequency": DEFAULT_MEDICATION_FREQUENCY,
-        },
-        {
-            "name": "Metformin",
-            "amount": DEFAULT_MEDICATION_AMOUNT,
-            "frequency": DEFAULT_MEDICATION_FREQUENCY,
-        },
-    ]
+    assert catalog.calls == [("لوزارتان", 3), ("متفورمین", 3)]
+    assert result == [_expected_ocr_item(LOSARTAN), _expected_ocr_item(METFORMIN)]
 
 
-@pytest.mark.asyncio
-async def test_extract_medication_ocr_partial_match_returns_matched_subset(monkeypatch, db) -> None:
-    matcher = await _seed_losartan_for_ocr(db)
-    monkeypatch.setattr(ocr_service, "drug_matcher", matcher)
+def test_extract_medication_ocr_partial_match_returns_matched_subset(monkeypatch) -> None:
+    _install_ocr_resolver(monkeypatch, {"لوزارتان": LOSARTAN})
     monkeypatch.setattr(
         ocr_service,
         "_run_tesseract_with_meta",
@@ -136,19 +199,142 @@ async def test_extract_medication_ocr_partial_match_returns_matched_subset(monke
     img = np.zeros((40, 200, 3), dtype=np.uint8)
     _, encoded = cv2.imencode(".png", img)
     result = extract_medication_ocr(encoded.tobytes(), "image/png")
-    assert result == [
-        {
-            "name": "Losartan",
-            "amount": DEFAULT_MEDICATION_AMOUNT,
-            "frequency": DEFAULT_MEDICATION_FREQUENCY,
+    assert result == [_expected_ocr_item(LOSARTAN)]
+
+
+def test_extract_medication_ocr_attaches_same_block_instructions(monkeypatch) -> None:
+    _install_ocr_resolver(monkeypatch, {"لوزارتان": LOSARTAN})
+    monkeypatch.setattr(
+        ocr_service,
+        "_run_tesseract_with_meta",
+        _mock_tesseract("لوزارتان روزی دو بار بعد از غذا"),
+    )
+
+    img = np.zeros((40, 200, 3), dtype=np.uint8)
+    _, encoded = cv2.imencode(".png", img)
+    result = extract_medication_ocr(encoded.tobytes(), "image/png")
+    assert result is not None
+    item = result[0]
+    assert item["catalog"]["catalog_id"] == LOSARTAN.id
+    assert item["prescription"]["dose"] is None
+    assert item["prescription"]["frequency"] == "روزی ۲ بار"
+    assert item["prescription"]["instructions"] == "بعد از غذا"
+    assert item["prescription"]["quantity"] is None
+    assert item["provenance"]["verification_status"] == "needs_review"
+
+
+def test_extract_medication_ocr_multi_line_label_preserves_instructions(monkeypatch) -> None:
+    """Instructions on their own lines must survive block-split OCR labels.
+
+    A real medication label lists the product on one line and instructions on
+    the following lines (often in Persian). Block-scoped extraction would drop
+    those phrases; when every matched product is the same drug, the full-text
+    phrases are attached instead. Nothing is invented for fields the text
+    does not mention.
+    """
+
+    persian_metformin = METFORMIN.model_copy(
+        update={
+            "id": 3,
+            "brand_name_fa": "قرص آپو متفورمین 500 میلی گرم",
+            "brand_name_en": "METFORMIN APO 500MG TAB",
         }
-    ]
+    )
+    catalog = MultiRecordingOcrCatalog(
+        {
+            "Metformin 500 mg Tablets": (METFORMIN,),
+            "متفورمین": (persian_metformin,),
+        }
+    )
+    resolver = MedicationResolver(catalog)
+    monkeypatch.setattr(ocr_service, "_medication_resolver", lambda: resolver)
+    monkeypatch.setattr(
+        ocr_service,
+        "_run_tesseract_with_meta",
+        _mock_tesseract(
+            "METFORMIN\nMetformin 500 mg Tablets\nمتفورمین\n"
+            "روزی ۲ بار\nبعد از غذا\nهر بار یک قرص"
+        ),
+    )
+
+    img = np.zeros((40, 200, 3), dtype=np.uint8)
+    _, encoded = cv2.imencode(".png", img)
+    result = extract_medication_ocr(encoded.tobytes(), "image/png")
+    assert result is not None
+    assert len(result) == 2
+    for item in result:
+        assert item["prescription"]["dose"] == "۱"
+        assert item["prescription"]["dose_unit"] == "قرص"
+        assert item["prescription"]["frequency"] == "روزی ۲ بار"
+        assert item["prescription"]["instructions"] == "بعد از غذا"
+        assert item["prescription"]["quantity"] is None
+        assert item["prescription"]["duration"] is None
+        assert item["prescription"]["route"] is None
 
 
-@pytest.mark.asyncio
-async def test_handwriting_scenario_returns_none_with_no_match(monkeypatch, db) -> None:
-    matcher = await _seed_losartan_for_ocr(db)
-    monkeypatch.setattr(ocr_service, "drug_matcher", matcher)
+def test_extract_medication_ocr_multi_drug_label_never_cross_associates(
+    monkeypatch,
+) -> None:
+    """Different drugs on one label must not share each other's instructions."""
+
+    catalog = MultiRecordingOcrCatalog(
+        {
+            "Metformin 500 mg Tablets": (METFORMIN,),
+            "لوزارتان": (LOSARTAN,),
+        }
+    )
+    resolver = MedicationResolver(catalog)
+    monkeypatch.setattr(ocr_service, "_medication_resolver", lambda: resolver)
+    monkeypatch.setattr(
+        ocr_service,
+        "_run_tesseract_with_meta",
+        _mock_tesseract(
+            "Metformin 500 mg Tablets\nروزی ۲ بار\n"
+            "لوزارتان\nبعد از غذا"
+        ),
+    )
+
+    img = np.zeros((40, 200, 3), dtype=np.uint8)
+    _, encoded = cv2.imencode(".png", img)
+    result = extract_medication_ocr(encoded.tobytes(), "image/png")
+    assert result is not None
+    assert len(result) == 2
+    for item in result:
+        # Without a single shared generic, phrases must stay unassigned
+        # rather than being attached to the wrong product.
+        assert item["prescription"]["dose"] is None
+        assert item["prescription"]["frequency"] is None
+        assert item["prescription"]["instructions"] is None
+
+
+def test_extract_medication_ocr_marks_ambiguous_candidates(monkeypatch) -> None:
+    second = LOSARTAN.model_copy(
+        update={"id": 11, "strength": "50 mg", "manufacturer": "Other"}
+    )
+    catalog = MultiRecordingOcrCatalog({"لوزارتان": (LOSARTAN, second)})
+    resolver = MedicationResolver(catalog)
+    monkeypatch.setattr(ocr_service, "_medication_resolver", lambda: resolver)
+    monkeypatch.setattr(
+        ocr_service,
+        "_run_tesseract_with_meta",
+        _mock_tesseract("لوزارتان"),
+    )
+
+    img = np.zeros((40, 200, 3), dtype=np.uint8)
+    _, encoded = cv2.imencode(".png", img)
+    result = extract_medication_ocr(encoded.tobytes(), "image/png")
+    assert result is not None
+    item = result[0]
+    assert item["ambiguous"] is True
+    assert item["candidate_count"] == 2
+    assert item["provenance"]["verification_status"] == "ambiguous"
+    assert len(item["candidates"]) == 2
+    assert item["prescription"]["dose"] is None
+    assert item["prescription"]["frequency"] is None
+
+
+def test_handwriting_scenario_returns_none_with_no_match(monkeypatch) -> None:
+    _install_ocr_resolver(monkeypatch, {})
     monkeypatch.setattr(
         ocr_service,
         "_run_tesseract_with_meta",
@@ -161,6 +347,38 @@ async def test_handwriting_scenario_returns_none_with_no_match(monkeypatch, db) 
     img = np.zeros((40, 200, 3), dtype=np.uint8)
     _, encoded = cv2.imencode(".png", img)
     assert extract_medication_ocr(encoded.tobytes(), "image/png") is None
+
+
+def test_extract_medication_ocr_fails_safely_when_catalog_unavailable(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    missing_catalog = tmp_path / "darooyab.db"
+    warnings: list[tuple[str, tuple[object, ...]]] = []
+
+    def _unavailable_resolver() -> MedicationResolver:
+        raise CatalogUnavailableError(
+            f"Darooyab catalog is unavailable at '{missing_catalog}'"
+        )
+
+    monkeypatch.setattr(ocr_service, "_medication_resolver", _unavailable_resolver)
+    monkeypatch.setattr(
+        ocr_service.logger,
+        "warning",
+        lambda message, *args: warnings.append((message, args)),
+    )
+    monkeypatch.setattr(
+        ocr_service,
+        "_run_tesseract_with_meta",
+        _mock_tesseract("لوزارتان"),
+    )
+
+    img = np.zeros((40, 200, 3), dtype=np.uint8)
+    _, encoded = cv2.imencode(".png", img)
+
+    assert extract_medication_ocr(encoded.tobytes(), "image/png") is None
+    assert any("resolution_status=unavailable" in message for message, _args in warnings)
+    assert not missing_catalog.exists()
 
 
 def test_extract_cgm_readings_from_text() -> None:

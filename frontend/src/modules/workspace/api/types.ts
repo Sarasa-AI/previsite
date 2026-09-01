@@ -172,6 +172,10 @@ export interface ChiefComplaintContentDTO {
   priority: string;
 }
 
+export interface HPIContentDTO {
+  hpi_summary: string;
+}
+
 export interface RedFlagItemDTO {
   id: string;
   title: string;
@@ -188,6 +192,7 @@ export interface SnapshotStripContentDTO {
   problems: string;
   risk: string;
   allergies: string;
+  allergy_state: "confirmed" | "nkda" | "unknown" | "not_documented" | "conflict";
   medication_count: number;
   timeline_count: number;
 }
@@ -210,11 +215,25 @@ export interface TimelineContentDTO {
 
 export interface MedicationItemDTO {
   id: string;
+  catalog_id?: number | null;
   name: string;
   dose: string;
+  dose_unit?: string | null;
   frequency: string;
   status: string;
   source: string;
+  generic_name?: string | null;
+  brand_name?: string | null;
+  strength?: string | null;
+  dosage_form?: string | null;
+  manufacturer?: string | null;
+  company?: string | null;
+  quantity?: string | null;
+  duration?: string | null;
+  route?: string | null;
+  instructions?: string | null;
+  confidence?: number | null;
+  verification_status?: string | null;
 }
 
 export interface MedicationGroupDTO {
@@ -232,9 +251,11 @@ export interface LabRowDTO {
   value: string;
   unit: string;
   reference_range: string;
-  abnormal: boolean;
+  state: "normal" | "abnormal" | "critical" | "unknown";
   trend: ClinicalContentTrend;
   detail: string;
+  timestamp: string;
+  source: string;
 }
 
 export interface LabsContentDTO {
@@ -272,6 +293,7 @@ export interface DocumentsContentDTO {
 export interface ClinicalContentBodyDTO {
   patient_header: PatientHeaderContentDTO | null;
   chief_complaint: ChiefComplaintContentDTO | null;
+  hpi: HPIContentDTO | null;
   red_flags: RedFlagsContentDTO | null;
   snapshot: SnapshotStripContentDTO | null;
   timeline: TimelineContentDTO | null;

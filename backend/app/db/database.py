@@ -10,13 +10,14 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    pool_size=5,
-    max_overflow=15,
-    pool_pre_ping=True,
-    pool_recycle=1800,
-)
+engine_options = {
+    "pool_pre_ping": True,
+    "pool_recycle": 1800,
+}
+if not settings.DATABASE_URL.startswith("sqlite+"):
+    engine_options.update(pool_size=5, max_overflow=15)
+
+engine = create_async_engine(settings.DATABASE_URL, **engine_options)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

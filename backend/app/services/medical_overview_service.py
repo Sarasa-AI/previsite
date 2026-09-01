@@ -63,6 +63,12 @@ def load_medical_overview_from_intake(intake: Intake | None) -> MedicalOverview 
 
 def overview_for_storage(overview: MedicalOverview) -> dict:
     payload = overview.model_dump(exclude={"file_condition_map"})
+    # Backward compatibility: omit the new structured medication blocks when
+    # they are absent so previously persisted payloads keep their exact shape.
+    for medication in payload.get("current_medications") or []:
+        for key in ("catalog", "prescription", "provenance"):
+            if medication.get(key) is None:
+                medication.pop(key, None)
     return payload
 
 

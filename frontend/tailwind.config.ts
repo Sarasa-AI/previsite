@@ -16,6 +16,32 @@ const config: Config = {
         mint: "#A8E6CF",
         danger: "#DC2626",
         ink: "#0F172A",
+        tai: {
+          navy: "hsl(var(--tai-navy) / <alpha-value>)",
+          "navy-strong": "hsl(var(--tai-navy-strong) / <alpha-value>)",
+          teal: "hsl(var(--tai-teal) / <alpha-value>)",
+          "teal-bright": "hsl(var(--tai-teal-bright) / <alpha-value>)",
+          "teal-soft": "hsl(var(--tai-teal-soft) / <alpha-value>)",
+          surface: "hsl(var(--tai-neutral-25) / <alpha-value>)",
+          muted: "hsl(var(--tai-neutral-100) / <alpha-value>)",
+          border: "hsl(var(--tai-neutral-200) / <alpha-value>)",
+          subdued: "hsl(var(--tai-neutral-500) / <alpha-value>)",
+          text: "hsl(var(--tai-neutral-950) / <alpha-value>)",
+        },
+        semantic: {
+          success: "hsl(var(--tai-success) / <alpha-value>)",
+          warning: "hsl(var(--tai-warning) / <alpha-value>)",
+          critical: "hsl(var(--tai-critical) / <alpha-value>)",
+          info: "hsl(var(--tai-info) / <alpha-value>)",
+          unknown: "hsl(var(--tai-unknown) / <alpha-value>)",
+          missing: "hsl(var(--tai-missing) / <alpha-value>)",
+          unverified: "hsl(var(--tai-unverified) / <alpha-value>)",
+          verified: "hsl(var(--tai-verified) / <alpha-value>)",
+          conflict: "hsl(var(--tai-conflict) / <alpha-value>)",
+          resolved: "hsl(var(--tai-resolved) / <alpha-value>)",
+          stale: "hsl(var(--tai-stale) / <alpha-value>)",
+          ai: "hsl(var(--tai-ai) / <alpha-value>)",
+        },
 
         // Patient semantic tokens — resolve only under .patient-theme.
         primary: {
@@ -55,9 +81,27 @@ const config: Config = {
       boxShadow: {
         soft: "0 20px 45px -30px rgba(27, 59, 90, 0.35)",
         glass: "0 12px 30px -18px rgba(15, 23, 42, 0.18)",
+        "tai-sm": "var(--tai-shadow-sm)",
+        "tai-md": "var(--tai-shadow-md)",
+      },
+      fontFamily: {
+        sans: ["var(--tai-font-sans)"],
+        latin: ["var(--tai-font-latin)"],
+      },
+      spacing: {
+        "tai-1": "var(--tai-space-1)",
+        "tai-2": "var(--tai-space-2)",
+        "tai-3": "var(--tai-space-3)",
+        "tai-4": "var(--tai-space-4)",
+        "tai-5": "var(--tai-space-5)",
+        "tai-6": "var(--tai-space-6)",
+        "tai-8": "var(--tai-space-8)",
       },
       borderRadius: {
         medical: "1.5rem",
+        "tai-sm": "var(--tai-radius-sm)",
+        "tai-md": "var(--tai-radius-md)",
+        "tai-lg": "var(--tai-radius-lg)",
       },
       keyframes: {
         blink: {

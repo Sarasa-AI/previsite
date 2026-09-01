@@ -47,9 +47,14 @@ function normalizeMedication(item: string | CurrentMedication): CurrentMedicatio
 
   return {
     id: item.id || crypto.randomUUID(),
+    catalog_id: item.catalog_id ?? null,
     name: item.name ?? "",
     amount: item.amount ?? "",
     frequency: item.frequency ?? "",
+    dose_unit: item.dose_unit ?? null,
+    catalog: item.catalog ?? null,
+    prescription: item.prescription ?? null,
+    provenance: item.provenance ?? null,
   };
 }
 
@@ -111,4 +116,3 @@ export const SEX_OPTIONS = [
   { value: "male", label: "مرد" },
   { value: "female", label: "زن" },
 ];
-

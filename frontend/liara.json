@@ -1,11 +1,11 @@
 {
-  "app": "sarasa-ai",
   "platform": "node",
+  "app": "previsit-web",
   "port": 3000,
-  "node": {
-    "version": "22"
-  },
-  "build": {
-    "location": "iran"
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": "3000",
+    "BACKEND_API_URL": "https://api.treat-ai.ir",
+    "NEXT_PUBLIC_API_URL": "https://api.treat-ai.ir"
   }
 }

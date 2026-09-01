@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 import pytest
 
 from app.modules.workspace.application.generate_workspace import GenerateWorkspaceUseCase
+from app.modules.workspace.application.context_signals import (
+    patient_questions_from_context,
+)
 from app.modules.workspace.application.inputs import (
     OrchestratorInputs,
     ReviewAcknowledgements,
@@ -175,6 +178,12 @@ def test_context_not_mutated() -> None:
     assert ctx.model_dump(mode="json") == before
 
 
+def test_nullable_overview_patient_questions_are_ignored() -> None:
+    overview = _context().overview.model_copy(update={"patient_questions": None})
+
+    assert patient_questions_from_context(_context(overview=overview)) == ()
+
+
 # ── Domain invariant preservation ────────────────────────────────────────────
 
 
@@ -275,6 +284,36 @@ def test_medications_expanded_when_count_gt_10() -> None:
     )
     med = next(d for d in plan.layout_directives if d.object_id is ClinicalObjectId.MEDICATIONS)
     assert med.size is SizeHint.EXPANDED
+
+
+def test_catalog_metadata_does_not_change_workspace_behavior() -> None:
+    baseline = _context()
+    enriched = baseline.model_copy(
+        update={
+            "overview": baseline.overview.model_copy(
+                update={
+                    "current_medications": [
+                        baseline.overview.current_medications[0].model_copy(
+                            update={"catalog_id": 101, "dose_unit": "tablet"}
+                        )
+                    ]
+                }
+            ),
+            "medication_evidence": (
+                baseline.medication_evidence[0].model_copy(
+                    update={"catalog_id": 101, "dose_unit": "tablet"}
+                ),
+            ),
+        }
+    )
+
+    baseline_plan = _plan(baseline)
+    enriched_plan = _plan(enriched)
+
+    assert enriched_plan.workspace_state == baseline_plan.workspace_state
+    assert enriched_plan.layout_directives == baseline_plan.layout_directives
+    assert enriched_plan.decision_queue == baseline_plan.decision_queue
+    assert enriched_plan.story == baseline_plan.story
 
 
 def test_soap_generating_is_badge_deferred_excluded_from_queue() -> None:

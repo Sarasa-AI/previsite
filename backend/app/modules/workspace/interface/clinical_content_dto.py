@@ -10,6 +10,8 @@ CONTENT_VERSION = "1.0.0"
 
 SeverityLevel = Literal["critical", "warning", "info"]
 TrendDirection = Literal["up", "down", "stable", "unknown"]
+AllergySemanticState = Literal["confirmed", "nkda", "unknown", "not_documented", "conflict"]
+LabSemanticState = Literal["normal", "abnormal", "critical", "unknown"]
 ConfidenceValue = float | Literal["unknown"]
 
 
@@ -30,6 +32,12 @@ class ChiefComplaintContentDTO(BaseModel):
     title: str
     duration: str
     priority: str
+
+
+class HPIContentDTO(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    hpi_summary: str
 
 
 class RedFlagItemDTO(BaseModel):
@@ -54,6 +62,7 @@ class SnapshotStripContentDTO(BaseModel):
     problems: str
     risk: str
     allergies: str
+    allergy_state: AllergySemanticState
     medication_count: int
     timeline_count: int
 
@@ -84,11 +93,25 @@ class MedicationItemDTO(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str
+    catalog_id: int | None = None
     name: str
     dose: str
+    dose_unit: str | None = None
     frequency: str
     status: str
     source: str
+    generic_name: str | None = None
+    brand_name: str | None = None
+    strength: str | None = None
+    dosage_form: str | None = None
+    manufacturer: str | None = None
+    company: str | None = None
+    quantity: str | None = None
+    duration: str | None = None
+    route: str | None = None
+    instructions: str | None = None
+    confidence: float | None = None
+    verification_status: str | None = None
 
 
 class MedicationGroupDTO(BaseModel):
@@ -112,9 +135,11 @@ class LabRowDTO(BaseModel):
     value: str
     unit: str
     reference_range: str
-    abnormal: bool
+    state: LabSemanticState
     trend: TrendDirection
     detail: str
+    timestamp: str
+    source: str
 
 
 class LabsContentDTO(BaseModel):
@@ -168,6 +193,7 @@ class ClinicalContentBodyDTO(BaseModel):
 
     patient_header: PatientHeaderContentDTO | None = None
     chief_complaint: ChiefComplaintContentDTO | None = None
+    hpi: HPIContentDTO | None = None
     red_flags: RedFlagsContentDTO | None = None
     snapshot: SnapshotStripContentDTO | None = None
     timeline: TimelineContentDTO | None = None

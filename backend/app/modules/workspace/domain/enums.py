@@ -9,6 +9,7 @@ class ClinicalObjectId(str, Enum):
     """Stable identifier for a workspace card or attention target."""
 
     CHIEF_COMPLAINT = "chief_complaint"
+    HPI = "hpi"
     RED_FLAGS = "red_flags"
     CRITICAL_ALERTS = "critical_alerts"
     CONFLICTS = "conflicts"

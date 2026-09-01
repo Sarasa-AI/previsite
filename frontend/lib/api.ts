@@ -39,7 +39,10 @@ apiClient.interceptors.response.use(
       if (status === 422) {
         errorMessage = "اطلاعات وارد شده معتبر نیست. لطفاً بررسی کنید";
       } else if (status === 503) {
-        errorMessage = "سرویس در دسترس نیست. لطفاً دوباره تلاش کنید";
+        errorMessage = extractApiError(
+          error.response.data,
+          "سرویس در دسترس نیست. لطفاً دوباره تلاش کنید",
+        );
       } else if (status >= 400 && status < 500) {
         const detail = extractApiError(error.response.data, "درخواست نامعتبر است");
         errorMessage = detail;
@@ -64,6 +67,13 @@ export function extractApiError(payload: unknown, fallbackMessage: string): stri
 
     if (typeof response.detail === "string" && response.detail.trim()) {
       return response.detail;
+    }
+
+    if (response.detail && typeof response.detail === "object") {
+      const detail = response.detail as { message?: unknown };
+      if (typeof detail.message === "string" && detail.message.trim()) {
+        return detail.message;
+      }
     }
 
     if (typeof response.error?.message === "string" && response.error.message.trim()) {

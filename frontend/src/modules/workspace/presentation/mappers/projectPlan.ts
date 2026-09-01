@@ -19,6 +19,7 @@ const KNOWN_SIZES = new Set(["expanded", "standard", "compressed", "badge"]);
 
 const CURRENTLY_SUPPORTED_OBJECT_IDS = new Set([
   "chief_complaint",
+  "hpi",
   "red_flags",
   "critical_alerts",
   "conflicts",

@@ -97,8 +97,6 @@ ruff==0.9.10
 pgvector>=0.2.5
 
 # Phase 2 RAG & embeddings
-ollama>=0.1.9
-sentence-transformers>=2.7.0
 numpy>=1.26.0
 
 # Vision / OCR (deterministic lab extraction)

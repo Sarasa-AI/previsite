@@ -1,4 +1,5 @@
 import { cx } from "./cx";
+import { ClinicalValueState } from "@/components/ui";
 
 export type StatusChipProps = {
   status: string;
@@ -7,14 +8,12 @@ export type StatusChipProps = {
 
 export function StatusChip({ status, className }: StatusChipProps) {
   return (
-    <span
-      className={cx(
-        "inline-flex items-center rounded border border-mint/50 bg-mint/30 px-1.5 py-0.5 text-xs font-medium text-trust",
-        className,
-      )}
+    <ClinicalValueState
+      state="not-verified"
+      label={status}
+      className={cx(className)}
       aria-label={`Status ${status}`}
-    >
-      {status}
-    </span>
+      title="مقدار وضعیت از قرارداد نمایش داده شده و در frontend تفسیر نشده است"
+    />
   );
 }

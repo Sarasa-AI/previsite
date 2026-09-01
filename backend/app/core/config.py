@@ -83,10 +83,16 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL_SYNC(self) -> str:
-        """Sync URL for Alembic migrations (psycopg2)."""
+        """Sync URL for Alembic migrations."""
         if self.database_url:
             url = self.database_url
-            return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+            # Handle PostgreSQL async -> sync
+            if url.startswith("postgresql+asyncpg://"):
+                return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+            # Handle SQLite async -> sync
+            if url.startswith("sqlite+aiosqlite://"):
+                return url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+            return url
         return (
             f"postgresql+psycopg2://{self.db_user}:{self.db_password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
@@ -170,23 +176,21 @@ class Settings(BaseSettings):
     llm_circuit_failure_threshold: int = 3
     llm_circuit_cooldown_seconds: int = 60
     llm_tier2_provider: str = "gapgpt"
-    llm_tier2_ollama_model: str = "llama3.2"
     llm_tier2_openrouter_model: str = "qwen/qwen-2.5-7b-instruct"
 
     # Outbound HTTP proxy for LLM API calls
     http_proxy: Optional[str] = None
 
     # Ollama / embeddings (Phase 2 RAG)
-    ollama_host: str = "http://localhost:11434"
     embedding_model: str = "nomic-embed-text"
     embedding_dimensions: int = 768
     max_embedding_tokens: int = 512
-    # auto | ollama | openrouter — auto tries Ollama then OpenRouter
-    embedding_provider: str = "auto"
+    # openrouter — production uses OpenRouter for embeddings
+    embedding_provider: str = "openrouter"
     openrouter_embedding_model: str = "openai/text-embedding-3-small"
 
     # Optional CrossEncoder rerank after pgvector cosine retrieval
-    reranker_enabled: bool = True
+    reranker_enabled: bool = False
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     reranker_candidates: int = 20
 

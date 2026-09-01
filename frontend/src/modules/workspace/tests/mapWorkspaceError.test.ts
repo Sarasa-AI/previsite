@@ -55,4 +55,9 @@ describe("mapWorkspaceError", () => {
       uiState: "Error",
     });
   });
+
+  it("maps authentication and generic consistency conflicts", () => {
+    expect(mapWorkspaceError(null, 401)).toMatchObject({ uiState: "Forbidden", error: { presentation: "blocking_access_denied" } });
+    expect(mapWorkspaceError(null, 409)).toMatchObject({ uiState: null, shouldRefetch: true, error: { presentation: "soft_conflict_refetch" } });
+  });
 });

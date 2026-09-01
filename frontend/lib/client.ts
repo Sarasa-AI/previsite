@@ -3,6 +3,29 @@ import type { Demographics } from "./intake";
 import type { MedicalOverview } from "./pmh/types";
 import { apiClient } from "./api";
 
+export type MedicationSearchResult = {
+  id: number;
+  display_name: string;
+  brand_name?: string | null;
+  brand_name_fa: string | null;
+  brand_name_en: string | null;
+  generic_name?: string | null;
+  generic_name_en: string | null;
+  generic_slug?: string | null;
+  brand_slug?: string | null;
+  form: string | null;
+  strength: string | null;
+  manufacturer: string | null;
+  company_name?: string | null;
+  company_slug?: string | null;
+  dose_unit: string;
+};
+
+export type MedicationSearchResponse = {
+  query: string;
+  results: MedicationSearchResult[];
+};
+
 export const frontendApi = {
   register: (payload: { email: string; password: string; full_name: string; role: string }) =>
     apiClient.post("/auth/register", payload),
@@ -36,6 +59,10 @@ export const frontendApi = {
   saveLayer2Answer: (sessionId: string, payload: { question_id: string; answer: string }) =>
     apiClient.post(`/proxy/api/intake/${sessionId}/layer2/answer`, payload),
   generateLayer3: (sessionId: string) => apiClient.post(`/proxy/api/intake/${sessionId}/layer3/generate`),
+  searchMedications: (query: string, limit = 20) =>
+    apiClient.get<MedicationSearchResponse>("/proxy/api/medications/search", {
+      params: { query, limit },
+    }),
   saveLayer4: (sessionId: string, payload: MedicalOverview) =>
     apiClient.post(`/proxy/api/intake/${sessionId}/layer4`, payload),
   submitIntake: (sessionId: string) => apiClient.post(`/proxy/api/intake/${sessionId}/submit`),
