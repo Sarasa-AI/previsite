@@ -30,8 +30,6 @@ export function selectClinicalSlice(
       return clinicalContent.medications;
     case "labs":
       return clinicalContent.labs;
-    case "missing_data":
-      return clinicalContent.missingInfo;
     case "soap":
       return clinicalContent.soap;
     case "documents":

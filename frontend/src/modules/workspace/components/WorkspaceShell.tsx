@@ -111,6 +111,11 @@ export function WorkspaceShell({
     uiState,
     error,
   };
+  const visiblePinCards = viewModel.pinCards.filter((card) => !["missing_data", "patient_questions"].includes(card.objectId));
+  const hpiCard = [...viewModel.primaryCards, ...viewModel.secondaryCards, ...viewModel.deferredCards].find((card) => card.objectId === "hpi");
+  const soapCard = [...viewModel.primaryCards, ...viewModel.secondaryCards, ...viewModel.deferredCards].find((card) => card.objectId === "soap");
+  const remainingPrimaryCards = viewModel.primaryCards.filter((card) => !["hpi", "soap"].includes(card.objectId));
+  const remainingSecondaryCards = viewModel.secondaryCards.filter((card) => !["hpi", "soap"].includes(card.objectId));
 
   return (
     <div
@@ -139,18 +144,18 @@ export function WorkspaceShell({
 
         <div className="mt-3 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_15rem] xl:items-start 2xl:grid-cols-[minmax(0,1fr)_17rem] 2xl:gap-4">
           <div className="min-w-0 space-y-3 2xl:space-y-4">
-            {viewModel.pinCards.length ? (
+            {visiblePinCards.length ? (
               <div className="rounded-tai-lg border border-tai-teal/25 bg-white p-2 shadow-tai-sm sm:p-2.5">
                 <WorkspaceRegion
                   id="workspace-pinned"
                   name="pin"
                   label="Pinned"
-                  cards={viewModel.pinCards}
+                  cards={visiblePinCards}
                   viewModel={viewModel}
                   clinicalContent={clinicalContent}
                   onAcknowledge={onAcknowledge}
                   storyRender={storyRender}
-                  className="grid gap-2 lg:grid-cols-12"
+                className="grid auto-rows-fr gap-2 md:grid-cols-2 lg:grid-cols-4"
                 />
               </div>
             ) : null}
@@ -159,7 +164,7 @@ export function WorkspaceShell({
               id="workspace-primary"
               name="primary"
               label="Primary"
-              cards={viewModel.primaryCards}
+              cards={remainingPrimaryCards}
               viewModel={viewModel}
               clinicalContent={clinicalContent}
               onAcknowledge={onAcknowledge}
@@ -167,11 +172,14 @@ export function WorkspaceShell({
               className="grid gap-3 lg:grid-cols-12 2xl:gap-4"
             />
 
+            {hpiCard ? <WorkspaceRegion id="workspace-hpi" name="hpi" label="شرح حال بیماری فعلی" cards={[hpiCard]} viewModel={viewModel} clinicalContent={clinicalContent} onAcknowledge={onAcknowledge} storyRender={storyRender} className="grid gap-3" /> : null}
+            {soapCard ? <WorkspaceRegion id="workspace-soap" name="soap" label="یادداشت SOAP" cards={[soapCard]} viewModel={viewModel} clinicalContent={clinicalContent} onAcknowledge={onAcknowledge} storyRender={storyRender} className="grid gap-3" /> : null}
+
             <WorkspaceRegion
               id="workspace-secondary"
               name="secondary"
               label="Secondary"
-              cards={viewModel.secondaryCards}
+              cards={remainingSecondaryCards}
               viewModel={viewModel}
               clinicalContent={clinicalContent}
               onAcknowledge={onAcknowledge}
@@ -180,7 +188,7 @@ export function WorkspaceShell({
             />
 
             <DeferredRegion
-              viewModel={viewModel}
+                viewModel={viewModel}
               clinicalContent={clinicalContent}
               onAcknowledge={onAcknowledge}
               storyRender={storyRender}

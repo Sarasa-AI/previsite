@@ -93,21 +93,6 @@ export function LabsPanelSkeleton({ className }: { className?: string }) {
   );
 }
 
-export function MissingInfoSkeleton({ className }: { className?: string }) {
-  return (
-    <SkeletonFrame className={className} aria-label="Loading missing information">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <SkeletonBone className="h-4 w-36" />
-        <SkeletonBone className="h-6 w-24" />
-      </div>
-      <div className="space-y-2">
-        <SkeletonBone className="h-8 w-full" />
-        <SkeletonBone className="h-8 w-full" />
-      </div>
-    </SkeletonFrame>
-  );
-}
-
 export function SoapSkeleton({ className }: { className?: string }) {
   return (
     <SkeletonFrame className={className} aria-label="Loading SOAP preview">
@@ -119,6 +104,9 @@ export function SoapSkeleton({ className }: { className?: string }) {
     </SkeletonFrame>
   );
 }
+
+/** @deprecated Removed from the workspace loading layout. */
+export function MissingInfoSkeleton(_props: { className?: string }) { return null; }
 
 export function DocumentsSkeleton({ className }: { className?: string }) {
   return (

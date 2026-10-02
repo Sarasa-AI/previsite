@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { frontendApi, type MedicationSearchResult } from "@/lib/client";
@@ -130,5 +130,48 @@ describe("DrugSearch", () => {
     expect(card).toHaveTextContent("Metformin");
     expect(card).toHaveTextContent("500 mg · TAB");
     expect(card).toHaveTextContent("سازنده: Merck");
+  });
+
+  it("debounces live autocomplete and updates as the query changes", async () => {
+    const user = userEvent.setup();
+    vi.mocked(frontendApi.searchMedications).mockResolvedValue({
+      data: { query: "met", results: [result] },
+    } as never);
+    render(<DrugSearch selectedCatalogIds={new Set()} selectedNames={new Set()} onSelect={vi.fn()} />);
+
+    await user.type(screen.getByLabelText("جستجوی دارو"), "m");
+    expect(frontendApi.searchMedications).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText("جستجوی دارو"), "et");
+    expect(frontendApi.searchMedications).not.toHaveBeenCalled();
+    await waitFor(() => expect(frontendApi.searchMedications).toHaveBeenCalledWith("met"), { timeout: 1000 });
+  });
+
+  it("selects the highlighted suggestion with Enter and closes with Escape", async () => {
+    const user = userEvent.setup();
+    const second = { ...result, id: 102, display_name: "Metformin XR" };
+    const onSelect = vi.fn();
+    vi.mocked(frontendApi.searchMedications).mockResolvedValue({
+      data: { query: "me", results: [result, second] },
+    } as never);
+    render(<DrugSearch selectedCatalogIds={new Set()} selectedNames={new Set()} onSelect={onSelect} />);
+    const input = screen.getByLabelText("جستجوی دارو");
+    await user.type(input, "me");
+    await screen.findByRole("listbox");
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(onSelect).toHaveBeenCalledWith(second);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+    await user.type(input, "me");
+    await screen.findByRole("listbox");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty state after a successful search with no matches", async () => {
+    const user = userEvent.setup();
+    vi.mocked(frontendApi.searchMedications).mockResolvedValue({ data: { query: "zz", results: [] } } as never);
+    render(<DrugSearch selectedCatalogIds={new Set()} selectedNames={new Set()} onSelect={vi.fn()} />);
+    await user.type(screen.getByLabelText("جستجوی دارو"), "zz");
+    expect(await screen.findByText("دارویی با این عبارت پیدا نشد.")).toBeInTheDocument();
   });
 });

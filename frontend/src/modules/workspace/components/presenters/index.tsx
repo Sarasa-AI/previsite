@@ -4,7 +4,6 @@ import type {
   DocumentsContent,
   LabsContent,
   MedicationsContent,
-  MissingInfoContent,
   RedFlagsContent,
   SnapshotStripContent,
   SoapContent,
@@ -14,7 +13,6 @@ import type { HPIContent } from "../types/content";
 import { ChiefComplaintCard } from "../cards/ChiefComplaintCard";
 import { HPICard } from "../cards/HPICard";
 import { RedFlagsCard } from "../cards/RedFlagsCard";
-import { MissingInformationCard } from "../cards/MissingInformationCard";
 import { SoapPreviewCard } from "../cards/SoapPreviewCard";
 import { ClinicalSnapshotStrip } from "../layout/ClinicalSnapshotStrip";
 import { Timeline } from "../timeline/Timeline";
@@ -140,26 +138,6 @@ export function DocumentsPresenter({ card, content }: CardPresenterProps) {
   );
 }
 
-export function PatientQuestionsPresenter({ card }: CardPresenterProps) {
-  return (
-    <PresenterChrome
-      card={card}
-      title="پرسش‌های پیشنهادی"
-      emptyTitle="پیشنهادی در دسترس نیست"
-      emptyMessage="قرارداد فعلی متن پرسش پیشنهادی ارائه نمی‌کند؛ هیچ پرسشی در رابط کاربری استنباط نشده است."
-    />
-  );
-}
-
-export function MissingDataPresenter({ card, content }: CardPresenterProps) {
-  return (
-    <MissingInformationCard
-      content={(content as MissingInfoContent | null | undefined) ?? null}
-      trust={trustSlot(card)}
-    />
-  );
-}
-
 export function SoapPresenter({ card, content }: CardPresenterProps) {
   return (
     <SoapPreviewCard
@@ -180,3 +158,9 @@ export function SnapshotPresenter({ card, content }: CardPresenterProps) {
     />
   );
 }
+
+/** @deprecated Removed from the workspace presentation. */
+export function MissingDataPresenter(_props: CardPresenterProps) { return null; }
+
+/** @deprecated Removed from the workspace presentation. */
+export function PatientQuestionsPresenter(_props: CardPresenterProps) { return null; }
