@@ -52,12 +52,48 @@ Intentionally **not** addressed yet (or only partially):
 
 - Git history rewrite not executed yet (requires team coordination + force-push; see checklist above)
 - Central secret manager (Vault / cloud KMS) — env-based secrets only for now
-- Encryption at rest / field-level PHI encryption (MFA secrets stored in DB without field-level encryption)
+- Broader field-level PHI encryption beyond `mfa_secret` (P1 encrypts MFA secrets with `FIELD_ENCRYPTION_KEY`)
 - Free-text SOAP edit API exists as `PATCH /api/sessions/{id}/soap` (overwrite + `previous_value` on audit); full Inline Edit / Track Changes UI remains Phase 4
 - Admin UI for audit logs (API only: `GET /api/admin/audit-logs`)
-- Distributed/multi-instance auth rate limiting (current limiter is in-memory per process)
+- Distributed/multi-instance auth rate limiting (current limiter is in-memory per process — documented; Redis out of P1 scope)
 - Manual key rotation in OpenRouter / GapGPT panels (owner checklist above)
 - GitHub branch protection required checks must be enabled manually after first green Actions runs (`Backend CI` / `Frontend CI`)
+- Distributed/multi-instance auth rate limiting (current limiter is in-memory per process — documented; Redis out of P2 scope)
+- Manual key rotation in OpenRouter / GapGPT panels (owner checklist above)
+- Legal retention periods for account erasure (`LEGAL_RETENTION_*` placeholders — **product owner must confirm**)
+- Consent legal copy (structure only; placeholder text keys until product owner supplies wording)
+- Real SMS HTTP provider integration (P2-B ships console/test + unimplemented `http` stub only)
+- ML-based NER for third-party names in free text (scrubber is deterministic / known-id + regex only)
+- Tenancy / organization models — out of P2 scope
+
+### Addressed in P2-B (OTP + LLM egress)
+
+- Patient phone + OTP identity (`SMS_PROVIDER`, OTP rate limits, enumeration-safe responses)
+- Doctors/admins email-only login; full-name login removed; legacy national-ID patient path behind `LEGACY_PATIENT_PASSWORD_LOGIN_ENABLED`
+- External LLM/embedding calls routed through de-identification gateway; `llm_egress_log` metadata only; image egress off by default
+- `external_llm_processing` consent key left dormant (not enforced); document that `ai_processing` wording must disclose third parties
+
+### Addressed in P1 (security hardening)
+
+- Public registration always creates patients; doctor/admin via `scripts/create_privileged_user.py` (seed-doctor unchanged)
+- Session claim-on-open is atomic; chat/session/retry-soap/OCR authorization gaps closed
+- Cookie `maxAge` derived from backend `expires_in`; `/api/auth/me` is backend-verified; proxy clears cookie on 401
+- Alembic is the sole production schema source (`intakes` / `is_hpi_complete` / `PENDING_REVIEW` reconciled); detailed health reports migration state
+- Audit events for intake/files/OCR/PDF/PMH/profile-other/admin clinical reads + session access denials (no clinical free text)
+- `mfa_secret` Fernet encryption with legacy plaintext read + operator encrypt script
+- Per-user in-process rate limits on intake write, upload, PDF, OCR, medications search, MFA verify
+
+### Addressed in P2-A (this phase)
+
+- Chat `POST` restricted to patient owner; doctors/admins retain GET history
+- MFA setup challenge secrets stored server-side (encrypted); JWT carries `challenge_id` only
+- `GET /metrics` requires admin JWT or `METRICS_BEARER_TOKEN`; production without token → anonymous 404
+- Removed stale duplicate `frontend/src/app/api/**` (Next.js builds from `frontend/app/`)
+- Alembic integrity tests fail CI if skipped; empty-DB upgrade verified on disposable Postgres
+- Rotating refresh-token sessions (httpOnly cookie, reuse → family revoke)
+- Append-only consent records + optional enforcement flag
+- Patient data export (async JSON) and two-step account erasure (cool-off + operator/admin)
+- Doctor verification lifecycle (pending/verified/suspended) + admin MFA reset / backup regen
 
 ### Addressed in quality phase (this branch)
 
