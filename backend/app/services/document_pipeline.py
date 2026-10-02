@@ -192,6 +192,7 @@ async def process_document_artifacts(
 
                 ocr_artifact = DocumentArtifact(
                     session_id=session_id,
+                    organization_id=db_file.organization_id,
                     file_id=file_id,
                     kind=ArtifactKind.OCR,
                     status=_ocr_status(document),
@@ -215,6 +216,7 @@ async def process_document_artifacts(
 
             extraction_artifact = DocumentArtifact(
                 session_id=session_id,
+                organization_id=db_file.organization_id,
                 file_id=file_id,
                 kind=ArtifactKind.EXTRACTION,
                 status=_extraction_status(extraction),
@@ -269,9 +271,12 @@ async def _persist_failure(
     status: str = ArtifactStatus.FAILED,
 ) -> None:
     """Record an explicit failure artifact so the gap is visible, not silent."""
+    file_result = await db.execute(select(FileModel).where(FileModel.id == file_id))
+    db_file = file_result.scalar_one_or_none()
     db.add(
         DocumentArtifact(
             session_id=session_id,
+            organization_id=db_file.organization_id if db_file else None,
             file_id=file_id,
             kind=kind,
             status=status,

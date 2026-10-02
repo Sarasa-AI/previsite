@@ -19,6 +19,7 @@ from app.core.rate_limiter import chat_rate_limit
 from app.db.database import get_async_session, get_db
 from app.models import Message, User
 from app.models import Session as DBSession
+from app.privacy.consent_service import require_patient_consents
 from app.schemas.chat import (
     ChatHistoryResponse,
     MessageCreate,
@@ -32,6 +33,7 @@ from app.services.interview_controller import interview_controller
 from app.services.interview_flow import InterviewStage
 from app.services.llm_service import llm_service
 from app.services.medical_storage import save_summary
+from app.services.platform_identity_service import create_intake_encounter_for_patient
 from app.services.soap_task import run_soap_generation
 from app.services.summary_builder import summary_builder
 
@@ -115,11 +117,27 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """ایجاد جلسه جدید مصاحبه پزشکی"""
+    """ایجاد جلسه جدید مصاحبه پزشکی — patients only."""
+    if not is_patient(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only patients can create chat sessions",
+        )
+
+    await require_patient_consents(db, current_user)
+
+    encounter = await create_intake_encounter_for_patient(
+        db,
+        patient=current_user,
+        chief_complaint=data.initial_complaint,
+    )
+
     new_session = DBSession(
         patient_id=current_user.id,
         status="active",
         initial_complaint=data.initial_complaint,
+        encounter_id=encounter.id,
+        organization_id=encounter.organization_id,
     )
 
     db.add(new_session)
@@ -242,27 +260,44 @@ async def submit_session(
 async def send_message(
     session_id: int,
     data: MessageCreate,
+    request: Request,
     _: None = Depends(chat_rate_limit),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """ارسال پیام کاربر و دریافت پاسخ از LLM"""
+    """ارسال پیام کاربر و دریافت پاسخ از LLM.
+
+    Message submission is restricted to the patient owner of the session.
+    Doctors and admins retain read access via GET /api/chat/{session_id}.
+    """
+    client_ip = request.client.host if request.client else None
+    session = await get_authorized_session(
+        db,
+        session_id,
+        current_user,
+        claim=False,
+        ip_address=client_ip,
+    )
+    if not is_patient(current_user) or session.patient_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="فقط بیمار صاحب نشست می‌تواند پیام ارسال کند",
+        )
+
+    await require_patient_consents(db, current_user)
+
+    # Reload with summary for downstream logic.
     result = await db.execute(
         select(DBSession)
         .options(selectinload(DBSession.summary))
-        .where(DBSession.id == session_id)
+        .where(DBSession.id == session.id)
     )
-    session = result.scalar_one_or_none()
-
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if current_user.role == "patient" and session.patient_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
+    session = result.scalar_one()
 
     try:
         user_message = Message(
             session_id=session_id,
+            organization_id=session.organization_id,
             role="user",
             content=data.content,
         )
@@ -335,6 +370,7 @@ async def send_message(
     try:
         assistant_message = Message(
             session_id=session_id,
+            organization_id=session.organization_id,
             role="assistant",
             content=ai_response,
         )

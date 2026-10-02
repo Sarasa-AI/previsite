@@ -9,7 +9,9 @@ from sqlalchemy.exc import OperationalError
 from app.auth.security import get_password_hash
 from app.core.config import settings
 from app.db.database import Base, engine, get_async_session
-from app.models.user import User, UserRole
+from datetime import datetime, timezone
+
+from app.models.user import DoctorVerificationStatus, User, UserRole
 from scripts.seed_drugs import seed_drugs
 
 logger = logging.getLogger(__name__)
@@ -89,7 +91,24 @@ async def _seed_default_doctor() -> None:
     async with get_async_session() as db:
         try:
             result = await db.execute(select(User).where(User.email == email))
-            if result.scalar_one_or_none():
+            existing = result.scalar_one_or_none()
+            if existing:
+                if existing.role == UserRole.DOCTOR and (
+                    existing.verification_status is None
+                    or existing.verification_status == DoctorVerificationStatus.PENDING
+                ):
+                    existing.verification_status = DoctorVerificationStatus.VERIFIED
+                    existing.verified_at = existing.verified_at or datetime.now(
+                        timezone.utc
+                    )
+                    from app.services.platform_identity_service import (
+                        ensure_doctor_profile,
+                        ensure_staff_membership,
+                    )
+
+                    await ensure_doctor_profile(db, existing)
+                    await ensure_staff_membership(db, existing)
+                    await db.commit()
                 return
             doctor = User(
                 email=email,
@@ -97,8 +116,18 @@ async def _seed_default_doctor() -> None:
                 hashed_password=get_password_hash(password),
                 role=UserRole.DOCTOR,
                 is_active=True,
+                verification_status=DoctorVerificationStatus.VERIFIED,
+                verified_at=datetime.now(timezone.utc),
             )
             db.add(doctor)
+            await db.flush()
+            from app.services.platform_identity_service import (
+                ensure_doctor_profile,
+                ensure_staff_membership,
+            )
+
+            await ensure_doctor_profile(db, doctor)
+            await ensure_staff_membership(db, doctor)
             await db.commit()
             logger.info("Default doctor account seeded email=%s", email)
         except Exception:

@@ -7,6 +7,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     status,
 )
@@ -16,13 +17,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.auth.session_access import get_authorized_session
+from app.auth.session_access import get_authorized_session, is_admin
 from app.core.observability.context import get_correlation_id
+from app.core.rate_limiter import file_upload_rate_limit
 from app.db.database import get_db
 from app.models import File as FileModel
 from app.models import Session as SessionModel
 from app.models import User
 from app.schemas.intake import FileConditionLink
+from app.services.audit_service import (
+    AUDIT_ADMIN_CLINICAL_READ,
+    AUDIT_FILE_DOWNLOAD,
+    AUDIT_FILE_LIST,
+    AUDIT_FILE_UPLOAD,
+    record_request_audit,
+)
 from app.services.document_pipeline import trigger_document_processing
 from app.services.file_processor import file_processor
 from app.services.medical_overview_service import (
@@ -54,12 +63,14 @@ async def _get_authorized_session(
 @router.post("/{session_id}/upload")
 async def upload_file(
     session_id: int,
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     condition_id: str | None = Form(default=None),
     condition_type: str | None = Form(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(file_upload_rate_limit),
 ) -> Dict:
     """آپلود فایل برای یک session"""
     await _get_authorized_session(db, session_id, current_user)
@@ -85,8 +96,14 @@ async def upload_file(
     try:
         file_data = await file_processor.save_file(file, session_id)
 
+        session_row = await db.execute(
+            select(SessionModel).where(SessionModel.id == session_id)
+        )
+        session_obj = session_row.scalar_one_or_none()
+
         db_file = FileModel(
             session_id=session_id,
+            organization_id=session_obj.organization_id if session_obj else None,
             filename=file_data["filename"],
             s3_key=file_data["s3_key"],
             size_bytes=file_data["file_size"],
@@ -204,12 +221,21 @@ async def upload_file(
         db_file.id,
         correlation_id=get_correlation_id(),
     )
+    await record_request_audit(
+        db,
+        action=AUDIT_FILE_UPLOAD,
+        user_id=current_user.id,
+        resource_type="file",
+        resource_id=db_file.id,
+        request=request,
+    )
     return response
 
 
 @router.get("/{session_id}/list", response_model=List[Dict])
 async def list_files(
     session_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -220,6 +246,23 @@ async def list_files(
         select(FileModel).where(FileModel.session_id == session_id)
     )
     files = files_result.scalars().all()
+    await record_request_audit(
+        db,
+        action=AUDIT_FILE_LIST,
+        user_id=current_user.id,
+        resource_type="session",
+        resource_id=session_id,
+        request=request,
+    )
+    if is_admin(current_user):
+        await record_request_audit(
+            db,
+            action=AUDIT_ADMIN_CLINICAL_READ,
+            user_id=current_user.id,
+            resource_type="session",
+            resource_id=session_id,
+            request=request,
+        )
     return [
         {
             "id": f.id,
@@ -279,6 +322,7 @@ async def link_file_to_condition(
 @router.get("/download/{file_id}")
 async def download_file(
     file_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -299,6 +343,15 @@ async def download_file(
 
     await get_authorized_session(
         db, session.id, current_user, claim=True, not_found_as_403=False
+    )
+
+    await record_request_audit(
+        db,
+        action=AUDIT_FILE_DOWNLOAD,
+        user_id=current_user.id,
+        resource_type="file",
+        resource_id=file_id,
+        request=request,
     )
 
     if getattr(storage_service, "is_local", False):

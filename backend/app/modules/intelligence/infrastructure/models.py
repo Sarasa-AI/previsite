@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
+from sqlalchemy.types import Uuid
 
 from app.db.database import Base
 
@@ -20,6 +21,9 @@ class ClinicalFindingRecord(Base):
         ForeignKey("sessions.id"),
         nullable=False,
         index=True,
+    )
+    organization_id = Column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True
     )
     category = Column(String(64), nullable=False, index=True)
     severity = Column(String(32), nullable=False)
@@ -52,6 +56,9 @@ class RiskSignalRecord(Base):
         nullable=False,
         index=True,
     )
+    organization_id = Column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True
+    )
     risk_key = Column(String(128), nullable=False, index=True)
     level = Column(String(32), nullable=False)
     title = Column(String(512), nullable=False)
@@ -79,6 +86,9 @@ class RecommendationRecord(Base):
         ForeignKey("sessions.id"),
         nullable=False,
         index=True,
+    )
+    organization_id = Column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True
     )
     kind = Column(String(64), nullable=False)
     title = Column(String(512), nullable=False)

@@ -21,6 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.types import Uuid
 
 from app.db.database import Base
 
@@ -58,6 +59,9 @@ class DocumentArtifact(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(
         Integer, ForeignKey("sessions.id"), nullable=False, index=True
+    )
+    organization_id = Column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True
     )
     file_id = Column(Integer, ForeignKey("files.id"), nullable=False, index=True)
 

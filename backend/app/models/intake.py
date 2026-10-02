@@ -1,6 +1,7 @@
 from sqlalchemy import Boolean, Column, Integer, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.types import Uuid
 
 from app.db.database import Base
 
@@ -10,6 +11,9 @@ class Intake(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False, unique=True)
+    organization_id = Column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True
+    )
 
     current_layer = Column(Integer, default=1, nullable=False)
     demographics_json = Column(Text, nullable=True)

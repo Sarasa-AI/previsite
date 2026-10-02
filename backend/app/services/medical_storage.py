@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Summary
+from app.models import Session as DBSession
 
 
 async def save_summary(
@@ -18,7 +19,14 @@ async def save_summary(
     summary = result.scalar_one_or_none()
 
     if not summary:
-        summary = Summary(session_id=session_id)
+        session_result = await db.execute(
+            select(DBSession).where(DBSession.id == session_id)
+        )
+        session = session_result.scalar_one_or_none()
+        summary = Summary(
+            session_id=session_id,
+            organization_id=session.organization_id if session else None,
+        )
         db.add(summary)
 
     summary.chief_complaint = data.get("chief_complaint")

@@ -137,7 +137,10 @@ async def run_soap_generation(
                             conflicts,
                         )
                     else:
-                        summary = Summary(session_id=session_id)
+                        summary = Summary(
+                            session_id=session_id,
+                            organization_id=session.organization_id,
+                        )
                         _archive_soap_to_legacy(
                             summary,
                             soap_note_content,

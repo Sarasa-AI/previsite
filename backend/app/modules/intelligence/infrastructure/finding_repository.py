@@ -98,10 +98,20 @@ class SqlAlchemyFindingRepository:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
 
+    async def _session_organization_id(self, session_id: int):
+        from app.models import Session as DBSession
+
+        result = await self._db.execute(
+            select(DBSession.organization_id).where(DBSession.id == session_id)
+        )
+        return result.scalar_one_or_none()
+
     async def save_finding(self, finding: ClinicalFinding) -> ClinicalFinding:
+        org_id = await self._session_organization_id(finding.session_id)
         row = ClinicalFindingRecord(
             finding_id=finding.finding_id,
             session_id=finding.session_id,
+            organization_id=org_id,
             category=finding.category.value,
             severity=finding.severity.value,
             title=finding.title,
@@ -140,9 +150,11 @@ class SqlAlchemyFindingRepository:
         return tuple(self._finding_to_domain(row) for row in rows)
 
     async def save_risk_signal(self, risk: RiskSignal) -> RiskSignal:
+        org_id = await self._session_organization_id(risk.session_id)
         row = RiskSignalRecord(
             risk_id=risk.risk_id,
             session_id=risk.session_id,
+            organization_id=org_id,
             risk_key=risk.risk_key,
             level=risk.level.value,
             title=risk.title,
@@ -169,9 +181,11 @@ class SqlAlchemyFindingRepository:
     async def save_recommendation(
         self, recommendation: Recommendation
     ) -> Recommendation:
+        org_id = await self._session_organization_id(recommendation.session_id)
         row = RecommendationRecord(
             recommendation_id=recommendation.recommendation_id,
             session_id=recommendation.session_id,
+            organization_id=org_id,
             kind=recommendation.kind.value,
             title=recommendation.title,
             rationale=recommendation.rationale,

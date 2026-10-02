@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
+from sqlalchemy.types import Uuid
 
 from app.db.database import Base
 
@@ -19,6 +20,9 @@ class WorkflowEventRecord(Base):
         ForeignKey("sessions.id"),
         nullable=False,
         index=True,
+    )
+    organization_id = Column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True
     )
     actor_user_id = Column(
         Integer,

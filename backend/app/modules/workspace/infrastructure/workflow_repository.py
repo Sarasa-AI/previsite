@@ -32,8 +32,15 @@ class SqlAlchemyWorkflowEventRepository:
         context_hash: str | None = None,
         payload: dict[str, Any] | None = None,
     ) -> WorkflowEvent:
+        from app.models import Session as DBSession
+
+        sess_result = await self._db.execute(
+            select(DBSession.organization_id).where(DBSession.id == session_id)
+        )
+        org_id = sess_result.scalar_one_or_none()
         row = WorkflowEventRecord(
             session_id=session_id,
+            organization_id=org_id,
             actor_user_id=actor_user_id,
             event_type=event_type.value,
             object_id=object_id,
