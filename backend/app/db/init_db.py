@@ -1,12 +1,156 @@
+import asyncio
 import logging
+import secrets
+import sys
 
-from app.db.database import Base, engine
-from app.models import User, Session, Message, File, Summary
+from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
+
+from app.auth.security import get_password_hash
+from app.core.config import settings
+from app.db.database import Base, engine, get_async_session
+from datetime import datetime, timezone
+
+from app.models.user import DoctorVerificationStatus, User, UserRole
+from scripts.seed_drugs import seed_drugs
 
 logger = logging.getLogger(__name__)
 
+MAX_RETRIES = 5
+RETRY_DELAY_SECONDS = 3
 
-def init_db():
-    """Create all database tables"""
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created successfully")
+
+async def _wait_for_database() -> None:
+    """Wait until the database accepts connections, or exit after retries."""
+    last_error: Exception | None = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info(
+                "Database connection established (attempt %s/%s)",
+                attempt,
+                MAX_RETRIES,
+            )
+            return
+        except OperationalError as exc:
+            last_error = exc
+            logger.warning(
+                "Database not available (attempt %s/%s): %s",
+                attempt,
+                MAX_RETRIES,
+                exc,
+            )
+            if attempt < MAX_RETRIES:
+                await asyncio.sleep(RETRY_DELAY_SECONDS)
+
+    logger.critical(
+        "Failed to connect to database after %s attempts",
+        MAX_RETRIES,
+        exc_info=last_error,
+    )
+    sys.exit(1)
+
+
+def _resolve_seed_doctor_password() -> str:
+    """Return seed password from env, or generate one for non-production."""
+    configured = (settings.seed_doctor_password or "").strip()
+    if configured:
+        return configured
+
+    env = (settings.app_env or "").strip().lower()
+    if env == "production":
+        raise SystemExit(
+            "FATAL: SEED_DOCTOR_PASSWORD must be set when APP_ENV/ENVIRONMENT=production."
+        )
+
+    generated = secrets.token_urlsafe(18)
+    if env in {"development", "staging", "test", ""}:
+        logger.warning(
+            "SEED_DOCTOR_PASSWORD was not set; generated a temporary password for "
+            "the default doctor account (%s). "
+            "Copy it now — it will not be shown again: %s",
+            settings.seed_doctor_username,
+            generated,
+        )
+    else:
+        logger.warning(
+            "SEED_DOCTOR_PASSWORD was not set; generated a temporary password "
+            "(not printed because APP_ENV=%s).",
+            settings.app_env,
+        )
+    return generated
+
+
+async def _seed_default_doctor() -> None:
+    username = (settings.seed_doctor_username or "bagherzade").strip() or "bagherzade"
+    email = f"{username}@doctor.com"
+    password = _resolve_seed_doctor_password()
+
+    async with get_async_session() as db:
+        try:
+            result = await db.execute(select(User).where(User.email == email))
+            existing = result.scalar_one_or_none()
+            if existing:
+                if existing.role == UserRole.DOCTOR and (
+                    existing.verification_status is None
+                    or existing.verification_status == DoctorVerificationStatus.PENDING
+                ):
+                    existing.verification_status = DoctorVerificationStatus.VERIFIED
+                    existing.verified_at = existing.verified_at or datetime.now(
+                        timezone.utc
+                    )
+                    from app.services.platform_identity_service import (
+                        ensure_doctor_profile,
+                        ensure_staff_membership,
+                    )
+
+                    await ensure_doctor_profile(db, existing)
+                    await ensure_staff_membership(db, existing)
+                    await db.commit()
+                return
+            doctor = User(
+                email=email,
+                full_name=username,
+                hashed_password=get_password_hash(password),
+                role=UserRole.DOCTOR,
+                is_active=True,
+                verification_status=DoctorVerificationStatus.VERIFIED,
+                verified_at=datetime.now(timezone.utc),
+            )
+            db.add(doctor)
+            await db.flush()
+            from app.services.platform_identity_service import (
+                ensure_doctor_profile,
+                ensure_staff_membership,
+            )
+
+            await ensure_doctor_profile(db, doctor)
+            await ensure_staff_membership(db, doctor)
+            await db.commit()
+            logger.info("Default doctor account seeded email=%s", email)
+        except Exception:
+            await db.rollback()
+            logger.exception("Failed to seed default doctor account")
+
+
+async def init_db() -> None:
+    """Ensure DB is reachable, optionally create schema in non-production, then seed."""
+    await _wait_for_database()
+
+    env = (settings.app_env or "").strip().lower()
+    # create_all hides migration drift in production — Alembic is source of truth there.
+    if env in {"development", "dev", "test", "testing", "staging", ""}:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Schema ensured via create_all (APP_ENV=%s)", settings.app_env)
+    else:
+        logger.info(
+            "Skipping create_all in APP_ENV=%s; rely on alembic upgrade head",
+            settings.app_env,
+        )
+
+    await _seed_default_doctor()
+    await seed_drugs(refresh_matcher=False)
+    logger.info("Database initialization finished")

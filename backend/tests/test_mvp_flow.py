@@ -1,81 +1,59 @@
 from io import BytesIO
 
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 import app.api.chat as chat_api
-import app.db.database as database_module
-import app.db.init_db as init_db_module
-from app.db.database import Base, get_db
 from app.main import app as fastapi_app
-import app.models.summary
+from tests.auth_helpers import national_id_from_seed as _national_id_from_seed
+from tests.auth_helpers import register_and_login as _register_and_login
 
 
-def _create_client(tmp_path, monkeypatch) -> TestClient:
-    db_path = tmp_path / "test_mvp.db"
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        connect_args={"check_same_thread": False},
-    )
-    testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+def _create_client(tmp_path, monkeypatch):
+    import asyncio
 
-    monkeypatch.setattr(database_module, "engine", engine)
-    monkeypatch.setattr(database_module, "SessionLocal", testing_session_local)
-    monkeypatch.setattr(init_db_module, "engine", engine)
+    from tests.conftest import setup_async_test_db, teardown_test_db
 
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-
-    def override_get_db():
-        db = testing_session_local()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    fastapi_app.dependency_overrides[get_db] = override_get_db
-
+    engine = asyncio.run(setup_async_test_db(tmp_path, monkeypatch))
     client = TestClient(fastapi_app)
+
+    def cleanup():
+        teardown_test_db()
+        asyncio.run(engine.dispose())
+        client.close()
+
+    client._async_cleanup = cleanup  # type: ignore[attr-defined]
     return client
 
 
-def _register_and_login(client: TestClient, *, email: str, password: str, full_name: str) -> str:
-    register_response = client.post(
-        "/api/auth/register",
-        json={
-            "email": email,
-            "password": password,
-            "full_name": full_name,
-            "role": "patient",
-        },
-    )
-    assert register_response.status_code == 200
+@pytest.mark.parametrize("supplied_role", ["doctor", "admin", "visitor", "superuser"])
+def test_register_ignores_client_role_and_creates_patient(
+    tmp_path, monkeypatch, supplied_role: str
+) -> None:
+    """OTP registration always creates a patient (role forced server-side)."""
+    from app.services.sms import get_test_sms_provider, reset_test_sms_provider
+    from tests.auth_helpers import phone_from_seed
 
-    login_response = client.post(
-        "/api/auth/login",
-        json={"email": email, "password": password},
-    )
-    assert login_response.status_code == 200
-    return login_response.json()["access_token"]
-
-
-def test_register_rejects_invalid_role(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
+    try:
+        reset_test_sms_provider()
+        phone = phone_from_seed(f"role-escalation-{supplied_role}")
 
-    response = client.post(
-        "/api/auth/register",
-        json={
-            "email": "bad-role@example.com",
-            "password": "VeryStrongPassword123!",
-            "full_name": "Bad Role",
-            "role": "visitor",
-        },
-    )
-
-    assert response.status_code == 422
-    fastapi_app.dependency_overrides.clear()
-    client.close()
+        req = client.post("/api/auth/otp/request", json={"phone": phone})
+        assert req.status_code == 200, req.text
+        code = get_test_sms_provider().last_code_for(phone)
+        assert code
+        ver = client.post(
+            "/api/auth/otp/verify",
+            json={"phone": phone, "code": code},
+        )
+        assert ver.status_code == 200, ver.text
+        token = ver.json()["access_token"]
+        me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert me.status_code == 200
+        assert me.json()["role"] == "patient"
+    finally:
+        client._async_cleanup()  # type: ignore[attr-defined]
 
 
 def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> None:
@@ -100,7 +78,7 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
             "assessment": "شرح حال اولیه ثبت شد.",
         }
 
-    async def fake_chat(_messages, system_prompt=None):
+    async def fake_chat(_messages, system_prompt=None, **kwargs):
         if len(_messages) == 1:
             return "شدت سردرد از ۱ تا ۱۰ چقدر است؟"
         elif len(_messages) == 3:
@@ -111,23 +89,36 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
             return "ممنون از همکاری شما. اطلاعات کافی جمع‌آوری شد."
         return "پاسخ پیش‌فرض"
 
-    async def fake_generate_soap_note(**_kwargs):
-        return {
-            "status": "success",
-            "provider": "test",
-            "soap_note": "# SOAP\n\nS: سردرد شدید\n\nA: نیاز به ارزیابی پزشک",
-        }
+    async def fake_run_soap_generation(
+        session_id: int,
+        correlation_id: str | None = None,
+        entry: str = "unknown",
+    ) -> None:
+        from sqlalchemy import select
 
-    monkeypatch.setattr(chat_api.medical_extractor, "extract", fake_extract)
+        from app.db.database import get_async_session
+        from app.models import Summary as SummaryModel
+
+        async with get_async_session() as db:
+            result = await db.execute(
+                select(SummaryModel).where(SummaryModel.session_id == session_id)
+            )
+            summary = result.scalar_one_or_none()
+            soap = "# SOAP\n\nS: سردرد شدید\n\nA: نیاز به ارزیابی پزشک"
+            if summary:
+                summary.soap_note = soap
+            else:
+                db.add(SummaryModel(session_id=session_id, soap_note=soap))
+            await db.commit()
+
     monkeypatch.setattr(chat_api.summary_builder, "build_summary", fake_build_summary)
     monkeypatch.setattr(chat_api.llm_service, "chat", fake_chat)
-    monkeypatch.setattr(chat_api.soap_generator, "generate_soap_note", fake_generate_soap_note)
+    monkeypatch.setattr(chat_api, "run_soap_generation", fake_run_soap_generation)
 
     token = _register_and_login(
         client,
-        email="patient@example.com",
+        seed="Patient One",
         password="VeryStrongPassword123!",
-        full_name="Patient One",
     )
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -185,7 +176,18 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
         headers=headers,
     )
     assert upload_response.status_code == 200
-    assert upload_response.json()["filename"] == "report.txt"
+    upload_body = upload_response.json()
+    assert upload_body["filename"] == "report.txt"
+    assert upload_body["file_path"].startswith(f"{session_id}/")
+
+    file_id = upload_body["id"]
+    download_response = client.get(
+        f"/api/files/download/{file_id}",
+        headers=headers,
+        follow_redirects=False,
+    )
+    assert download_response.status_code == 307
+    assert "fake-storage.example" in download_response.headers["location"]
 
     summary_exists_response = client.get(
         f"/api/summary/session/{session_id}/exists",
@@ -194,23 +196,24 @@ def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> Non
     assert summary_exists_response.status_code == 200
     assert summary_exists_response.json() == {"exists": True}
 
+    submit_response = client.post(f"/api/chat/{session_id}/submit", headers=headers)
+    assert submit_response.status_code == 200
+
     summary_response = client.get(f"/api/summary/{session_id}", headers=headers)
     assert summary_response.status_code == 200
     body = summary_response.json()
     assert body["medical_data"]["past_medical_history"] == "میگرن"
     assert body["soap_note"].startswith("# SOAP")
 
-    fastapi_app.dependency_overrides.clear()
-    client.close()
+    client._async_cleanup()
 
 
 def test_upload_invalid_extension_returns_400(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
     token = _register_and_login(
         client,
-        email="upload@example.com",
+        seed="Upload User",
         password="VeryStrongPassword123!",
-        full_name="Upload User",
     )
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -230,8 +233,7 @@ def test_upload_invalid_extension_returns_400(tmp_path, monkeypatch) -> None:
     assert response.status_code == 400
     assert "فرمت فایل مجاز نیست" in response.json()["detail"]
 
-    fastapi_app.dependency_overrides.clear()
-    client.close()
+    client._async_cleanup()
 
 
 def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> None:
@@ -247,7 +249,7 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
             "assessment": "ثبت شد.",
         }
 
-    async def fake_chat(_messages):
+    async def fake_chat(_messages, **kwargs):
         return "آیا علامت دیگری هم دارید؟"
 
     monkeypatch.setattr(chat_api.summary_builder, "build_summary", fake_build_summary)
@@ -255,9 +257,8 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
 
     owner_token = _register_and_login(
         client,
-        email="owner@example.com",
+        seed="Owner",
         password="VeryStrongPassword123!",
-        full_name="Owner",
     )
     owner_headers = {"Authorization": f"Bearer {owner_token}"}
 
@@ -276,9 +277,8 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
 
     other_token = _register_and_login(
         client,
-        email="other@example.com",
+        seed="Other User",
         password="VeryStrongPassword123!",
-        full_name="Other User",
     )
     other_headers = {"Authorization": f"Bearer {other_token}"}
 
@@ -289,5 +289,40 @@ def test_summary_exists_requires_session_ownership(tmp_path, monkeypatch) -> Non
 
     assert response.status_code == 403
 
-    fastapi_app.dependency_overrides.clear()
-    client.close()
+    client._async_cleanup()
+
+
+def test_list_sessions_includes_patient_name_for_doctor(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+
+    patient_token = _register_and_login(
+        client,
+        seed="Named Patient",
+        password="VeryStrongPassword123!",
+    )
+    patient_headers = {"Authorization": f"Bearer {patient_token}"}
+
+    session_response = client.post(
+        "/api/chat/session",
+        json={"initial_complaint": "سردرد"},
+        headers=patient_headers,
+    )
+    assert session_response.status_code == 200
+
+    doctor_login = client.post(
+        "/api/auth/login",
+        json={"email": "bagherzade@doctor.com", "password": "0808"},
+    )
+    assert doctor_login.status_code == 200, doctor_login.text
+    doctor_headers = {"Authorization": f"Bearer {doctor_login.json()['access_token']}"}
+
+    sessions_response = client.get("/api/chat/sessions", headers=doctor_headers)
+    assert sessions_response.status_code == 200
+    sessions = sessions_response.json()
+    assert len(sessions) >= 1
+    matching = [s for s in sessions if s["initial_complaint"] == "سردرد"]
+    assert matching
+    assert matching[0]["patient_name"]
+    assert matching[0]["patient_id"] > 0
+
+    client._async_cleanup()

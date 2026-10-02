@@ -10,8 +10,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Python packaging dirs (root only — do not ignore frontend/lib)
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -28,6 +29,7 @@ ENV/
 # Database
 *.db
 *.db.bak
+!backend/data/darooyab.db
 
 # Frontend
 node_modules/
@@ -54,7 +56,21 @@ error
 
 # Test results
 test-results/
+backend/.coverage
+backend/.coverage.*
+backend/coverage.xml
+frontend/coverage/
 
 # Environment files
 backend/.env
 frontend/.env
+frontend/.env.local
+.env.local
+*.env.local
+
+# Local API test scripts (may contain tokens)
+api_gemini.py
+
+# Local env backups (never commit)
+*.env.bak
+backend/.env.bak

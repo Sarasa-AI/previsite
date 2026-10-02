@@ -1,0 +1,319 @@
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from app.schemas.clinical_context import ClinicalContext
+from app.schemas.medical import MedicalSummary
+from app.services.soap_generator import SOAPNoteGenerator
+
+
+def _sample_summary(**overrides) -> MedicalSummary:
+    base = {
+        "chief_complaint": "Chest pain",
+        "symptoms": ["chest pain", "shortness of breath"],
+        "symptom_duration": "2 days",
+        "symptom_severity": "moderate",
+        "additional_notes": "Patient reports substernal chest pain radiating to left arm.",
+    }
+    base.update(overrides)
+    return MedicalSummary(**base)
+
+
+def _sample_clinical_context(**overrides) -> ClinicalContext:
+    base = {
+        "session_id": 1,
+        "patient_id": 1,
+        "summary": _sample_summary(),
+    }
+    base.update(overrides)
+    if "summary" in overrides and isinstance(overrides["summary"], dict):
+        base["summary"] = _sample_summary(**overrides["summary"])
+    return ClinicalContext(**base)
+
+
+def _rag_results() -> list[dict]:
+    return [
+        {
+            "content": "Acute coronary syndrome may present with substernal chest pain.",
+            "source": "Harrison's Internal Medicine",
+            "confidence": 0.91,
+        },
+        {
+            "content": "ECG and troponin are first-line diagnostics for chest pain.",
+            "source": "ACC Guidelines 2024",
+            "confidence": 0.84,
+        },
+        {
+            "content": "Aspirin 325 mg is recommended unless contraindicated.",
+            "source": "AHA Chest Pain Protocol",
+            "confidence": 0.79,
+        },
+    ]
+
+
+class TestPatientHpiExtraction:
+    def test_prefers_additional_notes(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        summary = _sample_summary(additional_notes="Detailed HPI narrative.")
+
+        assert generator._extract_patient_hpi(summary) == "Detailed HPI narrative."
+
+    def test_falls_back_to_structured_fields(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        summary = _sample_summary(additional_notes=None)
+
+        hpi = generator._extract_patient_hpi(summary)
+
+        assert "Chest pain" in hpi
+        assert "chest pain, shortness of breath" in hpi
+        assert "2 days" in hpi
+
+    def test_falls_back_to_chief_complaint(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        summary = MedicalSummary(chief_complaint="Headache")
+
+        assert generator._extract_patient_hpi(summary) == "Headache"
+
+    def test_uses_general_presentation_when_empty(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        summary = MedicalSummary()
+
+        assert generator._extract_patient_hpi(summary) == "general clinical presentation"
+
+
+class TestMedicalEvidenceFormatting:
+    def test_formats_numbered_evidence_block(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        block = generator._format_medical_evidence(_rag_results())
+
+        assert block.startswith("### Medical Evidence:")
+        assert "[1] Harrison's Internal Medicine:" in block
+        assert "[2] ACC Guidelines 2024:" in block
+        assert "[3] AHA Chest Pain Protocol:" in block
+
+    def test_uses_unknown_source_when_missing(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        block = generator._format_medical_evidence([{"content": "Some evidence", "source": None}])
+
+        assert "[1] Unknown source: Some evidence" in block
+
+    def test_returns_empty_string_for_no_results(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+
+        assert generator._format_medical_evidence([]) == ""
+
+
+class TestCitationMapping:
+    def test_builds_one_indexed_citations(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = generator._build_citations(_rag_results())
+
+        assert len(citations) == 3
+        assert citations[0]["index"] == 1
+        assert citations[0]["source"] == "Harrison's Internal Medicine"
+        assert citations[0]["content"].startswith("Acute coronary syndrome")
+        assert citations[0]["confidence"] == 0.91
+
+
+@pytest.mark.asyncio
+async def test_generate_soap_note_includes_evidence_and_citations():
+    mock_rag = MagicMock()
+    mock_rag.search_similar_knowledge = AsyncMock(return_value=_rag_results())
+
+    generator = SOAPNoteGenerator(rag_service=mock_rag)
+    generator.openrouter_client = MagicMock()
+
+    captured_messages = {}
+
+    async def fake_create(**kwargs):
+        captured_messages["messages"] = kwargs["messages"]
+        response = MagicMock()
+        response.choices = [MagicMock(message=MagicMock(content="# SOAP\n\nA: Acute coronary syndrome may present with substernal chest pain [1]"))]
+        return response
+
+    generator.openrouter_client.chat.completions.create = AsyncMock(side_effect=fake_create)
+
+    summary = _sample_summary()
+    db = MagicMock()
+
+    result = await generator.generate_soap_note(
+        clinical_context=_sample_clinical_context(summary=summary),
+        db=db,
+    )
+
+    assert result["status"] == "success"
+    assert result["soap_note"].startswith("# SOAP")
+    assert len(result["citations"]) == 3
+    assert result["citations"][0]["index"] == 1
+    assert result["verification_status"] == "verified"
+    assert result["citations"][0]["verification_status"] == "verified"
+
+    user_content = captured_messages["messages"][1]["content"]
+    assert "### Medical Evidence:" in user_content
+    assert "[1] Harrison's Internal Medicine:" in user_content
+
+    mock_rag.search_similar_knowledge.assert_awaited_once()
+    call_kwargs = mock_rag.search_similar_knowledge.await_args.kwargs
+    assert call_kwargs["query"] == summary.additional_notes
+
+
+@pytest.mark.asyncio
+async def test_generate_soap_note_gracefully_degrades_when_rag_fails():
+    mock_rag = MagicMock()
+    mock_rag.search_similar_knowledge = AsyncMock(side_effect=RuntimeError("embedding unavailable"))
+
+    generator = SOAPNoteGenerator(rag_service=mock_rag)
+    generator.openrouter_client = MagicMock()
+
+    captured_messages = {}
+
+    async def fake_create(**kwargs):
+        captured_messages["messages"] = kwargs["messages"]
+        response = MagicMock()
+        response.choices = [MagicMock(message=MagicMock(content="# SOAP\n\nA: Clinical impression"))]
+        return response
+
+    generator.openrouter_client.chat.completions.create = AsyncMock(side_effect=fake_create)
+
+    result = await generator.generate_soap_note(
+        clinical_context=_sample_clinical_context(),
+        db=MagicMock(),
+    )
+
+    assert result["status"] == "success"
+    assert result["citations"] == []
+    assert result["verification_status"] == "verified"
+    assert "### Medical Evidence:" not in captured_messages["messages"][1]["content"]
+
+
+def _build_citations_from_rag() -> list[dict]:
+    generator = SOAPNoteGenerator(rag_service=MagicMock())
+    return generator._build_citations(_rag_results())
+
+
+class TestCitationVerification:
+    @pytest.mark.asyncio
+    async def test_verify_citations_valid_marker(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Acute coronary syndrome may present with substernal chest pain [1]"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert result.verification_status == "verified"
+        assert result.citations[0]["verification_status"] == "verified"
+        assert result.citations[0]["verified"] is True
+        assert result.citations[0]["marker"] == "[1]"
+        assert result.citations[0]["source_title"] == "Harrison's Internal Medicine"
+        assert result.citations[0]["source_excerpt"]
+        assert result.citations[0]["similarity_score"] is not None
+        assert result.citations[0]["similarity_score"] >= 0.35
+        assert "[1]" in result.content
+
+    @pytest.mark.asyncio
+    async def test_verify_citations_invalid_index_kept_as_unverified(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Unsupported claim [9]"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert result.verification_status == "unverified"
+        assert "[9]" in result.content
+        hallucinated = next(c for c in result.citations if c["index"] == 9)
+        assert hallucinated["verification_status"] == "unverified"
+        assert hallucinated["verified"] is False
+        assert hallucinated["marker"] == "[9]"
+        assert hallucinated["similarity_score"] is None
+
+    @pytest.mark.asyncio
+    async def test_verify_citations_low_similarity(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Patient should start daily yoga and meditation [1]"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert result.citations[0]["verification_status"] == "unverified"
+        assert result.citations[0]["verified"] is False
+        assert "[1]" in result.content
+        assert result.citations[0]["similarity_score"] is not None
+        assert result.citations[0]["similarity_score"] < 0.35
+        assert result.verification_status in {"partially_verified", "unverified"}
+
+    @pytest.mark.asyncio
+    async def test_verify_citations_unused_evidence(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Clinical impression without citations"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert result.verification_status == "verified"
+        assert all(c["verification_status"] == "unused" for c in result.citations)
+        assert all(c["verified"] is False for c in result.citations)
+        assert all(c["similarity_score"] is None for c in result.citations)
+
+    @pytest.mark.asyncio
+    async def test_icd10_not_treated_as_citation(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = _build_citations_from_rag()
+        note = "A: Diagnosis [ICD-10: I21.9] acute MI"
+
+        result = await generator._apply_citation_verification(note, citations)
+
+        assert "[ICD-10: I21.9]" in result.content
+        assert result.verification_status == "verified"
+
+    @pytest.mark.asyncio
+    async def test_verify_citations_keeps_markers_when_no_rag_evidence(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        note = "A: Hallucinated reference [1]"
+
+        result = await generator._apply_citation_verification(note, [])
+
+        assert result.verification_status == "unverified"
+        assert "[1]" in result.content
+        assert result.citations[0]["verified"] is False
+        assert result.citations[0]["marker"] == "[1]"
+
+    def test_build_citations_includes_ui_fields(self):
+        generator = SOAPNoteGenerator(rag_service=MagicMock())
+        citations = generator._build_citations(_rag_results())
+
+        assert citations[0]["marker"] == "[1]"
+        assert citations[0]["source_title"] == "Harrison's Internal Medicine"
+        assert citations[0]["source_excerpt"].startswith("Acute coronary syndrome")
+        assert citations[0]["verified"] is False
+        assert citations[0]["similarity_score"] is None
+
+
+@pytest.mark.asyncio
+async def test_generate_soap_note_returns_verification_status():
+    mock_rag = MagicMock()
+    mock_rag.search_similar_knowledge = AsyncMock(return_value=_rag_results())
+
+    generator = SOAPNoteGenerator(rag_service=mock_rag)
+    generator.openrouter_client = MagicMock()
+
+    async def fake_create(**kwargs):
+        response = MagicMock()
+        response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content="# SOAP\n\nA: Acute coronary syndrome may present with substernal chest pain [1]"
+                )
+            )
+        ]
+        return response
+
+    generator.openrouter_client.chat.completions.create = AsyncMock(side_effect=fake_create)
+
+    result = await generator.generate_soap_note(
+        clinical_context=_sample_clinical_context(),
+        db=MagicMock(),
+    )
+
+    assert result["status"] == "success"
+    assert result["verification_status"] == "verified"
+    assert "[1]" in result["soap_note"]

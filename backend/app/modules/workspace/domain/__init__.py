@@ -1,0 +1,51 @@
+"""Immutable workspace domain objects."""
+
+from app.modules.workspace.domain.enums import (
+    AttentionSlot,
+    ClinicalObjectId,
+    PriorityLevel,
+    ReasonCode,
+    RoleProfile,
+    SizeHint,
+    SpecialtyLens,
+    TrustProvenance,
+    TrustVerification,
+    VisibilityReason,
+    WorkspaceState,
+)
+from app.modules.workspace.domain.models import (
+    ClinicalStory,
+    CognitiveBudget,
+    DecisionQueue,
+    DecisionQueueItem,
+    DecisionTrace,
+    DecisionTraceStep,
+    LayoutDirective,
+    TrustDescriptor,
+    WorkspacePlan,
+    WorkspacePlanMetadata,
+)
+
+__all__ = [
+    "AttentionSlot",
+    "ClinicalObjectId",
+    "ClinicalStory",
+    "CognitiveBudget",
+    "DecisionQueue",
+    "DecisionQueueItem",
+    "DecisionTrace",
+    "DecisionTraceStep",
+    "LayoutDirective",
+    "PriorityLevel",
+    "ReasonCode",
+    "RoleProfile",
+    "SizeHint",
+    "SpecialtyLens",
+    "TrustDescriptor",
+    "TrustProvenance",
+    "TrustVerification",
+    "VisibilityReason",
+    "WorkspacePlan",
+    "WorkspacePlanMetadata",
+    "WorkspaceState",
+]

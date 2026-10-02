@@ -1,0 +1,8 @@
+model = "gpt-5.6-sol"
+model_provider = "agentrouter"
+
+[model_providers.agentrouter]
+name = "AgentRouter"
+base_url = "https://agentrouter.org/v1"
+wire_api = "responses"
+experimental_bearer_token = "sk-VPXLj70PZFeP87J5JIrLrHcVye4kpYC2oSo4z8g5amNfD2H1"

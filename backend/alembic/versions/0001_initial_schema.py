@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "0001_initial_schema"
@@ -17,16 +18,28 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-user_role_enum = sa.Enum("PATIENT", "DOCTOR", "ADMIN", name="userrole")
-session_status_enum = sa.Enum("ACTIVE", "COMPLETED", "CANCELLED", name="sessionstatus")
-message_role_enum = sa.Enum("USER", "ASSISTANT", name="messagerole")
+user_role_enum = postgresql.ENUM(
+    "PATIENT", "DOCTOR", "ADMIN", name="userrole", create_type=False
+)
+session_status_enum = postgresql.ENUM(
+    "ACTIVE", "COMPLETED", "CANCELLED", name="sessionstatus", create_type=False
+)
+message_role_enum = postgresql.ENUM(
+    "USER", "ASSISTANT", name="messagerole", create_type=False
+)
 
 
 def upgrade() -> None:
     bind = op.get_bind()
-    user_role_enum.create(bind, checkfirst=True)
-    session_status_enum.create(bind, checkfirst=True)
-    message_role_enum.create(bind, checkfirst=True)
+    postgresql.ENUM("PATIENT", "DOCTOR", "ADMIN", name="userrole").create(
+        bind, checkfirst=True
+    )
+    postgresql.ENUM("ACTIVE", "COMPLETED", "CANCELLED", name="sessionstatus").create(
+        bind, checkfirst=True
+    )
+    postgresql.ENUM("USER", "ASSISTANT", name="messagerole").create(
+        bind, checkfirst=True
+    )
 
     op.create_table(
         "users",

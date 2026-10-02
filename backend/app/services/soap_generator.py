@@ -1,20 +1,45 @@
 import logging
-import httpx
-from typing import Dict, Any, List, Optional
+import re
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from typing import Dict, Any, List, Optional, Set
 from datetime import datetime
 from enum import Enum
 
-from openai import AsyncOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.schemas.medical import MedicalSummary
+from app.core.observability.stages import PipelineModule, PipelineStage
+from app.core.observability.telemetry import (
+    build_ai_telemetry_event,
+    emit_ai_telemetry,
+)
+from app.core.observability.timing import pipeline_stage
+from app.schemas.clinical_context import ClinicalContext, FileAnalysisEvidence
+from app.schemas.medical import MedicalSummary, SoapNote, VerificationStatus
+from app.schemas.pmh import PMHAssertion
+from app.services.clinical_conflict import format_discrepancy_alert, validate_and_format_conflicts
+from app.services.rag_service import RagService, rag_service as default_rag_service
 
 logger = logging.getLogger(__name__)
+
+CITATION_SIMILARITY_THRESHOLD = 0.35
+CITATION_EXCERPT_MAX_CHARS = 280
+SOAP_PROMPT_VERSION = "soap_v1"
+SOAP_COMPLETION_VERSION = "soap_generator.v1"
+_CITATION_MARKER_RE = re.compile(r"\[(\d+)\]")
+
+
+@dataclass
+class CitationVerificationResult:
+    content: str
+    citations: List[dict]
+    verification_status: VerificationStatus
 
 
 class LLMProvider(str, Enum):
     """مدل‌های LLM پشتیبانی شده"""
-    GAPGPT = "gapgpt"
+    OPENROUTER = "openrouter"
 
 
 class SOAPNoteGenerator:
@@ -28,23 +53,253 @@ class SOAPNoteGenerator:
     - مدیریت خطا و logging پیشرفته
     """
 
-    def __init__(self):
+    def __init__(self, rag_service: RagService | None = None):
         """راه‌اندازی کلاینت‌های LLM"""
-        self.gapgpt_client = None
-        
-        # Use a custom httpx client with increased timeout
-        http_client = httpx.AsyncClient(timeout=60.0)
-        
-        if settings.gapgpt_api_key:
-            self.gapgpt_client = AsyncOpenAI(
-                base_url=settings.gapgpt_base_url,
-                api_key=settings.gapgpt_api_key,
-                http_client=http_client
-            )
-            logger.info("GapGPT client initialized (Async)")
-        
-        if not self.gapgpt_client:
+        self.rag_service = rag_service or default_rag_service
+        self.openrouter_client = bool(
+            settings.openrouter_api_key and settings.openrouter_api_key.strip()
+        )
+        if self.openrouter_client:
+            logger.info("OpenRouter SOAP path enabled via llm_egress_gateway")
+        else:
             logger.warning("No LLM provider configured")
+
+    def _extract_patient_hpi(self, summary: MedicalSummary) -> str:
+        if summary.additional_notes and summary.additional_notes.strip():
+            return summary.additional_notes.strip()
+
+        parts: List[str] = []
+        if summary.chief_complaint:
+            parts.append(summary.chief_complaint.strip())
+        if summary.symptoms:
+            parts.append(", ".join(summary.symptoms))
+        for field in (
+            summary.symptom_duration,
+            summary.symptom_severity,
+            summary.symptom_onset,
+            summary.symptom_character,
+            summary.symptom_location,
+            summary.symptom_radiation,
+            summary.symptom_timing,
+        ):
+            if field:
+                parts.append(field.strip())
+
+        if parts:
+            return ". ".join(parts)
+
+        if summary.chief_complaint:
+            return summary.chief_complaint.strip()
+
+        return "general clinical presentation"
+
+    def _format_medical_evidence(self, results: List[dict]) -> str:
+        if not results:
+            return ""
+
+        lines = ["### Medical Evidence:"]
+        for index, result in enumerate(results, start=1):
+            source = result.get("source") or "Unknown source"
+            content = result.get("content", "")
+            lines.append(f"[{index}] {source}: {content}")
+
+        return "\n".join(lines)
+
+    def _build_citations(self, results: List[dict]) -> List[dict]:
+        citations: List[dict] = []
+        for index, result in enumerate(results, start=1):
+            source = result.get("source") or "Unknown source"
+            content = result.get("content", "")
+            citations.append(
+                {
+                    "index": index,
+                    "marker": f"[{index}]",
+                    "source": source,
+                    "source_title": source,
+                    "content": content,
+                    "source_excerpt": self._truncate_excerpt(content),
+                    "confidence": result.get("confidence"),
+                    "verified": False,
+                    "similarity_score": None,
+                }
+            )
+        return citations
+
+    @staticmethod
+    def _truncate_excerpt(text: str, max_chars: int = CITATION_EXCERPT_MAX_CHARS) -> str:
+        normalized = (text or "").strip()
+        if len(normalized) <= max_chars:
+            return normalized
+        return normalized[: max_chars - 1].rstrip() + "…"
+
+    @staticmethod
+    def _enrich_citation_for_ui(
+        citation: dict,
+        *,
+        similarity_score: float | None = None,
+    ) -> dict:
+        """Attach UI-facing citation fields while keeping legacy keys."""
+        index = citation.get("index")
+        source = citation.get("source")
+        content = citation.get("content") or ""
+        verification_status = citation.get("verification_status")
+        verified = verification_status == "verified"
+
+        enriched = {**citation}
+        if index is not None:
+            enriched["marker"] = f"[{index}]"
+        enriched["source_title"] = source
+        enriched["source_excerpt"] = SOAPNoteGenerator._truncate_excerpt(content)
+        enriched["verified"] = verified
+        if "similarity_score" not in enriched or similarity_score is not None:
+            enriched["similarity_score"] = similarity_score
+        return enriched
+
+    @staticmethod
+    def _normalize_for_similarity(text: str) -> str:
+        normalized = text.lower()
+        normalized = re.sub(r"[^\w\s]", " ", normalized)
+        return re.sub(r"\s+", " ", normalized).strip()
+
+    @staticmethod
+    def _content_similarity(sentence: str, chunk: str) -> float:
+        normalized_sentence = SOAPNoteGenerator._normalize_for_similarity(sentence)
+        normalized_chunk = SOAPNoteGenerator._normalize_for_similarity(chunk)
+        if not normalized_sentence or not normalized_chunk:
+            return 0.0
+
+        ratio = SequenceMatcher(None, normalized_sentence, normalized_chunk).ratio()
+        sentence_tokens = set(normalized_sentence.split())
+        chunk_tokens = set(normalized_chunk.split())
+        overlap = (
+            len(sentence_tokens & chunk_tokens) / len(sentence_tokens)
+            if sentence_tokens
+            else 0.0
+        )
+        return max(ratio, overlap)
+
+    @staticmethod
+    def _extract_citation_indices(text: str) -> Set[int]:
+        return {int(match) for match in _CITATION_MARKER_RE.findall(text)}
+
+    @staticmethod
+    def _extract_citing_context(text: str, index: int) -> str:
+        marker = f"[{index}]"
+        segments = re.split(r"(?<=[.!?\n])", text)
+        for segment in segments:
+            if marker in segment:
+                return segment.replace(marker, "").strip()
+        return text.replace(marker, "").strip()
+
+    @staticmethod
+    def _strip_citation_markers(text: str, indices: Set[int]) -> str:
+        cleaned = text
+        for index in sorted(indices, reverse=True):
+            cleaned = cleaned.replace(f"[{index}]", "")
+        return re.sub(r"  +", " ", cleaned)
+
+    def _compute_aggregate_verification_status(
+        self,
+        annotated_citations: List[dict],
+        used_indices: Set[int],
+        has_citations: bool,
+    ) -> VerificationStatus:
+        if not used_indices and not has_citations:
+            return "verified"
+
+        if used_indices and not has_citations:
+            return "unverified"
+
+        used_statuses = [
+            citation["verification_status"]
+            for citation in annotated_citations
+            if citation.get("index") in used_indices
+        ]
+
+        if not used_indices:
+            return "verified"
+
+        if all(status == "verified" for status in used_statuses):
+            return "verified"
+        if any(status == "verified" for status in used_statuses):
+            return "partially_verified"
+        return "unverified"
+
+    async def verify_citations(
+        self, soap_note_text: str, citations: List[dict]
+    ) -> List[dict]:
+        """
+        Verify citation markers in the SOAP note against retrieved evidence.
+
+        Returns annotated citations with per-entry verification_status.
+        """
+        result = await self._apply_citation_verification(soap_note_text, citations)
+        return result.citations
+
+    async def _apply_citation_verification(
+        self, soap_note_text: str, citations: List[dict]
+    ) -> CitationVerificationResult:
+        citation_map = {citation["index"]: citation for citation in citations}
+        used_indices = self._extract_citation_indices(soap_note_text)
+        annotated_citations: List[dict] = []
+
+        for citation in citations:
+            index = citation["index"]
+            annotated = {**citation}
+
+            if index not in used_indices:
+                annotated["verification_status"] = "unused"
+                annotated_citations.append(
+                    self._enrich_citation_for_ui(annotated, similarity_score=None)
+                )
+                continue
+
+            citing_context = self._extract_citing_context(soap_note_text, index)
+            chunk_content = citation.get("content", "")
+            similarity = self._content_similarity(citing_context, chunk_content)
+
+            if similarity >= CITATION_SIMILARITY_THRESHOLD:
+                annotated["verification_status"] = "verified"
+            else:
+                annotated["verification_status"] = "unverified"
+                logger.warning(
+                    "Citation [%s] failed similarity check (score=%.2f)",
+                    index,
+                    similarity,
+                )
+
+            annotated_citations.append(
+                self._enrich_citation_for_ui(annotated, similarity_score=similarity)
+            )
+
+        for index in used_indices:
+            if index in citation_map:
+                continue
+
+            orphan = {
+                "index": index,
+                "source": None,
+                "content": "",
+                "confidence": None,
+                "verification_status": "unverified",
+            }
+            annotated_citations.append(
+                self._enrich_citation_for_ui(orphan, similarity_score=None)
+            )
+            logger.warning("Citation [%s] references index not in retrieved evidence", index)
+
+        verification_status = self._compute_aggregate_verification_status(
+            annotated_citations,
+            used_indices,
+            has_citations=bool(citations),
+        )
+
+        # Keep [n] markers in the SOAP text so the doctor UI can render citations.
+        return CitationVerificationResult(
+            content=soap_note_text,
+            citations=annotated_citations,
+            verification_status=verification_status,
+        )
 
     def _get_system_prompt(self) -> str:
         """
@@ -85,6 +340,12 @@ class SOAPNoteGenerator:
 - برنامه پیگیری (Follow-up Plan)
 - ارجاع به متخصص (Referrals)
 
+**Medical Evidence (الزامی در صورت ارائه)**
+Use the following retrieved clinical evidence to support your assessment. You MUST cite sources using [1], [2], etc., where numbers correspond to the evidence list provided below.
+- Apply retrieved evidence primarily in Assessment and Plan sections.
+- Only cite evidence that appears in the Medical Evidence block of the user message.
+- If no Medical Evidence block is provided, do not include citation markers.
+
 **قوانین:**
 1. از اصطلاحات پزشکی استاندارد استفاده کنید
 2. مختصر و دقیق باشید
@@ -93,36 +354,109 @@ class SOAPNoteGenerator:
 5. از جداول برای داده‌های ساختاریافته استفاده کنید
 6. کدهای ICD-10 را با فرمت `[ICD-10: X00.0]` بنویسید
 7. اولویت‌بندی در Plan: فوری → کوتاه‌مدت → بلندمدت
+
+**Clinical Conflict Detection (required when PMH Assertion Registry is provided)**
+
+Before writing the SOAP note, compare patient statements in CONSULTATION DIALOGUE against the PMH ASSERTION REGISTRY.
+
+Extract Clinical Assertions from dialogue:
+- Only statements made BY THE PATIENT (not the clinician).
+- Classify each as AFFIRM or DENY of a specific clinical condition, medication, allergy, or procedure.
+- Map colloquial language to the nearest registry concept/subcategory.
+
+Flag a conflict ONLY when:
+1. PMH shows PRESENT for a concept AND the patient DENIES that same active condition in dialogue, OR
+2. PMH shows CATEGORY_DENIED AND the patient AFFIRMS any condition belonging to that category.
+
+Do NOT flag:
+- New conditions mentioned in chat that are absent from PMH (record in SOAP S-section instead).
+- Symptoms of present illness (chief complaint, HPI) unless they explicitly contradict a PMH denial.
+- Family history (\"my father had...\").
+- Uncertain or conditional language (\"maybe\", \"I think\", \"شاید\", \"ممکنه\").
+- Historical/resolved conditions clearly in the past (\"I used to have X but not anymore\").
+- Elaboration or added detail that does not contradict PMH (e.g., PMH says CAD, chat mentions stent year).
+
+Output format:
+1. Write the complete SOAP note first (S/O/A/P markdown, per existing rules).
+2. On the very last lines, append ONLY this machine block (no other text after it):
+<<<CLINICAL_CONFLICTS>>>
+[{\"pmh_assertion_id\":\"...\",\"chat_polarity\":\"affirm|deny\",\"chat_quote\":\"exact patient quote\",\"concept\":\"...\",\"confidence\":\"high|low\"}]
+<<<END_CLINICAL_CONFLICTS>>>
+Use confidence \"high\" only for unambiguous, direct contradictions. Use \"low\" for anything uncertain — low-confidence entries will be discarded.
+If no conflicts: <<<CLINICAL_CONFLICTS>>>[]<<<END_CLINICAL_CONFLICTS>>>
 """
+
+    @staticmethod
+    def _format_pmh_assertion_registry(assertions: list[PMHAssertion] | tuple[PMHAssertion, ...]) -> str:
+        if not assertions:
+            return ""
+        formatted: list[str] = []
+        for a in assertions:
+            if a.polarity == "present":
+                subcat = f" | subcategory={a.subcategory}" if a.subcategory else ""
+                detail = f" | detail={a.detail}" if a.detail else ""
+                formatted.append(f"[{a.assertion_id}] PRESENT | {a.concept}{subcat}{detail}")
+            else:
+                formatted.append(f"[{a.assertion_id}] CATEGORY_DENIED | {a.category_id}")
+        return "\n".join(formatted)
+
+    def _render_file_analysis(self, file_data: FileAnalysisEvidence | Dict[str, Any]) -> list[str]:
+        lines: list[str] = []
+        if isinstance(file_data, FileAnalysisEvidence):
+            if file_data.lab_results:
+                lines.append("Lab Results:")
+                for lab in file_data.lab_results:
+                    unit = f" {lab.unit}" if lab.unit else ""
+                    lines.append(f"- {lab.test_name} | {lab.value or ''}{unit}".rstrip())
+            if file_data.medications:
+                lines.append("Medications:")
+                for med in file_data.medications:
+                    dose = f" | {med.dose}" if med.dose else ""
+                    freq = f" | {med.frequency}" if med.frequency else ""
+                    lines.append(f"- {med.name}{dose}{freq}")
+            if file_data.diagnoses:
+                lines.append("Diagnoses: " + ", ".join(file_data.diagnoses))
+            if file_data.imaging_findings:
+                lines.append("Imaging Findings: " + file_data.imaging_findings)
+            return lines
+
+        if file_data.get("lab_results"):
+            lines.append("Lab Results:")
+            for lab in file_data["lab_results"]:
+                lines.append(
+                    f"- {lab.get('test_name')} | {lab.get('value')} {lab.get('unit') or ''}".rstrip()
+                )
+        if file_data.get("medications"):
+            lines.append("Medications:")
+            for med in file_data["medications"]:
+                if isinstance(med, dict):
+                    name = med.get("name") or ""
+                    dose = f" | {med.get('dose')}" if med.get("dose") else ""
+                    freq = f" | {med.get('frequency')}" if med.get("frequency") else ""
+                    lines.append(f"- {name}{dose}{freq}")
+                else:
+                    lines.append(f"- {med}")
+        if file_data.get("diagnoses"):
+            lines.append("Diagnoses: " + ", ".join(file_data["diagnoses"]))
+        if file_data.get("imaging_findings"):
+            lines.append("Imaging Findings: " + file_data["imaging_findings"])
+        return lines
 
     def _build_context(
         self,
-        summary: MedicalSummary,
-        chat_history: Optional[List[Dict[str, str]]] = None,
-        file_analyses: Optional[List[Dict[str, Any]]] = None
+        clinical_context: ClinicalContext,
+        *,
+        pmh_assertion_registry: str | None = None,
     ) -> str:
-        """
-        ساخت context جامع برای تولید SOAP
-        
-        Args:
-            summary: خلاصه اطلاعات پزشکی استخراج شده
-            chat_history: تاریخچه مکالمه با بیمار
-            chat_history: تاریخچه مکالمه
-            file_analyses: نتایج تحلیل فایل‌های پزشکی
-        
-        Returns:
-            متن context ساختاریافته
-        """
-
+        """Build structured prompt context from an immutable ClinicalContext."""
+        summary = clinical_context.summary
         sections: List[str] = []
 
-        # ─────────── Metadata ───────────
         sections.append("=== VISIT METADATA ===")
         sections.append(f"Generated At: {datetime.utcnow().isoformat()}")
-        sections.append(f"Patient ID: {getattr(summary, 'patient_id', 'Unknown')}")
+        sections.append(f"Patient ID: {clinical_context.patient_id}")
         sections.append("")
 
-        # ─────────── Structured Medical Summary ───────────
         sections.append("=== STRUCTURED MEDICAL SUMMARY ===")
 
         field_mapping = {
@@ -149,105 +483,224 @@ class SOAPNoteGenerator:
 
         sections.append("")
 
-        # ─────────── Chat History ───────────
-        if chat_history:
-            sections.append("=== CONSULTATION DIALOGUE (Last 20 Messages) ===")
-
-            for msg in chat_history[-20:]:
-                role = msg.get("role", "unknown").capitalize()
-                content = msg.get("content", "")
-                sections.append(f"{role}: {content}")
-
+        if clinical_context.pmh_context:
+            sections.append("### Patient Past Medical History (From Questionnaire):")
+            sections.append(clinical_context.pmh_context)
             sections.append("")
 
-        # ─────────── File Analysis ───────────
-        if file_analyses:
+        if pmh_assertion_registry:
+            sections.append("=== PMH ASSERTION REGISTRY (for conflict detection) ===")
+            sections.append(pmh_assertion_registry)
+            sections.append("")
+
+        if clinical_context.chat_history:
+            sections.append("=== CONSULTATION DIALOGUE (Last 20 Messages) ===")
+            for msg in clinical_context.chat_history[-20:]:
+                sections.append(f"{msg.role.capitalize()}: {msg.content}")
+            sections.append("")
+
+        if clinical_context.file_analyses:
             sections.append("=== MEDICAL FILE ANALYSIS ===")
-
-            for file_data in file_analyses:
-
-                if file_data.get("lab_results"):
-                    sections.append("Lab Results:")
-                    for lab in file_data["lab_results"]:
-                        sections.append(
-                            f"- {lab.get('test_name')} | {lab.get('value')} {lab.get('unit')}"
-                        )
-
-                if file_data.get("diagnoses"):
-                    sections.append("Diagnoses: " + ", ".join(file_data["diagnoses"]))
-
-                if file_data.get("imaging_findings"):
-                    sections.append("Imaging Findings: " + file_data["imaging_findings"])
-
+            for file_data in clinical_context.file_analyses:
+                sections.extend(self._render_file_analysis(file_data))
                 sections.append("")
 
         return "\n".join(sections)
 
+    async def _generate_with_openrouter(self, context: str) -> tuple[str, dict]:
+        """Generate SOAP via OpenRouter. Returns (note_text, usage_meta)."""
+        from app.privacy.llm_egress_gateway import chat_completion
 
-
-    async def _generate_with_gapgpt(self, context: str) -> str:
-        """تولید SOAP با GapGPT"""
-
-        response = await self.gapgpt_client.chat.completions.create(
-            model=settings.gapgpt_model or "gapgpt-qwen-3.5",
-            temperature=0.2,
-            max_tokens=2500,
+        result = await chat_completion(
+            base_url=settings.openrouter_base_url,
+            api_key=settings.openrouter_api_key or "",
+            model=settings.openrouter_default_model,
             messages=[
                 {"role": "system", "content": self._get_system_prompt()},
                 {"role": "user", "content": context},
             ],
+            purpose="soap_generation",
+            temperature=0.2,
+            max_tokens=3000,
         )
-
-        return response.choices[0].message.content.strip()
-
-
+        usage_meta = {
+            "llm_model": settings.openrouter_default_model,
+            "input_tokens": result.usage.get("prompt_tokens"),
+            "output_tokens": result.usage.get("completion_tokens"),
+        }
+        return result.content.strip(), usage_meta
 
     async def generate_soap_note(
         self,
-        summary: MedicalSummary,
-        chat_history: Optional[List[Dict[str, str]]] = None,
-        file_analyses: Optional[List[Dict[str, Any]]] = None,
+        clinical_context: ClinicalContext,
+        db: AsyncSession,
         preferred_provider: Optional[LLMProvider] = None,
     ) -> Dict[str, Any]:
         """
-        اینترفیس اصلی تولید SOAP
+        Primary SOAP generation interface.
 
-        Returns:
-            Dict شامل:
-            - status
-            - soap_note
-            - provider
-            - generated_at
-            - confidence_score
+        Consumes an immutable ClinicalContext assembled by ClinicalContextBuilder.
         """
+        summary = clinical_context.summary
+        gen_start = datetime.utcnow()
 
         try:
-            context = self._build_context(summary, chat_history, file_analyses)
+            patient_hpi = self._extract_patient_hpi(summary)
+            knowledge_results: List[dict] = []
 
-            # انتخاب provider
+            try:
+                async with pipeline_stage(
+                    PipelineStage.RAG_RETRIEVE,
+                    module=PipelineModule.RAG,
+                    session_id=clinical_context.session_id,
+                    patient_id=clinical_context.patient_id,
+                    recoverable_on_error=True,
+                    retryable_on_error=True,
+                ):
+                    knowledge_results = await self.rag_service.search_similar_knowledge(
+                        db, query=patient_hpi
+                    )
+            except Exception:
+                # Soft-fail: pipeline_stage already emitted recoverable failure telemetry.
+                logger.warning(
+                    "RAG retrieval failed for SOAP generation; continuing without evidence",
+                    exc_info=True,
+                )
+
+            citations = self._build_citations(knowledge_results)
+            pmh_registry = list(clinical_context.pmh_assertions)
+            pmh_registry_lines = self._format_pmh_assertion_registry(pmh_registry)
+
+            context = self._build_context(
+                clinical_context,
+                pmh_assertion_registry=pmh_registry_lines or None,
+            )
+            evidence_block = self._format_medical_evidence(knowledge_results)
+            if evidence_block:
+                context = f"{context}\n\n{evidence_block}"
+
             provider = None
             note = None
-
-            if self.gapgpt_client:
-                provider = LLMProvider.GAPGPT
-                note = await self._generate_with_gapgpt(context)
-            else:
-                raise ValueError("No LLM provider configured")
-
-            return {
-                "status": "success",
-                "provider": provider.value,
-                "soap_note": note,
-                "confidence_score": summary.confidence_score,
-                "generated_at": datetime.utcnow().isoformat(),
+            usage_meta: dict = {
+                "llm_model": None,
+                "input_tokens": None,
+                "output_tokens": None,
             }
 
+            async with pipeline_stage(
+                PipelineStage.SOAP_GENERATE,
+                module=PipelineModule.SOAP,
+                emit_event=False,
+                session_id=clinical_context.session_id,
+                patient_id=clinical_context.patient_id,
+            ) as soap_stage:
+                if self.openrouter_client:
+                    provider = LLMProvider.OPENROUTER
+                    note, usage_meta = await self._generate_with_openrouter(context)
+                else:
+                    raise ValueError("No LLM provider configured")
+
+                chat_history = [
+                    {"role": m.role, "content": m.content}
+                    for m in clinical_context.chat_history
+                ]
+                verification = await self._apply_citation_verification(note, citations)
+
+                async with pipeline_stage(
+                    PipelineStage.CONFLICT_DETECT,
+                    module=PipelineModule.CONFLICT,
+                    session_id=clinical_context.session_id,
+                    patient_id=clinical_context.patient_id,
+                    pmh_count=len(pmh_registry),
+                ):
+                    soap_body, discrepancies = validate_and_format_conflicts(
+                        llm_output=verification.content,
+                        pmh_registry=pmh_registry,
+                        chat_history=chat_history,
+                    )
+
+                final_note = soap_body
+                if discrepancies:
+                    final_note = (
+                        final_note.rstrip() + "\n\n" + format_discrepancy_alert(discrepancies)
+                    )
+
+                soap = SoapNote(
+                    content=final_note,
+                    citations=verification.citations,
+                    verification_status=verification.verification_status,
+                )
+
+                conflict_count = len(discrepancies) if discrepancies else 0
+                latency_ms = soap_stage.latency_ms
+                # latency filled on exit; compute provisional for telemetry below
+                latency_ms = int(
+                    (datetime.utcnow() - gen_start).total_seconds() * 1000
+                )
+
+                emit_ai_telemetry(
+                    build_ai_telemetry_event(
+                        module=PipelineModule.SOAP,
+                        pipeline_stage=PipelineStage.SOAP_GENERATE,
+                        latency_ms=latency_ms,
+                        status="success",
+                        session_id=clinical_context.session_id,
+                        patient_id=clinical_context.patient_id,
+                        evidence_count=len(citations),
+                        lab_count=len(clinical_context.lab_evidence or ()),
+                        medication_count=len(clinical_context.medication_evidence or ()),
+                        pmh_count=len(pmh_registry),
+                        conflict_count=conflict_count,
+                        confidence=summary.confidence_score,
+                        llm_model=usage_meta.get("llm_model"),
+                        prompt_version=SOAP_PROMPT_VERSION,
+                        completion_version=SOAP_COMPLETION_VERSION,
+                        input_tokens=usage_meta.get("input_tokens"),
+                        output_tokens=usage_meta.get("output_tokens"),
+                    )
+                )
+
+                return {
+                    "status": "success",
+                    "provider": provider.value,
+                    "soap_note": soap.content,
+                    "citations": soap.citations,
+                    "verification_status": soap.verification_status,
+                    "confidence_score": summary.confidence_score,
+                    "conflict_count": conflict_count,
+                    # Structured discrepancies so the Doctor Workspace can surface
+                    # conflicts as first-class signals instead of only as prose
+                    # appended to the SOAP markdown.
+                    "conflicts": [d.model_dump() for d in (discrepancies or [])],
+                    "latency_ms": latency_ms,
+                    "generated_at": datetime.utcnow().isoformat(),
+                }
+
         except Exception as e:
+            latency_ms = int((datetime.utcnow() - gen_start).total_seconds() * 1000)
             logger.exception("SOAP generation failed")
+            emit_ai_telemetry(
+                build_ai_telemetry_event(
+                    module=PipelineModule.SOAP,
+                    pipeline_stage=PipelineStage.SOAP_GENERATE,
+                    latency_ms=latency_ms,
+                    status="failure",
+                    session_id=clinical_context.session_id,
+                    patient_id=clinical_context.patient_id,
+                    error_type=type(e).__name__,
+                    recoverable=False,
+                    retryable=True,
+                    llm_model=settings.openrouter_default_model,
+                    prompt_version=SOAP_PROMPT_VERSION,
+                    completion_version=SOAP_COMPLETION_VERSION,
+                )
+            )
 
             return {
                 "status": "error",
                 "message": str(e),
+                "error_type": type(e).__name__,
+                "latency_ms": latency_ms,
                 "generated_at": datetime.utcnow().isoformat(),
             }
 

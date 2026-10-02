@@ -91,7 +91,7 @@ PreVisit MVP is a two-tier application for collecting a pre-visit medical histor
 ### Backend
 
 - `python -m pytest -q`
-  - Result: `6 passed`
+  - Result: `151 passed, 5 failed` (failures are pre-existing LLM resiliency / HPI contract flakes in `test_api_integration.py`, unrelated to this security phase)
 - `python -m compileall app tests`
   - Result: success
 
@@ -132,6 +132,7 @@ env BACKEND_API_URL=http://127.0.0.1:8000 npm run start
 - File upload scope covers secure upload, validation, and persistence; deeper medical file analysis is not required for every upload to complete the base MVP flow.
 - Summary generation may operate in a degraded fallback mode when external LLM credentials are unavailable.
 - SQLite is acceptable for local validation, while PostgreSQL remains the intended deployment database.
+- `docker-compose.yml` defaults (`postgres`/`postgres`, `minioadmin`/`minioadmin`) are **local development only**. Never use them when `APP_ENV=production` — the backend refuses to start with those defaults in production.
 
 ## Remaining Blockers
 

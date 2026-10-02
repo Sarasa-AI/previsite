@@ -1,6 +1,8 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
+
+VerificationStatus = Literal["verified", "partially_verified", "unverified"]
 
 
 class MedicalSummary(BaseModel):
@@ -34,6 +36,14 @@ class MedicalSummary(BaseModel):
     symptoms: Optional[List[str]] = Field(default_factory=list, description="List of symptoms")
     symptom_duration: Optional[str] = Field(None, description="Duration of symptoms")
     symptom_severity: Optional[str] = Field(None, description="Severity: mild, moderate, severe")
+    symptom_onset: Optional[str] = Field(None, description="Onset of symptoms")
+    symptom_character: Optional[str] = Field(None, description="Character/quality of symptoms")
+    symptom_location: Optional[str] = Field(None, description="Location of symptoms")
+    symptom_aggravating_factors: Optional[List[str]] = Field(default_factory=list, description="Factors that aggravate symptoms")
+    symptom_relieving_factors: Optional[List[str]] = Field(default_factory=list, description="Factors that relieve symptoms")
+    symptom_radiation: Optional[str] = Field(None, description="Radiation of symptoms")
+    symptom_timing: Optional[str] = Field(None, description="Timing of symptoms")
+    hpi_summary: Optional[str] = Field(None, description="Clinical narrative summary of the History of Present Illness")
     
     # Past Medical History
     past_medical_history: Optional[List[str]] = Field(default_factory=list, description="Previous diagnoses")
@@ -49,8 +59,19 @@ class MedicalSummary(BaseModel):
     
     # Additional Information
     additional_notes: Optional[str] = Field(None, description="Any other relevant information")
+    is_hpi_complete: bool = Field(False, description="Whether the History of Present Illness is clinically sufficient")
     
     # Metadata
     extracted_at: datetime = Field(default_factory=datetime.utcnow)
     confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Extraction confidence")
-    
+
+
+class SoapNote(BaseModel):
+    """Structured SOAP note with RAG evidence citations."""
+    content: str = Field(..., description="Generated SOAP note markdown")
+    citations: list[dict] = Field(default_factory=list, description="RAG evidence citations")
+    verification_status: VerificationStatus = Field(
+        default="verified",
+        description="Aggregate citation verification outcome",
+    )
+

@@ -1,0 +1,11 @@
+{
+  "platform": "node",
+  "app": "previsit-web",
+  "port": 3000,
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": "3000",
+    "BACKEND_API_URL": "https://api.treat-ai.ir",
+    "NEXT_PUBLIC_API_URL": "https://api.treat-ai.ir"
+  }
+}

@@ -1,0 +1,2103 @@
+[
+  {
+    "category_id": "cat_cardio",
+    "farsi_title": "۱. قلب و عروق",
+    "master_patient_text": "آیا سابقه بیماری قلبی، فشار خون، یا جراحی قلب دارید؟",
+    "questions": [
+      {
+        "id": "pmh_cardio_cad_001",
+        "category": "Cardiology",
+        "subcategory": "Ischemic Heart Disease / CAD",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا سکتهٔ قلبی کرده‌اید؟ یا پزشک گفته رگ قلبتان گرفته؟",
+        "physician_metadata": {
+          "concept": "History of Myocardial Infarction / Coronary Artery Disease",
+          "icd10_hint": "I25.10",
+          "snomed_ct": "22298006"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_cardio_cad_001_date",
+            "ui_type": "text_input",
+            "patient_text": "کِی این اتفاق افتاد؟",
+            "physician_metadata": "Date of Event"
+          }
+        ]
+      },
+      {
+        "id": "pmh_cardio_angio_001",
+        "category": "Cardiology",
+        "subcategory": "Ischemic Heart Disease / CAD",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا «عکس رنگی قلب» (آنژیوگرافی) برایتان انجام شده؟",
+        "physician_metadata": {
+          "concept": "Coronary Angiography",
+          "icd10_hint": "Z95.1",
+          "snomed_ct": "29166005"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_cardio_angio_001_vessels",
+            "ui_type": "text_input",
+            "patient_text": "گفتند چند رگ گرفتگی دارد؟",
+            "physician_metadata": "Number of Vessels Occluded"
+          }
+        ]
+      },
+      {
+        "id": "pmh_cardio_pci_001",
+        "category": "Cardiology",
+        "subcategory": "Ischemic Heart Disease / CAD",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "داخل رگ قلبتان «فنر» (استنت) گذاشته‌اند؟",
+        "physician_metadata": {
+          "concept": "Percutaneous Coronary Intervention - PCI / Stent",
+          "icd10_hint": "Z95.5",
+          "snomed_ct": "415270003"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_cardio_pci_001_details",
+            "ui_type": "text_input",
+            "patient_text": "چندتا و کِی؟",
+            "physician_metadata": "Stent Count & Deployment Date"
+          }
+        ]
+      },
+      {
+        "id": "pmh_cardio_cabg_001",
+        "category": "Cardiology",
+        "subcategory": "Ischemic Heart Disease / CAD",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "عمل جراحی باز قلب (بای‌پس) انجام داده‌اید؟",
+        "physician_metadata": {
+          "concept": "Coronary Artery Bypass Grafting - CABG",
+          "icd10_hint": "Z95.1",
+          "snomed_ct": "232717009"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_cardio_cabg_001_date",
+            "ui_type": "text_input",
+            "patient_text": "کِی؟",
+            "physician_metadata": "CABG Date"
+          }
+        ]
+      },
+      {
+        "id": "pmh_cardio_aspirin_001",
+        "category": "Cardiology",
+        "subcategory": "Ischemic Heart Disease / CAD",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "قرص آسپرین یا پلاویکس/برلیک مصرف می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Antiplatelet Therapy: Aspirin, Clopidogrel, Ticagrelor",
+          "icd10_hint": "Z79.82",
+          "snomed_ct": "431443000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_statin_001",
+        "category": "Cardiology",
+        "subcategory": "Ischemic Heart Disease / CAD",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "داروی چربی خون (آتورواستاتین، روزوواستاتین و...) می‌خورید؟",
+        "physician_metadata": {
+          "concept": "Statin Therapy",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "413184009"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_cardio_statin_001_last",
+            "ui_type": "text_input",
+            "patient_text": "آخرین چربی خونتان را یادتان هست؟",
+            "physician_metadata": "Recent Lipid Profile Status"
+          }
+        ]
+      },
+      {
+        "id": "pmh_cardio_angina_001",
+        "category": "Cardiology",
+        "subcategory": "Ischemic Heart Disease / CAD",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "الان موقع راه‌رفتن یا فعالیت، سینه‌تان درد می‌گیرد یا سنگین می‌شود؟",
+        "physician_metadata": {
+          "concept": "Active Angina Pectoris / Exertional Chest Pain",
+          "icd10_hint": "I20.9",
+          "snomed_ct": "429559002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_isch_cmp_001",
+        "category": "Cardiology",
+        "subcategory": "Ischemic Heart Disease / CAD",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "بعد از سکته به شما گفتند قلبتان ضعیف شده است؟",
+        "physician_metadata": {
+          "concept": "Post-MI Ischemic Cardiomyopathy",
+          "icd10_hint": "I25.5",
+          "snomed_ct": "284141000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_hf_001",
+        "category": "Cardiology",
+        "subcategory": "Heart Failure",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "پزشک به شما گفته که قلبتان خوب پمپاژ نمی‌کند یا ضعیف است؟",
+        "physician_metadata": {
+          "concept": "Congestive Heart Failure - CHF / Reduced EF",
+          "icd10_hint": "I50.9",
+          "snomed_ct": "85232009"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_cardio_hf_001_cause",
+            "ui_type": "text_input",
+            "patient_text": "علتش را چه گفتند؟ (سکته، فشار خون، دریچه، ویروس...)",
+            "physician_metadata": "CHF Etiology"
+          }
+        ]
+      },
+      {
+        "id": "pmh_cardio_hf_nyha_001",
+        "category": "Cardiology",
+        "subcategory": "Heart Failure",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "چند قدم یا چند پله می‌توانید بروید تا نفس کم بیاورید؟ شب‌ها با چند بالش می‌خوابید؟",
+        "physician_metadata": {
+          "concept": "NYHA Functional Classification / Orthopnea",
+          "icd10_hint": "R06.01",
+          "snomed_ct": "271810006"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_hf_edema_001",
+        "category": "Cardiology",
+        "subcategory": "Heart Failure",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "پاهایتان ورم می‌کند؟ یا یک‌دفعه وزنتان بالا رفته؟",
+        "physician_metadata": {
+          "concept": "Peripheral Edema / Fluid Retention",
+          "icd10_hint": "R60.0",
+          "snomed_ct": "248467006"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_hf_meds_001",
+        "category": "Cardiology",
+        "subcategory": "Heart Failure",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "قرص آب‌انداز (فوروزماید/لازیکس)، قرص فشار قلب، یا داروی جدید قند-قلبی (مثل امپاگلیفلوتین) مصرف می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Diuretics / HF Directed Medical Therapy - GDMT",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "426647000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_icd_001",
+        "category": "Cardiology",
+        "subcategory": "Heart Failure",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "داخل سینه‌تان «باتری یا شوک‌دهنده قلب» (پیس‌میکر/ICD) گذاشته‌اند؟",
+        "physician_metadata": {
+          "concept": "Cardiac Pacemaker / Implantable Cardioverter-Defibrillator",
+          "icd10_hint": "Z95.0",
+          "snomed_ct": "14106009"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_hf_hosp_001",
+        "category": "Cardiology",
+        "subcategory": "Heart Failure",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "پارسال چند بار به خاطر تنگی نفس و مشکل قلب بستری شدید؟",
+        "physician_metadata": {
+          "concept": "HF Hospitalization History",
+          "icd10_hint": "Z92.21",
+          "snomed_ct": "408544000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_afib_001",
+        "category": "Cardiology",
+        "subcategory": "Arrhythmia",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "قلبتان نامنظم یا تند می‌زند؟ پزشک گفته «بی‌نظمی برق قلب» دارید؟",
+        "physician_metadata": {
+          "concept": "Cardiac Arrhythmia / Atrial Fibrillation - AFib",
+          "icd10_hint": "I48.91",
+          "snomed_ct": "49436004"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_anticoag_001",
+        "category": "Cardiology",
+        "subcategory": "Arrhythmia",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "به خاطر این مشکل، قرص وارفارین یا داروهای جدید رقیق‌کننده (مثل ریواروکسابان/اکسابان) مصرف می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Anticoagulation Therapy",
+          "icd10_hint": "Z79.01",
+          "snomed_ct": "427314002"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_cardio_anticoag_001_inr",
+            "ui_type": "text_input",
+            "patient_text": "اگر وارفارین می‌خورید، هر چند وقت آزمایش خون (INR) می‌دهید؟ آخرین آزمایش چند بود؟",
+            "physician_metadata": "INR Monitoring Status"
+          }
+        ]
+      },
+      {
+        "id": "pmh_cardio_ablation_001",
+        "category": "Cardiology",
+        "subcategory": "Arrhythmia",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا قلبتان را شوک داده‌اند یا با عمل «سوزاندن» (ابلیشن) درستش کرده‌اند؟",
+        "physician_metadata": {
+          "concept": "Cardioversion / Catheter Ablation",
+          "icd10_hint": "Z92.4",
+          "snomed_ct": "443015003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_syncope_001",
+        "category": "Cardiology",
+        "subcategory": "Arrhythmia",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا بدون دلیل غش کرده‌اید یا نزدیک بوده بیفتید؟",
+        "physician_metadata": {
+          "concept": "Syncope / Near-Syncope",
+          "icd10_hint": "R55",
+          "snomed_ct": "271594007"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_device_arrh_001",
+        "category": "Cardiology",
+        "subcategory": "Arrhythmia",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "پیس‌میکر (باتری) یا دستگاه شوک‌دهنده دارید؟",
+        "physician_metadata": {
+          "concept": "Pacemaker / ICD Status",
+          "icd10_hint": "Z95.0",
+          "snomed_ct": "309623003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_vhd_001",
+        "category": "Cardiology",
+        "subcategory": "Valvular Heart Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "به شما گفته‌اند یکی از دریچه‌های قلبتان مشکل دارد (تنگی یا نشتی)؟",
+        "physician_metadata": {
+          "concept": "Valvular Heart Disease: Stenosis / Regurgitation",
+          "icd10_hint": "I38",
+          "snomed_ct": "368007"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_cardio_vhd_001_rhd",
+            "ui_type": "text_input",
+            "patient_text": "علتش تب روماتیسمی دوران بچگی بود؟",
+            "physician_metadata": "Rheumatic Heart Disease - RHD"
+          }
+        ]
+      },
+      {
+        "id": "pmh_cardio_valve_rep_001",
+        "category": "Cardiology",
+        "subcategory": "Valvular Heart Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "دریچهٔ قلبتان را عوض کرده‌اید یا ترمیم شده؟",
+        "physician_metadata": {
+          "concept": "Valve Replacement / Repair",
+          "icd10_hint": "Z95.2",
+          "snomed_ct": "34068001"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_cardio_valve_rep_001_type",
+            "ui_type": "text_input",
+            "patient_text": "فلزی بود یا بافتی (حیوانی)؟",
+            "physician_metadata": "Prosthetic Valve: Mechanical vs. Bioprosthetic"
+          },
+          {
+            "id": "pmh_cardio_valve_rep_001_warfarin",
+            "ui_type": "text_input",
+            "patient_text": "به خاطر دریچه، وارفارین مصرف می‌کنید؟",
+            "physician_metadata": "Post-Valve Anticoagulation"
+          }
+        ]
+      },
+      {
+        "id": "pmh_cardio_endocarditis_001",
+        "category": "Cardiology",
+        "subcategory": "Valvular Heart Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا عفونت دریچهٔ قلب (اندوکاردیت) گرفته‌اید؟ یا قبل از دندانپزشکی باید آنتی‌بیوتیک بخورید؟",
+        "physician_metadata": {
+          "concept": "Infective Endocarditis / Endocarditis Prophylaxis",
+          "icd10_hint": "I33.0",
+          "snomed_ct": "48867003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_htn_001",
+        "category": "Cardiology",
+        "subcategory": "Hypertension",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه فشار خون دارید؟ از چه سنی؟",
+        "physician_metadata": {
+          "concept": "Hypertension Onset Age",
+          "icd10_hint": "I10",
+          "snomed_ct": "38341003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_htn_meds_001",
+        "category": "Cardiology",
+        "subcategory": "Hypertension",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "چند نوع قرص فشار مصرف می‌کنید؟ اسمشان را می‌دانید؟",
+        "physician_metadata": {
+          "concept": "Antihypertensive Medications Count",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "416286000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_htn_log_001",
+        "category": "Cardiology",
+        "subcategory": "Hypertension",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "فشار خونتان را در خانه اندازه می‌گیرید؟ معمولاً چند است؟",
+        "physician_metadata": {
+          "concept": "Home Blood Pressure Monitoring / Average BP",
+          "icd10_hint": "Z01.30",
+          "snomed_ct": "313116004"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_htn_sec_001",
+        "category": "Cardiology",
+        "subcategory": "Hypertension",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "پزشک دنبال علت خاصی (مثل مشکل کلیه یا غدد) برای فشارتان گشته است؟",
+        "physician_metadata": {
+          "concept": "Secondary Hypertension Workup",
+          "icd10_hint": "I15.9",
+          "snomed_ct": "195454000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_htn_tod_001",
+        "category": "Cardiology",
+        "subcategory": "Hypertension",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "به خاطر فشار خون بالا، به چشم، کلیه یا قلبتان آسیبی رسیده؟",
+        "physician_metadata": {
+          "concept": "Hypertensive End-Organ Damage: Retinopathy, Nephropathy, LVH",
+          "icd10_hint": "I13.10",
+          "snomed_ct": "398144005"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_cardio_htn_crisis_001",
+        "category": "Cardiology",
+        "subcategory": "Hypertension",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا فشارتان آن‌قدر بالا رفته که اورژانسی بستری شوید؟",
+        "physician_metadata": {
+          "concept": "Hypertensive Urgency / Crisis History",
+          "icd10_hint": "I16.9",
+          "snomed_ct": "706856006"
+        },
+        "conditional_followups": []
+      }
+    ]
+  },
+  {
+    "category_id": "cat_pulm",
+    "farsi_title": "۲. ریه و تنفس",
+    "master_patient_text": "آیا سابقه آسم، بیماری مزمن ریوی، یا آپنه خواب دارید؟",
+    "questions": [
+      {
+        "id": "pmh_pulm_copd_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "پزشک گفته ریه‌تان تنگ شده یا «انسداد ریه» دارید؟",
+        "physician_metadata": {
+          "concept": "Chronic Obstructive Pulmonary Disease - COPD",
+          "icd10_hint": "J44.9",
+          "snomed_ct": "13645005"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_pft_copd_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "تست فوت ریه (اسپیرومتری) داده‌اید؟",
+        "physician_metadata": {
+          "concept": "Spirometry",
+          "icd10_hint": "Z01.84",
+          "snomed_ct": "127713003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_smoke_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سیگار می‌کشید یا می‌کشیدید؟ روزی چند نخ و چند سال؟",
+        "physician_metadata": {
+          "concept": "Smoking History / Pack-Years Calculation",
+          "icd10_hint": "Z72.0",
+          "snomed_ct": "77176002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_copd_exac_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "پارسال چند بار حالتان بد شد که مجبور شدید آمپول/سرم بگیرید یا بستری شوید؟",
+        "physician_metadata": {
+          "concept": "COPD Exacerbation History",
+          "icd10_hint": "J44.1",
+          "snomed_ct": "197495000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_inhalers_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "از اسپری‌های ریه استفاده می‌کنید؟ چند نوع؟ اسمشان را می‌دانید؟",
+        "physician_metadata": {
+          "concept": "Inhaler Therapy",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "416223006"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_ltot_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "در خانه کپسول اکسیژن یا دستگاه اکسیژن‌ساز دارید؟ روزی چند ساعت استفاده می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Home Long-Term Oxygen Therapy - LTOT",
+          "icd10_hint": "Z99.81",
+          "snomed_ct": "426990007"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_niv_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "شب‌ها با دستگاه تنفسی (ماسک) می‌خوابید؟",
+        "physician_metadata": {
+          "concept": "Non-Invasive Ventilation - NIV / BiPAP",
+          "icd10_hint": "Z99.89",
+          "snomed_ct": "428314002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_asthma_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "بیماری آسم دارید؟ از بچگی شروع شده یا بزرگسالی؟",
+        "physician_metadata": {
+          "concept": "Asthma: Childhood vs. Adult-Onset",
+          "icd10_hint": "J45.909",
+          "snomed_ct": "195967001"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_asthma_ctrl_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "در هفته چند بار دچار خس‌خس یا تنگی نفس می‌شوید؟ شب‌ها شما را از خواب بیدار می‌کند؟",
+        "physician_metadata": {
+          "concept": "Asthma Control Day/Night Symptoms Level",
+          "icd10_hint": "J45.901",
+          "snomed_ct": "266735002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_asthma_rescue_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "اسپری روزانه (پیشگیری) دارید؟ از اسپری اورژانسی (معمولاً آبی‌رنگ) چند بار در هفته استفاده می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Controller vs. Rescue Inhaler Usage",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "415174003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_asthma_steroids_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا مجبور شده‌اید برای کنترل آسم قرص کورتون (پردنیزولون) بخورید؟ چند بار در سال؟",
+        "physician_metadata": {
+          "concept": "Systemic Corticosteroid Dependence",
+          "icd10_hint": "Z79.52",
+          "snomed_ct": "409293002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_asthma_triggers_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "چه چیزهایی آسم شما را بدتر می‌کند؟ (سرما، گرد و غبار، ورزش، بوی عطر، حیوانات...)",
+        "physician_metadata": {
+          "concept": "Asthma Triggers",
+          "icd10_hint": "Z91.89",
+          "snomed_ct": "250882005"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_asthma_biologics_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "داروی تزریقی و آمپول‌های جدید برای آسم استفاده می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Biologic Therapy for Asthma",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "763158003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_asthma_icu_001",
+        "category": "Pulmonology",
+        "subcategory": "Obstructive Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا حملهٔ آسم آن‌قدر شدید بوده که در بخش مراقبت‌های ویژه (ICU) یا زیر دستگاه بستری شوید؟",
+        "physician_metadata": {
+          "concept": "History of Severe Life-Threatening Asthma / ICU Admission",
+          "icd10_hint": "Z92.29",
+          "snomed_ct": "443428000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_ild_001",
+        "category": "Pulmonology",
+        "subcategory": "Interstitial Lung Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "به شما گفته‌اند ریه‌تان سفت یا اسکار شده (فیبروز ریه)؟",
+        "physician_metadata": {
+          "concept": "Interstitial Lung Disease - ILD / Pulmonary Fibrosis",
+          "icd10_hint": "J84.10",
+          "snomed_ct": "51615001"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_pulm_ild_001_cause",
+            "ui_type": "text_input",
+            "patient_text": "علتش را چه گفتند؟ (شغل، دارو، بیماری مفصلی و خودایمنی...)",
+            "physician_metadata": "ILD Etiology"
+          }
+        ]
+      },
+      {
+        "id": "pmh_pulm_hrct_001",
+        "category": "Pulmonology",
+        "subcategory": "Interstitial Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "سی‌تی اسکن (CT) ریه انجام داده‌اید؟",
+        "physician_metadata": {
+          "concept": "High-Resolution CT - HRCT",
+          "icd10_hint": "Z01.89",
+          "snomed_ct": "241617002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_ild_tests_001",
+        "category": "Pulmonology",
+        "subcategory": "Interstitial Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "تست فوت ریه یا «تست راه‌رفتن ۶ دقیقه‌ای» انجام داده‌اید؟",
+        "physician_metadata": {
+          "concept": "PFTs / 6-Minute Walk Test - 6MWT",
+          "icd10_hint": "Z01.84",
+          "snomed_ct": "444951000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_bx_001",
+        "category": "Pulmonology",
+        "subcategory": "Interstitial Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "از ریه‌تان نمونه‌برداری (بیوپسی) کرده‌اند؟",
+        "physician_metadata": {
+          "concept": "Lung Biopsy",
+          "icd10_hint": "Z11.59",
+          "snomed_ct": "116148004"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_ild_tx_001",
+        "category": "Pulmonology",
+        "subcategory": "Interstitial Lung Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "داروی خاص ریه (پیرفنیدون/نینتدانیب) یا کورتون مصرف می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Antifibrotic / Immunosuppressive Therapy",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "768759001"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_lung_tx_list_001",
+        "category": "Pulmonology",
+        "subcategory": "Interstitial Lung Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آیا اسمتان در لیست پیوند ریه ثبت شده است؟",
+        "physician_metadata": {
+          "concept": "Lung Transplant Referral Status",
+          "icd10_hint": "Z76.82",
+          "snomed_ct": "161000175107"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_ph_001",
+        "category": "Pulmonology",
+        "subcategory": "Pulmonary Vascular Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "گفتند فشار رگ‌های ریه‌تان بالاست؟",
+        "physician_metadata": {
+          "concept": "Pulmonary Hypertension - PH",
+          "icd10_hint": "I27.20",
+          "snomed_ct": "70681000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_rhc_001",
+        "category": "Pulmonology",
+        "subcategory": "Pulmonary Vascular Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "با لوله‌گذاری از طریق رگ (کاتتریسم)، فشار ریه‌تان را دقیق اندازه گرفته‌اند؟",
+        "physician_metadata": {
+          "concept": "Right Heart Catheterization",
+          "icd10_hint": "Z01.810",
+          "snomed_ct": "17565004"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_ph_fc_001",
+        "category": "Pulmonology",
+        "subcategory": "Pulmonary Vascular Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "چقدر می‌توانید فعالیت کنید بدون اینکه دچار تنگی نفس شدید شوید؟",
+        "physician_metadata": {
+          "concept": "WHO Functional Class for PH",
+          "icd10_hint": "R06.02",
+          "snomed_ct": "422622005"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_ph_meds_001",
+        "category": "Pulmonology",
+        "subcategory": "Pulmonary Vascular Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "داروی خاصی برای این بیماری (مثل سیلدنافیل، بوسنتان) مصرف می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Targeted PH Therapy",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "413280003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_cteph_001",
+        "category": "Pulmonology",
+        "subcategory": "Pulmonary Vascular Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آیا علتش لختهٔ کهنه در ریه بوده؟ عمل جراحی برایش انجام دادید؟",
+        "physician_metadata": {
+          "concept": "CTEPH / Pulmonary Endarterectomy",
+          "icd10_hint": "I27.24",
+          "snomed_ct": "722421008"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_psg_001",
+        "category": "Pulmonology",
+        "subcategory": "Sleep-Disordered Breathing",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تست خواب شبانه (پلی‌سومنوگرافی) انجام داده‌اید؟",
+        "physician_metadata": {
+          "concept": "Sleep Study / Polysomnography",
+          "icd10_hint": "Z01.89",
+          "snomed_ct": "6375000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_osa_001",
+        "category": "Pulmonology",
+        "subcategory": "Sleep-Disordered Breathing",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "خر و پف بلند دارید؟ همراهتان گفته شب‌ها نفستان قطع می‌شود؟ روزها خیلی خواب‌آلوده‌اید؟",
+        "physician_metadata": {
+          "concept": "Obstructive Sleep Apnea - OSA Symptoms",
+          "icd10_hint": "G47.33",
+          "snomed_ct": "78275009"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_cpap_001",
+        "category": "Pulmonology",
+        "subcategory": "Sleep-Disordered Breathing",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "شب‌ها با دستگاه و ماسک مخصوص (CPAP/APAP) می‌خوابید؟ چند ساعت در شب؟",
+        "physician_metadata": {
+          "concept": "CPAP Compliance",
+          "icd10_hint": "Z99.89",
+          "snomed_ct": "428314002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_pulm_osa_cv_001",
+        "category": "Pulmonology",
+        "subcategory": "Sleep-Disordered Breathing",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آیا فشار خون بالا یا بی‌نظمی قلبتان به این مشکل ربط دارد؟",
+        "physician_metadata": {
+          "concept": "OSA-Related Cardiovascular Comorbidities",
+          "icd10_hint": "I15.8",
+          "snomed_ct": "443501004"
+        },
+        "conditional_followups": []
+      }
+    ]
+  },
+  {
+    "category_id": "cat_gi",
+    "farsi_title": "۳. گوارش و کبد",
+    "master_patient_text": "آیا سابقه بیماری‌های گوارشی، کبدی، یا جراحی روده دارید؟",
+    "questions": [
+      {
+        "id": "pmh_gi_cirrhosis_001",
+        "category": "Gastroenterology",
+        "subcategory": "Hepatic Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "بیماری مزمن یا نارسایی کبد (سیروز) دارید؟ علتش را چه گفتند؟ (هپاتیت، الکل، کبد چرب...)",
+        "physician_metadata": {
+          "concept": "Liver Cirrhosis Etiology: NASH, HBV/HCV, Alcoholic",
+          "icd10_hint": "K74.60",
+          "snomed_ct": "19943007"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_meld_001",
+        "category": "Gastroenterology",
+        "subcategory": "Hepatic Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "پزشک گفت مرحلهٔ آسیب کبدتان چقدر است؟",
+        "physician_metadata": {
+          "concept": "Child-Pugh / MELD Score Classification",
+          "icd10_hint": "K74.69",
+          "snomed_ct": "444458004"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_varices_001",
+        "category": "Gastroenterology",
+        "subcategory": "Hepatic Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا خون استفراغ کرده‌اید یا مدفوع سیاه، شل و قیری‌رنگ داشته‌اید؟",
+        "physician_metadata": {
+          "concept": "Upper GI Bleeding / Melena",
+          "icd10_hint": "K92.0",
+          "snomed_ct": "63124005"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_gi_varices_001_banding",
+            "ui_type": "text_input",
+            "patient_text": "آیا در مری برایتان رگ‌های واریسی را بستند یا تزریق کردند؟",
+            "physician_metadata": "Variceal Banding / Sclerotherapy"
+          }
+        ]
+      },
+      {
+        "id": "pmh_gi_ascites_001",
+        "category": "Gastroenterology",
+        "subcategory": "Hepatic Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "شکمتان آب می‌آورد؟ مجبور شده‌اید با سوزن آب شکمتان را بکشند؟",
+        "physician_metadata": {
+          "concept": "Ascites / Paracentesis History",
+          "icd10_hint": "R18.8",
+          "snomed_ct": "389026000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_encephalopathy_001",
+        "category": "Gastroenterology",
+        "subcategory": "Hepatic Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا به خاطر کبد دچار گیجی، خواب‌آلودگی شدید یا حواس‌پرتی شده‌اید؟",
+        "physician_metadata": {
+          "concept": "Hepatic Encephalopathy",
+          "icd10_hint": "K72.90",
+          "snomed_ct": "81214002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_hbv_hcv_001",
+        "category": "Gastroenterology",
+        "subcategory": "Hepatic Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "برای هپاتیت داروی ضد ویروس مصرف می‌کنید؟ درمان شده است؟",
+        "physician_metadata": {
+          "concept": "Antiviral Therapy for HBV/HCV",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "414088005"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_hcc_scr_001",
+        "category": "Gastroenterology",
+        "subcategory": "Hepatic Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "هر چند ماه برای غربالگری کبد، سونوگرافی یا آزمایش خون می‌دهید؟",
+        "physician_metadata": {
+          "concept": "HCC Surveillance",
+          "icd10_hint": "Z12.89",
+          "snomed_ct": "444400007"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_liver_tx_001",
+        "category": "Gastroenterology",
+        "subcategory": "Hepatic Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آیا در لیست پیوند کبد هستید؟",
+        "physician_metadata": {
+          "concept": "Liver Transplant Candidate",
+          "icd10_hint": "Z76.82",
+          "snomed_ct": "161000175105"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_ibd_001",
+        "category": "Gastroenterology",
+        "subcategory": "Inflammatory Bowel Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "بیماری التهابی روده دارید؟ کدام نوع؟ کرون یا کولیت اولسروز؟",
+        "physician_metadata": {
+          "concept": "Inflammatory Bowel Disease: Crohn's vs. Ulcerative Colitis",
+          "icd10_hint": "K50.90",
+          "snomed_ct": "34000006"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_ibd_sx_001",
+        "category": "Gastroenterology",
+        "subcategory": "Inflammatory Bowel Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "در حال حاضر اسهال خونی، دل‌درد شدید یا کاهش وزن دارید؟ روزی چند بار دفع دارید؟",
+        "physician_metadata": {
+          "concept": "Active IBD Symptoms / Disease Severity",
+          "icd10_hint": "K52.9",
+          "snomed_ct": "236071009"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_ibd_meds_001",
+        "category": "Gastroenterology",
+        "subcategory": "Inflammatory Bowel Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "چه داروهایی مصرف می‌کنید؟ (مزالازین، کورتون، قرص‌های ایمنی مثل آزاتیوپرین)",
+        "physician_metadata": {
+          "concept": "IBD Maintenance Therapy",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "429215003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_ibd_biologics_001",
+        "category": "Gastroenterology",
+        "subcategory": "Inflammatory Bowel Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "آمپول یا تزریق بیولوژیک (مثل هومیره، رمیکید) دارید؟",
+        "physician_metadata": {
+          "concept": "Biologic Therapy in IBD",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "432125005"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_ibd_surg_001",
+        "category": "Gastroenterology",
+        "subcategory": "Inflammatory Bowel Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "رودهٔ شما را جراحی کرده‌اند؟ کیسهٔ روده روی شکم (استومی) دارید؟",
+        "physician_metadata": {
+          "concept": "Surgical Resection / Ostomy Status",
+          "icd10_hint": "Z93.3",
+          "snomed_ct": "261292003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_ibd_extra_001",
+        "category": "Gastroenterology",
+        "subcategory": "Inflammatory Bowel Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "به خاطر این بیماری، مفاصل، چشم یا پوستتان هم درگیر شده است؟",
+        "physician_metadata": {
+          "concept": "Extraintestinal Manifestations",
+          "icd10_hint": "K51.919",
+          "snomed_ct": "413346002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_colo_date_001",
+        "category": "Gastroenterology",
+        "subcategory": "Inflammatory Bowel Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آخرین بار کِی کولونوسکوپی شدید؟",
+        "physician_metadata": {
+          "concept": "Recent Colonoscopy Date",
+          "icd10_hint": "Z12.11",
+          "snomed_ct": "73761001"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_gerd_001",
+        "category": "Gastroenterology",
+        "subcategory": "Upper GI Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سوزش شدید سر دل یا ترش‌کردن مزمن و مداوم دارید؟",
+        "physician_metadata": {
+          "concept": "Gastroesophageal Reflux Disease - GERD",
+          "icd10_hint": "K21.9",
+          "snomed_ct": "235595009"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_pud_001",
+        "category": "Gastroenterology",
+        "subcategory": "Upper GI Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه زخم معده یا اثنی‌عشر داشته‌اید؟ برای میکروب معده (هلیکوباکتر) داروی چندروزه خورده‌اید؟",
+        "physician_metadata": {
+          "concept": "Peptic Ulcer Disease / H. pylori Eradication",
+          "icd10_hint": "K27.9",
+          "snomed_ct": "52448006"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_gibleed_001",
+        "category": "Gastroenterology",
+        "subcategory": "Upper GI Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا به خاطر خونریزی معده، خون بالا آورده‌اید یا بستری شده‌اید؟",
+        "physician_metadata": {
+          "concept": "History of GI Bleeding",
+          "icd10_hint": "K92.2",
+          "snomed_ct": "70311003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_dysphagia_001",
+        "category": "Gastroenterology",
+        "subcategory": "Upper GI Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "احساس می‌کنید غذا موقع بلعیدن در گلو یا مری‌تان گیر می‌کند؟",
+        "physician_metadata": {
+          "concept": "Dysphagia",
+          "icd10_hint": "R13.10",
+          "snomed_ct": "40739000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_egd_001",
+        "category": "Gastroenterology",
+        "subcategory": "Upper GI Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا آندوسکوپی شده‌اید؟ نتیجه‌اش چه بود؟",
+        "physician_metadata": {
+          "concept": "Upper Endoscopy Findings",
+          "icd10_hint": "Z01.89",
+          "snomed_ct": "446522002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_pancreatitis_001",
+        "category": "Gastroenterology",
+        "subcategory": "Pancreatic Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا دچار التهاب لوزالمعده (پانکراتیت) شده‌اید؟ چند بار؟",
+        "physician_metadata": {
+          "concept": "Acute Pancreatitis History",
+          "icd10_hint": "K85.90",
+          "snomed_ct": "75694006"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_gi_pancreatitis_001_cause",
+            "ui_type": "text_input",
+            "patient_text": "علتش سنگ کیسه صفرا، مصرف الکل یا چربی خون خیلی بالا بود؟",
+            "physician_metadata": "Pancreatitis Etiology"
+          }
+        ]
+      },
+      {
+        "id": "pmh_gi_pan_insuff_001",
+        "category": "Gastroenterology",
+        "subcategory": "Pancreatic Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "به خاطر مشکل مزمن پانکراس، قرص آنزیم (مثل کرئون) مصرف می‌کنید؟ مدفوعتان چرب و بدبو شده است؟",
+        "physician_metadata": {
+          "concept": "Chronic Pancreatitis / Pancreatic Exocrine Insufficiency",
+          "icd10_hint": "K86.1",
+          "snomed_ct": "59074004"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_gi_pan_dm_001",
+        "category": "Gastroenterology",
+        "subcategory": "Pancreatic Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آیا بعد از مشکلات لوزالمعده، دچار قند خون بالا یا دیابت شدید؟",
+        "physician_metadata": {
+          "concept": "Secondary Diabetes / Type 3c DM",
+          "icd10_hint": "E13.9",
+          "snomed_ct": "72281000119106"
+        },
+        "conditional_followups": []
+      }
+    ]
+  },
+  {
+    "category_id": "cat_renal",
+    "farsi_title": "۴. کلیه و مجاری ادراری",
+    "master_patient_text": "آیا سابقه نارسایی کلیه، دیالیز، یا پیوند کلیه دارید؟",
+    "questions": [
+      {
+        "id": "pmh_renal_ckd_001",
+        "category": "Nephrology",
+        "subcategory": "Chronic Kidney Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "به شما گفته‌اند کلیه‌هایتان ضعیف شده یا کم‌کار است؟ آخرین عدد کراتینین آزمایش را می‌دانید؟",
+        "physician_metadata": {
+          "concept": "Chronic Kidney Disease / Baseline Creatinine",
+          "icd10_hint": "N18.9",
+          "snomed_ct": "709044004"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_renal_ckd_001_cause",
+            "ui_type": "text_input",
+            "patient_text": "علتش دیابت، فشار خون بالا یا بیماری خودایمنی بود؟",
+            "physician_metadata": "CKD Etiology"
+          }
+        ]
+      },
+      {
+        "id": "pmh_renal_ckd_prog_001",
+        "category": "Nephrology",
+        "subcategory": "Chronic Kidney Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آیا روند کارکرد کلیه‌تان رو به بدتر شدن سریع است؟",
+        "physician_metadata": {
+          "concept": "CKD Progression Rate",
+          "icd10_hint": "N18.9",
+          "snomed_ct": "444552002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_anemia_001",
+        "category": "Nephrology",
+        "subcategory": "Chronic Kidney Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "به خاطر کلیه دچار کم‌خونی شده‌اید؟ آمپول خون‌ساز (ایپوئتین/آراسپ) تزریق می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Anemia of CKD / Erythropoietin Therapy",
+          "icd10_hint": "D63.1",
+          "snomed_ct": "431034005"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_esrd_001",
+        "category": "Nephrology",
+        "subcategory": "Chronic Kidney Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "در حال حاضر دیالیز می‌شوید؟ کدام نوع؟ دیالیز خونی (رگ دست) یا دیالیز شکمی؟ هفته‌ای چند بار؟",
+        "physician_metadata": {
+          "concept": "End-Stage Renal Disease - ESRD / Hemodialysis vs. Peritoneal",
+          "icd10_hint": "N18.6",
+          "snomed_ct": "46177005"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_access_001",
+        "category": "Nephrology",
+        "subcategory": "Chronic Kidney Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "روی دستتان رگ مخصوص دیالیز (فیستول/گرافت) دارید؟ جدیداً مشکلی مثل گرفتگی پیدا نکرده است؟",
+        "physician_metadata": {
+          "concept": "Vascular Access Status: Fistula / Graft / Permcath",
+          "icd10_hint": "Z99.2",
+          "snomed_ct": "36965003"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_gn_001",
+        "category": "Nephrology",
+        "subcategory": "Glomerular Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "گفتند کلیه‌هایتان دچار التهاب بافت داخلی شده یا دفع شدید پروتئین یا خون در ادرار دارید؟",
+        "physician_metadata": {
+          "concept": "Glomerulonephritis / Nephrotic or Nephritic Syndrome",
+          "icd10_hint": "N05.9",
+          "snomed_ct": "36171008"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_biopsy_001",
+        "category": "Nephrology",
+        "subcategory": "Glomerular Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "از کلیه‌تان نمونه‌برداری (بیوپسی) انجام شده است؟",
+        "physician_metadata": {
+          "concept": "Renal Biopsy",
+          "icd10_hint": "Z12.89",
+          "snomed_ct": "119270007"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_gn_immuno_001",
+        "category": "Nephrology",
+        "subcategory": "Glomerular Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "برای این مشکل، قرص کورتون یا داروهای قوی سرکوب‌کننده سیستم ایمنی مصرف کرده‌اید؟",
+        "physician_metadata": {
+          "concept": "Immunosuppressive Therapy for Glomerular Disease",
+          "icd10_hint": "Z79.52",
+          "snomed_ct": "416865005"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_plasmapheresis_001",
+        "category": "Nephrology",
+        "subcategory": "Glomerular Disease",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا نیازمند فرآیند «تعویض پلاسما» (پلاسمافرز) شده‌اید؟",
+        "physician_metadata": {
+          "concept": "Plasmapheresis History",
+          "icd10_hint": "Z92.89",
+          "snomed_ct": "116813009"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_tx_001",
+        "category": "Nephrology",
+        "subcategory": "Renal Transplantation",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "کلیهٔ پیوندی دارید؟ چند سال است؟",
+        "physician_metadata": {
+          "concept": "Kidney Transplant Duration",
+          "icd10_hint": "Z94.0",
+          "snomed_ct": "175850007"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_renal_tx_001_donor",
+            "ui_type": "text_input",
+            "patient_text": "دهندهٔ کلیه فرد زنده بود یا مرگ مغزی؟ فامیل بود؟",
+            "physician_metadata": "Donor Type: Living vs. Deceased / Related"
+          }
+        ]
+      },
+      {
+        "id": "pmh_renal_tx_reject_001",
+        "category": "Nephrology",
+        "subcategory": "Renal Transplantation",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا بدنتان کلیه را پس زده است؟ به این خاطر بستری شدید؟",
+        "physician_metadata": {
+          "concept": "Allograft Rejection Episodes",
+          "icd10_hint": "T86.11",
+          "snomed_ct": "109575000"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_tx_meds_001",
+        "category": "Nephrology",
+        "subcategory": "Renal Transplantation",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "داروهای ضد رد پیوند (مثل تاکرولیموس، سیکلوسپورین، مایکوفنولات) را دقیق و منظم مصرف می‌کنید؟",
+        "physician_metadata": {
+          "concept": "Immunosuppressive Regimen Adherence",
+          "icd10_hint": "Z79.899",
+          "snomed_ct": "429220002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_tx_inf_001",
+        "category": "Nephrology",
+        "subcategory": "Renal Transplantation",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "بعد از پیوند، دچار عفونت خاص یا ویروسی (مثل CMV یا BK ویروس) شدید؟",
+        "physician_metadata": {
+          "concept": "Post-Transplant Opportunistic Infections",
+          "icd10_hint": "B25.9",
+          "snomed_ct": "416174007"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_renal_tx_graft_001",
+        "category": "Nephrology",
+        "subcategory": "Renal Transplantation",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "در حال حاضر عملکرد کلیهٔ پیوندی‌تان خوب و پایدار است؟",
+        "physician_metadata": {
+          "concept": "Current Graft Function",
+          "icd10_hint": "Z94.0",
+          "snomed_ct": "275323000"
+        },
+        "conditional_followups": []
+      }
+    ]
+  },
+  {
+    "category_id": "cat_endo",
+    "farsi_title": "۵. غدد و متابولیسم",
+    "master_patient_text": "آیا سابقه دیابت (قند خون) یا بیماری‌های تیروئید دارید؟",
+    "questions": [
+      {
+        "id": "pmh_endo_dm_001",
+        "category": "Endocrinology",
+        "subcategory": "Diabetes Mellitus",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "دیابت (قند خون) دارید؟ کدام نوع؟ نوع ۱ یا نوع ۲؟",
+        "physician_metadata": {
+          "concept": "Diabetes Mellitus: Type 1 vs. Type 2",
+          "icd10_hint": "E11.9",
+          "snomed_ct": "73211009"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_endo_dm_ctrl_001",
+        "category": "Endocrinology",
+        "subcategory": "Diabetes Mellitus",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "قند خونتان را در خانه چک می‌کنید؟ دستگاه چسبی روی بازو (سنسور قند) دارید؟ آخرین عدد هموگلوبین ای‌وان‌سی (HbA1c) چند بود؟",
+        "physician_metadata": {
+          "concept": "Glycemic Control Status / HbA1c",
+          "icd10_hint": "Z01.89",
+          "snomed_ct": "439903002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_endo_dm_tx_001",
+        "category": "Endocrinology",
+        "subcategory": "Diabetes Mellitus",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "برای دیابت انسولین تزریق می‌کنید یا قرص می‌خورید؟ اسم داروها را می‌دانید؟",
+        "physician_metadata": {
+          "concept": "Antidiabetic Therapy: Insulin vs. Oral Agents",
+          "icd10_hint": "Z79.4",
+          "snomed_ct": "425516001"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_endo_dm_tx_001_carb",
+            "ui_type": "text_input",
+            "patient_text": "اگر انسولین می‌زنید، دوز آن را بر اساس مقدار غذایی که می‌خورید (شمارش کربوهیدرات) تنظیم می‌کنید؟",
+            "physician_metadata": "Advanced Insulin Management / Carbohydrate Counting"
+          }
+        ]
+      },
+      {
+        "id": "pmh_endo_dm_micro_001",
+        "category": "Endocrinology",
+        "subcategory": "Diabetes Mellitus",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آیا دیابت به چشم (لیزر یا تزریق)، کلیه (دفع پروتئین) یا اعصاب پا (بی‌حسی، گزگز، زخم پا) آسیب زده؟",
+        "physician_metadata": {
+          "concept": "Diabetic Microvascular Complications: Retinopathy, Nephropathy, Neuropathy",
+          "icd10_hint": "E11.73",
+          "snomed_ct": "422014002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_endo_dm_macro_001",
+        "category": "Endocrinology",
+        "subcategory": "Diabetes Mellitus",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آیا به خاطر دیابت دچار مشکلات رگ‌های قلب یا سکته شده‌اید؟",
+        "physician_metadata": {
+          "concept": "Diabetic Macrovascular Complications",
+          "icd10_hint": "E11.51",
+          "snomed_ct": "421110006"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_endo_hypo_001",
+        "category": "Endocrinology",
+        "subcategory": "Diabetes Mellitus",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا قند خونتان آن‌قدر شدید افتاده که کنترل خود را از دست بدهید، غش کنید یا نیاز به کمک دیگران داشته باشید؟",
+        "physician_metadata": {
+          "concept": "Severe Hypoglycemia History",
+          "icd10_hint": "E16.2",
+          "snomed_ct": "427361007"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_endo_nodule_001",
+        "category": "Endocrinology",
+        "subcategory": "Thyroid Disorders",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "روی غدهٔ تیروئیدتان توده یا «ندول» داشته‌اید؟ از آن با سوزن نمونه‌برداری کرده‌اند؟",
+        "physician_metadata": {
+          "concept": "Thyroid Nodule / Fine Needle Aspiration - FNA",
+          "icd10_hint": "E04.1",
+          "snomed_ct": "312781002"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_endo_thyroid_ca_001",
+        "category": "Endocrinology",
+        "subcategory": "Thyroid Disorders",
+        "priority": 2,
+        "ui_type": "checkbox",
+        "patient_text": "آیا تشخیص سرطان تیروئید بود؟ جراحی کل تیروئید و درمان با ید رادیواکتیو انجام دادید؟",
+        "physician_metadata": {
+          "concept": "Thyroid Cancer / Total Thyroidectomy / Radioactive Iodine",
+          "icd10_hint": "C73",
+          "snomed_ct": "425000007"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_endo_hyper_001",
+        "category": "Endocrinology",
+        "subcategory": "Thyroid Disorders",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه تیروئید پرکار شدید (مثل بیماری گریوز) داشته‌اید؟ علائمی مثل بیرون‌زدگی چشم‌ها برایتان رخ داد؟",
+        "physician_metadata": {
+          "concept": "Hyperthyroidism / Graves' Disease / Ophthalmopathy",
+          "icd10_hint": "E05.00",
+          "snomed_ct": "4034005"
+        },
+        "conditional_followups": []
+      }
+    ]
+  },
+  {
+    "category_id": "cat_rheum",
+    "farsi_title": "۶. مفاصل و خودایمنی",
+    "master_patient_text": "آیا سابقه روماتیسم، لوپوس، یا بیماری‌های خودایمنی دارید؟",
+    "questions": [
+      {
+        "id": "pmh_rheum_ra_001",
+        "category": "Rheumatology",
+        "subcategory": "Connective Tissue Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "بیماری روماتیسم مفصلی دارید؟ مفاصل انگشتان دستتان صبح‌ها سفت می‌شود و درد می‌کند؟",
+        "physician_metadata": {
+          "concept": "Rheumatoid Arthritis - RA",
+          "icd10_hint": "M06.9",
+          "snomed_ct": "69896004"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_rheum_ra_001_details",
+            "ui_type": "text_input",
+            "patient_text": "داروی متوتروکسات یا آمپول‌های بیولوژیک مصرف می‌کنید؟ آیا ریه‌تان هم درگیر روماتیسم شده؟",
+            "physician_metadata": "RA Therapy / Rheumatoid Lung"
+          }
+        ]
+      },
+      {
+        "id": "pmh_rheum_sle_001",
+        "category": "Rheumatology",
+        "subcategory": "Connective Tissue Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "بیماری خودایمنی لوپوس دارید؟",
+        "physician_metadata": {
+          "concept": "Systemic Lupus Erythematosus - SLE",
+          "icd10_hint": "M32.9",
+          "snomed_ct": "55464009"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_rheum_sle_001_details",
+            "ui_type": "text_input",
+            "patient_text": "آیا لوپوس به کلیه، مغز یا سیستم خون شما آسیب زده؟ چه داروهایی مصرف می‌کنید؟",
+            "physician_metadata": "Lupus Nephritis / CNS Lupus / Immunosuppressants"
+          }
+        ]
+      },
+      {
+        "id": "pmh_rheum_scl_001",
+        "category": "Rheumatology",
+        "subcategory": "Connective Tissue Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "بیماری اسکلرودرمی (سفت شدن پوست) دارید؟ انگشتان دستتان در سرما تغییر رنگ شدید می‌دهند (سفید یا کبود می‌شوند)؟",
+        "physician_metadata": {
+          "concept": "Systemic Sclerosis / Scleroderma / Raynaud's Phenomenon",
+          "icd10_hint": "M34.9",
+          "snomed_ct": "62402003"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_rheum_scl_001_details",
+            "ui_type": "text_input",
+            "patient_text": "آیا ریه یا گوارشتان هم درگیر این بیماری شده است؟",
+            "physician_metadata": "Scleroderma Lung / Scleroderma Renal Crisis"
+          }
+        ]
+      },
+      {
+        "id": "pmh_rheum_vasculitis_001",
+        "category": "Rheumatology",
+        "subcategory": "Connective Tissue Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "آیا پزشک به شما گفته رگ‌هایتان دچار التهاب خودایمنی شده است (واسکولیت)؟ نام دقیق نوع آن را می‌دانید؟",
+        "physician_metadata": {
+          "concept": "Systemic Vasculitis Classification",
+          "icd10_hint": "M31.9",
+          "snomed_ct": "443916001"
+        },
+        "conditional_followups": []
+      }
+    ]
+  },
+  {
+    "category_id": "cat_neuro_psych",
+    "farsi_title": "۷. مغز، اعصاب و روان",
+    "master_patient_text": "آیا سابقه سکته مغزی، تشنج، افسردگی شدید، یا بیماری‌های عصبی دارید؟",
+    "questions": [
+      {
+        "id": "pmh_neuro_stroke_001",
+        "category": "Neurology & Psychiatry",
+        "subcategory": "Cerebrovascular Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا سکتهٔ مغزی کرده‌اید یا خونریزی مغزی داشته‌اید؟",
+        "physician_metadata": {
+          "concept": "History of Stroke / CVA",
+          "icd10_hint": "I63.9",
+          "snomed_ct": "230690007"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_neuro_stroke_001_date",
+            "ui_type": "text_input",
+            "patient_text": "کِی این اتفاق افتاد؟ آیا عوارض حرکتی یا تکلمی باقی مانده است؟",
+            "physician_metadata": "Date of Stroke & Residual Deficits"
+          }
+        ]
+      },
+      {
+        "id": "pmh_neuro_seizure_001",
+        "category": "Neurology & Psychiatry",
+        "subcategory": "Epilepsy",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه تشنج یا بیماری صرع دارید؟",
+        "physician_metadata": {
+          "concept": "Seizure Disorder / Epilepsy",
+          "icd10_hint": "G40.909",
+          "snomed_ct": "84757009"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_neuro_seizure_001_meds",
+            "ui_type": "text_input",
+            "patient_text": "چه دارویی مصرف می‌کنید؟ آخرین حمله کِی بود؟",
+            "physician_metadata": "AEDs & Last Seizure"
+          }
+        ]
+      },
+      {
+        "id": "pmh_neuro_ms_001",
+        "category": "Neurology & Psychiatry",
+        "subcategory": "Demyelinating Disease",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "بیماری ام‌اس (MS) یا مشکلات بینایی و حرکتی خودایمنی دارید؟",
+        "physician_metadata": {
+          "concept": "Multiple Sclerosis (MS)",
+          "icd10_hint": "G35",
+          "snomed_ct": "24700007"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_psych_depression_001",
+        "category": "Neurology & Psychiatry",
+        "subcategory": "Mood & Psychiatric Disorders",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه افسردگی شدید، اضطراب مزمن یا وسواس بالینی دارید؟",
+        "physician_metadata": {
+          "concept": "MDD / GAD / OCD",
+          "icd10_hint": "F32.9",
+          "snomed_ct": "35489007"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_psych_meds_001",
+            "ui_type": "text_input",
+            "patient_text": "داروی روان‌پزشکی مصرف می‌کنید؟ تحت نظر روان‌پزشک هستید؟",
+            "physician_metadata": "Psychotropic Meds & Follow-up"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "category_id": "cat_onco_hem",
+    "farsi_title": "۸. سرطان و خون",
+    "master_patient_text": "آیا سابقه ابتلا به انواع سرطان، تومور، لخته خون، یا کم‌خونی شدید دارید؟",
+    "questions": [
+      {
+        "id": "pmh_onco_malignancy_001",
+        "category": "Oncology & Hematology",
+        "subcategory": "Malignancy History",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا به هیچ نوع سرطان یا تومور بدخیم مبتلا شده‌اید؟",
+        "physician_metadata": {
+          "concept": "History of Malignant Neoplasm",
+          "icd10_hint": "C80.1",
+          "snomed_ct": "363346000"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_onco_type_001",
+            "ui_type": "text_input",
+            "patient_text": "کدام اندام؟ کِی تشخیص داده شد؟",
+            "physician_metadata": "Primary Site & Date"
+          },
+          {
+            "id": "pmh_onco_tx_001",
+            "ui_type": "text_input",
+            "patient_text": "شیمی‌درمانی، پرتو‌درمانی یا جراحی شده‌اید؟ الان در دوره پاکی هستید؟",
+            "physician_metadata": "Modalities & Current Status"
+          }
+        ]
+      },
+      {
+        "id": "pmh_hem_thrombosis_001",
+        "category": "Oncology & Hematology",
+        "subcategory": "Thromboembolic Disorders",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه لخته شدن خون در پاها (DVT) یا ریه (آمبولی) دارید؟",
+        "physician_metadata": {
+          "concept": "DVT / PE",
+          "icd10_hint": "I82.40",
+          "snomed_ct": "128053003"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_hem_thrombosis_meds",
+            "ui_type": "text_input",
+            "patient_text": "آیا به این خاطر داروی رقیق‌کننده مصرف می‌کنید؟ تا کِی؟",
+            "physician_metadata": "Duration of Anticoagulation"
+          }
+        ]
+      },
+      {
+        "id": "pmh_hem_anemia_001",
+        "category": "Oncology & Hematology",
+        "subcategory": "Hematologic Disorders",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "کم‌خونی مزمن، تالاسمی (مینور/ماژور) یا کمبود فاویسم (G6PD) دارید؟",
+        "physician_metadata": {
+          "concept": "Chronic Anemia / Thalassemia / G6PD",
+          "icd10_hint": "D56.3",
+          "snomed_ct": "127026006"
+        },
+        "conditional_followups": []
+      }
+    ]
+  },
+  {
+    "category_id": "cat_surg_hosp",
+    "farsi_title": "۹. جراحی و بستری",
+    "master_patient_text": "آیا تاکنون جراحی بزرگ یا بستری در بیمارستان داشته‌اید؟",
+    "questions": [
+      {
+        "id": "pmh_surg_major_001",
+        "category": "Surgical & Hospitalization History",
+        "subcategory": "Prior Operations",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "تا حالا هرگونه جراحی بزرگ (کیسه صفرا، شکمی، دیسک کمر، زنان و...) داشته‌اید؟",
+        "physician_metadata": {
+          "concept": "History of Major Surgery",
+          "icd10_hint": "Z98.890",
+          "snomed_ct": "416940007"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_surg_details_001",
+            "ui_type": "text_input",
+            "patient_text": "نوع جراحی و سال دقیق آن را بنویسید:",
+            "physician_metadata": "Surgical Details & Dates"
+          }
+        ]
+      },
+      {
+        "id": "pmh_hosp_recent_001",
+        "category": "Surgical & Hospitalization History",
+        "subcategory": "Prior Admissions",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "در یک سال گذشته به هر علتی در بیمارستان بستری شده‌اید؟",
+        "physician_metadata": {
+          "concept": "Recent Hospital Admission (<1 yr)",
+          "icd10_hint": "Z92.89",
+          "snomed_ct": "304951007"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_hosp_reason_001",
+            "ui_type": "text_input",
+            "patient_text": "علت بستری و مدت زمان آن چقدر بود؟",
+            "physician_metadata": "Reason & Length of Stay"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "category_id": "cat_misc",
+    "farsi_title": "۱۰. سایر بیماری‌ها و حساسیت‌ها",
+    "master_patient_text": "آیا سابقه عفونت‌های مزمن، حساسیت شدید دارویی، یا غذایی دارید؟",
+    "questions": [
+      {
+        "id": "pmh_misc_infectious_001",
+        "category": "Other Chronic Medical Conditions",
+        "subcategory": "Chronic Infections",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه ابتلا به سل ریوی، تب مالت، یا عفونت‌های مزمن طولانی‌مدت دارید؟",
+        "physician_metadata": {
+          "concept": "Chronic Infections (TB, Brucellosis)",
+          "icd10_hint": "A15.0",
+          "snomed_ct": "56717001"
+        },
+        "conditional_followups": []
+      },
+      {
+        "id": "pmh_misc_allergy_001",
+        "category": "Other Chronic Medical Conditions",
+        "subcategory": "Allergies & Intolerances",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "حساسیت شدید دارویی (مثل پنی‌سیلین) یا حساسیت غذایی شدید دارید؟",
+        "physician_metadata": {
+          "concept": "Severe Drug/Food Allergy",
+          "icd10_hint": "Z88.0",
+          "snomed_ct": "416098002"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_misc_allergy_details",
+            "ui_type": "text_input",
+            "patient_text": "نام دارو یا ماده غذایی و نوع واکنش بدن (خارش، تنگی نفس، شوک):",
+            "physician_metadata": "Allergen & Reaction"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "category_id": "cat_obgyn",
+    "farsi_title": "۱۱. سوابق بارداری و زنان",
+    "master_patient_text": "آیا در حال حاضر باردار هستید یا سابقه بارداری و زایمان دارید؟ (ویژه بانوان)",
+    "questions": [
+      {
+        "id": "pmh_ob_history_001",
+        "category": "Obstetrics & Gynecology",
+        "subcategory": "Prior Pregnancies",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه بارداری‌های قبلی دارید؟ (بررسی تعداد بارداری، زایمان، سقط یا فوت نوزاد)",
+        "physician_metadata": {
+          "concept": "Obstetric History (GPA)",
+          "icd10_hint": "Z87.5",
+          "snomed_ct": "161103003"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_ob_history_001_gpab",
+            "ui_type": "text_input",
+            "patient_text": "چند بار باردار شده‌اید؟ چند زایمان، سقط یا فوت نوزاد داشتید؟",
+            "physician_metadata": "GPA Status & Outcomes"
+          },
+          {
+            "id": "pmh_ob_history_001_mode",
+            "ui_type": "text_input",
+            "patient_text": "زایمان‌ها طبیعی بود یا سزارین؟ علت سزارین چه بود؟",
+            "physician_metadata": "Mode of Delivery"
+          }
+        ]
+      },
+      {
+        "id": "pmh_ob_complications_001",
+        "category": "Obstetrics & Gynecology",
+        "subcategory": "Prior Pregnancy Complications",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "آیا در بارداری‌های قبلی دچار عوارضی مثل فشار خون، قند، خونریزی شدید یا زایمان زودرس شده‌اید؟",
+        "physician_metadata": {
+          "concept": "History of Pregnancy Complications",
+          "icd10_hint": "O24.4",
+          "snomed_ct": "275114007"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_ob_comp_details",
+            "ui_type": "text_input",
+            "patient_text": "لطفاً عارضه را کوتاه توضیح دهید:",
+            "physician_metadata": "Complication Details"
+          }
+        ]
+      },
+      {
+        "id": "pmh_ob_current_001",
+        "category": "Obstetrics & Gynecology",
+        "subcategory": "Current Pregnancy Status",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "در حال حاضر باردار هستید؟",
+        "physician_metadata": {
+          "concept": "Current Pregnancy Evaluation",
+          "icd10_hint": "Z33.1",
+          "snomed_ct": "77386006"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_ob_current_age",
+            "ui_type": "text_input",
+            "patient_text": "الان چند هفته یا چند ماهه هستید؟ سونوگرافی‌ها نرمال بوده؟",
+            "physician_metadata": "Gestational Age & Screening"
+          },
+          {
+            "id": "pmh_ob_current_meds",
+            "ui_type": "text_input",
+            "patient_text": "گروه خونی‌تان منفی است؟ چه مکمل‌ها یا داروهایی مصرف می‌کنید؟",
+            "physician_metadata": "Rh Factor & Meds"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "category_id": "cat_peds",
+    "farsi_title": "۱۲. سوابق پزشکی کودکان",
+    "master_patient_text": "آیا فرم را برای کودک پر می‌کنید؟ (سوابق تولد، رشد، و واکسیناسیون)",
+    "questions": [
+      {
+        "id": "pmh_peds_birth_001",
+        "category": "Pediatrics",
+        "subcategory": "Neonatal & Birth History",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه مشکل در زمان تولد یا روزهای اول نوزادی کودک وجود دارد؟",
+        "physician_metadata": {
+          "concept": "Neonatal Birth History",
+          "icd10_hint": "P07.3",
+          "snomed_ct": "275399004"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_peds_birth_details",
+            "ui_type": "text_input",
+            "patient_text": "توضیح دهید (زایمان زودرس، زردی شدید، بستری در دستگاه):",
+            "physician_metadata": "Birth Complications"
+          }
+        ]
+      },
+      {
+        "id": "pmh_peds_growth_001",
+        "category": "Pediatrics",
+        "subcategory": "Growth & Development",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "آیا کودک مشکل رشد، کمبود وزن شدید یا کوتاهی قد دارد؟",
+        "physician_metadata": {
+          "concept": "Failure to Thrive / Growth Issues",
+          "icd10_hint": "R62.51",
+          "snomed_ct": "443607007"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_peds_growth_ht_wt",
+            "ui_type": "text_input",
+            "patient_text": "وزن تولد، وزن و قد فعلی چقدر است؟",
+            "physician_metadata": "Current Percentiles"
+          },
+          {
+            "id": "pmh_peds_growth_feeding",
+            "ui_type": "text_input",
+            "patient_text": "وضعیت اشتها یا بلع چطور است؟",
+            "physician_metadata": "Feeding History"
+          }
+        ]
+      },
+      {
+        "id": "pmh_peds_milestones_001",
+        "category": "Pediatrics",
+        "subcategory": "Neurodevelopment",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "آیا کودک دچار تأخیر در مهارت‌های حرکتی، گفتاری یا اختلالات رفتاری (اوتیسم/بیش‌فعالی) است؟",
+        "physician_metadata": {
+          "concept": "Developmental Delay / Autism / ADHD",
+          "icd10_hint": "F88",
+          "snomed_ct": "224960004"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_peds_milestone_details",
+            "ui_type": "text_input",
+            "patient_text": "چه سنی راه افتاد و حرف زد؟ تشخیص پزشک چه بوده؟",
+            "physician_metadata": "Milestones & Diagnosis"
+          }
+        ]
+      },
+      {
+        "id": "pmh_peds_medical_001",
+        "category": "Pediatrics",
+        "subcategory": "Medical Comorbidities",
+        "priority": 1,
+        "ui_type": "checkbox",
+        "patient_text": "سابقه بستری، تب و تشنج، نقص واکسیناسیون یا بیماری ارثی در خانواده کودک وجود دارد؟",
+        "physician_metadata": {
+          "concept": "Pediatric Immunization & History",
+          "icd10_hint": "Z28",
+          "snomed_ct": "410519008"
+        },
+        "conditional_followups": [
+          {
+            "id": "pmh_peds_med_history",
+            "ui_type": "text_input",
+            "patient_text": "وضعیت واکسن‌ها، بستری قبلی یا حساسیت را توضیح دهید:",
+            "physician_metadata": "Vaccines & Allergies"
+          },
+          {
+            "id": "pmh_peds_fam_history",
+            "ui_type": "text_input",
+            "patient_text": "بیماری ارثی خاصی در خانواده دارید؟",
+            "physician_metadata": "Family History"
+          }
+        ]
+      }
+    ]
+  }
+]
