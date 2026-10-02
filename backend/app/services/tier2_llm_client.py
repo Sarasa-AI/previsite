@@ -4,12 +4,12 @@ import httpx
 from openai import (
     APIConnectionError,
     APIStatusError,
-    AsyncOpenAI,
     AuthenticationError,
     RateLimitError,
 )
 
 from app.core.config import settings
+from app.privacy.llm_egress_gateway import LlmEgressError, chat_completion
 from app.services.openrouter_service import openrouter_service
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class Tier2LLMClient:
     """Configurable secondary LLM provider (GapGPT or OpenRouter secondary)."""
 
     def __init__(self) -> None:
-        self._openai_client: AsyncOpenAI | None = None
+        pass
 
     @property
     def provider(self) -> str:
@@ -41,24 +41,6 @@ class Tier2LLMClient:
             )
         logger.warning("Unknown LLM_TIER2_PROVIDER=%r — Tier 2 unavailable", provider)
         return False
-
-    def _ensure_openai_client(self, *, base_url: str, api_key: str) -> AsyncOpenAI:
-        if self._openai_client is not None:
-            return self._openai_client
-
-        http_client_kwargs = {"timeout": 60.0}
-        if settings.HTTP_PROXY and settings.HTTP_PROXY.strip():
-            http_client_kwargs["proxies"] = settings.HTTP_PROXY
-        http_client = httpx.AsyncClient(**http_client_kwargs)
-
-        self._openai_client = AsyncOpenAI(
-            base_url=base_url,
-            api_key=api_key,
-            max_retries=0,
-            http_client=http_client,
-        )
-        return self._openai_client
-
 
     async def complete(
         self,
@@ -91,7 +73,7 @@ class Tier2LLMClient:
             raise Tier2LLMError(f"Unsupported Tier 2 provider: {self.provider}")
         except Tier2LLMError:
             raise
-        except (APIConnectionError, RateLimitError, APIStatusError) as exc:
+        except (APIConnectionError, RateLimitError, APIStatusError, LlmEgressError) as exc:
             raise Tier2LLMError(str(exc)) from exc
         except (TimeoutError, httpx.TimeoutException) as exc:
             raise Tier2LLMError(str(exc)) from exc
@@ -106,28 +88,34 @@ class Tier2LLMClient:
         temperature: float,
         max_tokens: int,
     ) -> str:
-        client = self._ensure_openai_client(
-            base_url=settings.gapgpt_base_url,
-            api_key=settings.gapgpt_api_key or "",
-        )
-        request_kwargs: dict = {
-            "model": settings.gapgpt_model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if json_mode:
-            try:
-                response = await client.chat.completions.create(
-                    **request_kwargs,
-                    response_format={"type": "json_object"},
-                )
-            except Exception:
-                response = await client.chat.completions.create(**request_kwargs)
-        else:
-            response = await client.chat.completions.create(**request_kwargs)
-        return response.choices[0].message.content or ""
-
+        response_format = {"type": "json_object"} if json_mode else None
+        try:
+            result = await chat_completion(
+                base_url=settings.gapgpt_base_url,
+                api_key=settings.gapgpt_api_key or "",
+                model=settings.gapgpt_model,
+                messages=messages,
+                purpose="tier2_gapgpt",
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+            return result.content
+        except LlmEgressError:
+            if not json_mode:
+                raise
+            # Retry without json_object if unsupported.
+            result = await chat_completion(
+                base_url=settings.gapgpt_base_url,
+                api_key=settings.gapgpt_api_key or "",
+                model=settings.gapgpt_model,
+                messages=messages,
+                purpose="tier2_gapgpt",
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=None,
+            )
+            return result.content
 
     async def _complete_openrouter(
         self,

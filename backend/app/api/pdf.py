@@ -9,13 +9,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.auth.session_access import get_authorized_session, is_doctor
+from app.auth.session_access import get_authorized_session, is_admin, is_doctor
 from app.core.config import settings
+from app.core.rate_limiter import pdf_export_rate_limit
 from app.db.database import get_db
 from app.models import Intake, Summary, User
 from app.models import Session as DBSession
 from app.schemas.intake import ClinicalSummary, DemographicsInput
-from app.services.audit_service import record_audit
+from app.services.audit_service import (
+    AUDIT_ADMIN_CLINICAL_READ,
+    AUDIT_PDF_EXPORT,
+    record_audit,
+    record_request_audit,
+)
 from app.services.medical_overview_service import load_medical_overview_from_intake
 from app.services.pdf_service import generate_patient_report_pdf
 
@@ -91,10 +97,16 @@ async def update_session_soap(
 @router.get("/{session_id}/pdf")
 async def download_patient_report_pdf(
     session_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(pdf_export_rate_limit),
 ) -> StreamingResponse:
-    """Generate and download a clinical patient report PDF for a session."""
+    """Generate and download a clinical patient report PDF for a session.
+
+    Patient owners may export their own session PDF (intentional product
+    behavior). Doctors and admins require session authorization.
+    """
     await _get_session_or_403(db, session_id, current_user)
 
     intake_result = await db.execute(select(Intake).where(Intake.session_id == session_id))
@@ -142,6 +154,23 @@ async def download_patient_report_pdf(
         ) from None
 
     filename = f"patient_report_{session_id}.pdf"
+    await record_request_audit(
+        db,
+        action=AUDIT_PDF_EXPORT,
+        user_id=current_user.id,
+        resource_type="session",
+        resource_id=session_id,
+        request=request,
+    )
+    if is_admin(current_user):
+        await record_request_audit(
+            db,
+            action=AUDIT_ADMIN_CLINICAL_READ,
+            user_id=current_user.id,
+            resource_type="session",
+            resource_id=session_id,
+            request=request,
+        )
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",

@@ -1,9 +1,12 @@
 from io import BytesIO
 
+import pytest
 from fastapi.testclient import TestClient
 
 import app.api.chat as chat_api
 from app.main import app as fastapi_app
+from tests.auth_helpers import national_id_from_seed as _national_id_from_seed
+from tests.auth_helpers import register_and_login as _register_and_login
 
 
 def _create_client(tmp_path, monkeypatch):
@@ -23,59 +26,34 @@ def _create_client(tmp_path, monkeypatch):
     return client
 
 
-from app.utils.national_id import validate_iranian_national_id
+@pytest.mark.parametrize("supplied_role", ["doctor", "admin", "visitor", "superuser"])
+def test_register_ignores_client_role_and_creates_patient(
+    tmp_path, monkeypatch, supplied_role: str
+) -> None:
+    """OTP registration always creates a patient (role forced server-side)."""
+    from app.services.sms import get_test_sms_provider, reset_test_sms_provider
+    from tests.auth_helpers import phone_from_seed
 
-
-def _national_id_from_seed(seed: str) -> str:
-    candidate = 1_000_000_000 + (abs(hash(seed)) % 900_000_000)
-    while candidate < 9_999_999_999:
-        national_id = str(candidate).zfill(10)
-        if validate_iranian_national_id(national_id):
-            return national_id
-        candidate += 1
-    return "0499370899"
-
-
-def _register_and_login(
-    client: TestClient,
-    *,
-    national_id: str | None = None,
-    password: str = "VeryStrongPassword123!",
-    seed: str = "default-patient",
-) -> str:
-    resolved_national_id = national_id or _national_id_from_seed(seed)
-    register_response = client.post(
-        "/api/auth/register",
-        json={
-            "national_id": resolved_national_id,
-            "password": password,
-            "role": "patient",
-        },
-    )
-    assert register_response.status_code == 200, register_response.text
-
-    login_response = client.post(
-        "/api/auth/login",
-        json={"national_id": resolved_national_id, "password": password},
-    )
-    assert login_response.status_code == 200, login_response.text
-    return login_response.json()["access_token"]
-
-
-def test_register_rejects_invalid_role(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
+    try:
+        reset_test_sms_provider()
+        phone = phone_from_seed(f"role-escalation-{supplied_role}")
 
-    response = client.post(
-        "/api/auth/register",
-        json={
-            "national_id": "0499370899",
-            "password": "VeryStrongPassword123!",
-            "role": "visitor",
-        },
-    )
-
-    assert response.status_code == 422
-    client._async_cleanup()
+        req = client.post("/api/auth/otp/request", json={"phone": phone})
+        assert req.status_code == 200, req.text
+        code = get_test_sms_provider().last_code_for(phone)
+        assert code
+        ver = client.post(
+            "/api/auth/otp/verify",
+            json={"phone": phone, "code": code},
+        )
+        assert ver.status_code == 200, ver.text
+        token = ver.json()["access_token"]
+        me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert me.status_code == 200
+        assert me.json()["role"] == "patient"
+    finally:
+        client._async_cleanup()  # type: ignore[attr-defined]
 
 
 def test_auth_session_chat_summary_and_upload_flow(tmp_path, monkeypatch) -> None:
@@ -333,7 +311,7 @@ def test_list_sessions_includes_patient_name_for_doctor(tmp_path, monkeypatch) -
 
     doctor_login = client.post(
         "/api/auth/login",
-        json={"national_id": "bagherzade", "password": "0808"},
+        json={"email": "bagherzade@doctor.com", "password": "0808"},
     )
     assert doctor_login.status_code == 200, doctor_login.text
     doctor_headers = {"Authorization": f"Bearer {doctor_login.json()['access_token']}"}

@@ -1,6 +1,6 @@
 """Append-only audit trail for security-relevant events."""
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Column, DateTime, Index, Integer, String, Text
 from sqlalchemy.sql import func
 
 from app.db.database import Base
@@ -8,6 +8,14 @@ from app.db.database import Base
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_user_id_timestamp", "user_id", "timestamp"),
+        Index(
+            "ix_audit_logs_resource_type_resource_id",
+            "resource_type",
+            "resource_id",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, nullable=True, index=True)

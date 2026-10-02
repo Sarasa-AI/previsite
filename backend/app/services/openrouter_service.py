@@ -1,11 +1,9 @@
 import json
 import logging
 
-import httpx
 from openai import (
     APIConnectionError,
     APIStatusError,
-    AsyncOpenAI,
     AuthenticationError,
     RateLimitError,
 )
@@ -40,7 +38,7 @@ class OpenRouterService:
     """OpenRouter LLM client (OpenAI-compatible API) for structured JSON generation."""
 
     def __init__(self) -> None:
-        self.client: AsyncOpenAI | None = None
+        self.client: object | None = None
         self.base_url = settings.openrouter_base_url
 
     def _model_candidates(self, models: list[str] | None = None) -> list[str]:
@@ -62,32 +60,45 @@ class OpenRouterService:
                 candidates.append(model)
         return candidates
 
-    def _ensure_client(self) -> None:
-        if self.client is not None:
-            return
+    async def _complete(
+        self,
+        messages: list[dict],
+        *,
+        model: str,
+        use_json_format: bool,
+        temperature: float = 0.2,
+        max_tokens: int = 2000,
+    ) -> str:
+        from app.privacy.llm_egress_gateway import LlmEgressError, chat_completion
 
+        self._ensure_client()
+        response_format = {"type": "json_object"} if use_json_format else None
+        try:
+            result = await chat_completion(
+                base_url=self.base_url,
+                api_key=settings.openrouter_api_key or "",
+                model=model,
+                messages=messages,
+                purpose="openrouter_chat",
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+        except LlmEgressError as exc:
+            raise OpenRouterServiceError(str(exc)) from exc
+        return result.content
+
+    def _ensure_client(self) -> None:
+        """Validate API key; HTTP client lives in llm_egress_gateway only."""
         if not settings.openrouter_api_key or not settings.openrouter_api_key.strip():
             logger.error(
                 "OpenRouter authentication failed: OPENROUTER_API_KEY is not configured. "
                 "Set a valid key in backend/.env to enable AI intake features."
             )
             raise OpenRouterAuthenticationError("OPENROUTER_API_KEY is not configured.")
-
-        http_client_kwargs = {"timeout": 60.0}
-        if settings.HTTP_PROXY and settings.HTTP_PROXY.strip():
-            http_client_kwargs["proxies"] = settings.HTTP_PROXY
-        http_client = httpx.AsyncClient(**http_client_kwargs)
-        self.client = AsyncOpenAI(
-            base_url=self.base_url,
-            api_key=settings.openrouter_api_key,
-            max_retries=0,
-            http_client=http_client,
-            default_headers={
-                "HTTP-Referer": settings.openrouter_http_referer,
-                "X-Title": settings.openrouter_app_title,
-            },
-        )
-        logger.info("OpenRouterService initialized base_url=%s", self.base_url)
+        # Mark ready without constructing the provider HTTP client here
+        # (gateway owns clients).
+        self.client = True  # type: ignore[assignment]
 
     async def generate_json(
         self,
@@ -313,28 +324,6 @@ class OpenRouterService:
                 raise OpenRouterServiceError(
                     "Failed to parse JSON from OpenRouter response."
                 ) from exc
-
-    async def _complete(
-        self,
-        messages: list[dict],
-        *,
-        model: str,
-        use_json_format: bool,
-        temperature: float = 0.2,
-        max_tokens: int = 2000,
-    ) -> str:
-        request_kwargs: dict = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-
-        if use_json_format:
-            request_kwargs["response_format"] = {"type": "json_object"}
-
-        response = await self.client.chat.completions.create(**request_kwargs)
-        return response.choices[0].message.content or ""
 
 
 openrouter_service = OpenRouterService()

@@ -36,20 +36,17 @@ def test_login_lockout_after_five_failures_blocks_even_correct_password(
     token = _register_and_login(client, seed="lockout-patient", password=password)
     assert token
 
-    # Resolve national_id the same way register does
-    from tests.test_mvp_flow import _national_id_from_seed
+    from tests.auth_helpers import national_id_from_seed
 
-    national_id = _national_id_from_seed("lockout-patient")
+    national_id = national_id_from_seed("lockout-patient")
 
     for i in range(settings.auth_login_max_failures):
         resp = client.post(
             "/api/auth/login",
             json={"national_id": national_id, "password": "wrong-password"},
         )
-        # First failures are 401; the 5th may already flip to 429 when lockout trips
         assert resp.status_code in (401, 429), (i, resp.status_code, resp.text)
 
-    # Sixth attempt with the correct password must still be locked out
     locked = client.post(
         "/api/auth/login",
         json={"national_id": national_id, "password": password},
@@ -61,29 +58,30 @@ def test_login_lockout_after_five_failures_blocks_even_correct_password(
 
 
 def test_register_rate_limit_by_ip(tmp_path, monkeypatch) -> None:
+    """OTP request is rate-limited per IP (password register is disabled)."""
     client = _create_client(tmp_path, monkeypatch)
-    from tests.test_mvp_flow import _national_id_from_seed
+    from app.core import config as config_module
+    from app.services.sms import reset_test_sms_provider
+    from tests.auth_helpers import phone_from_seed
 
-    # Temporarily tighten register limit for this test
-    original = settings.auth_register_max_requests
-    settings.auth_register_max_requests = 3
+    original = settings.otp_request_per_ip_limit
+    config_module.settings.otp_request_per_ip_limit = 3
+    settings.otp_request_per_ip_limit = 3
     rate_limiter.reset()
+    reset_test_sms_provider()
 
     try:
         statuses = []
         for i in range(5):
-            nid = _national_id_from_seed(f"reg-limit-{i}")
+            phone = phone_from_seed(f"reg-limit-{i}")
             resp = client.post(
-                "/api/auth/register",
-                json={
-                    "national_id": nid,
-                    "password": "VeryStrongPassword123!",
-                    "role": "patient",
-                },
+                "/api/auth/otp/request",
+                json={"phone": phone},
             )
             statuses.append(resp.status_code)
         assert 429 in statuses
     finally:
-        settings.auth_register_max_requests = original
+        config_module.settings.otp_request_per_ip_limit = original
+        settings.otp_request_per_ip_limit = original
         rate_limiter.reset()
         client._async_cleanup()

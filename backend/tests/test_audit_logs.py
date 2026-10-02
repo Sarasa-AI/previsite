@@ -50,7 +50,7 @@ def test_login_writes_audit_log_and_admin_can_list(tmp_path, monkeypatch) -> Non
 
     admin_login = client.post(
         "/api/auth/login",
-        json={"national_id": "audit_admin", "password": "AdminPass123!"},
+        json={"email": "audit_admin@doctor.com", "password": "AdminPass123!"},
     )
     assert admin_login.status_code == 200, admin_login.text
     admin_headers = {

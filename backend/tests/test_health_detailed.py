@@ -46,5 +46,11 @@ async def test_detailed_health_as_admin(async_client: AsyncClient, db: AsyncSess
     assert "dependencies" in body
     assert "database" in body["dependencies"]
     assert "llm_provider" in body["dependencies"]
+    assert "migrations" in body["dependencies"]
+    assert body["dependencies"]["migrations"]["status"] in {
+        "ok",
+        "behind",
+        "unknown",
+    }
     assert "ollama" not in body["dependencies"]
     assert body["dependencies"]["database"]["status"] == "ok"

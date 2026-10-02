@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.auth.session_access import doctor_may_access_session, get_authorized_session
+from app.auth.session_access import get_authorized_session, is_admin
+from app.core.rate_limiter import ocr_read_rate_limit
 from app.db.database import get_db
 from app.models import File as FileModel
 from app.models import Intake
-from app.models import Session as SessionModel
 from app.models import User
-from app.models.user import UserRole
+from app.services.audit_service import (
+    AUDIT_ADMIN_CLINICAL_READ,
+    AUDIT_OCR_READ,
+    record_request_audit,
+)
 from app.services.medical_overview_service import load_medical_overview_from_intake
 
 router = APIRouter(
@@ -39,22 +43,18 @@ def _no_ocr_available() -> HTTPException:
     )
 
 
-def _user_can_access_session(session: SessionModel, user: User) -> bool:
-    if session.patient_id == user.id:
-        return True
-    if user.role == UserRole.DOCTOR or user.role == "doctor":
-        return doctor_may_access_session(session, user)
-    return False
-
-
 @router.get("/{file_id}/ocr", response_model=DocumentOcrResponse)
 async def get_document_ocr(
     file_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(ocr_read_rate_limit),
 ) -> DocumentOcrResponse:
     """Return stored lab OCR for a file, only after session auth.
 
+    Authorized callers: patient owner of the session, the assigned/claiming
+    doctor, or an admin under the same doctor-equivalent session policy.
     Resolution is strictly session-scoped: file → file.session_id intake →
     lab_results[] match on condition_id. Never search labs across sessions.
     """
@@ -63,21 +63,19 @@ async def get_document_ocr(
     if not db_file:
         raise _not_found()
 
-    session_result = await db.execute(
-        select(SessionModel).where(SessionModel.id == db_file.session_id)
-    )
-    session = session_result.scalar_one_or_none()
-    if not session or not _user_can_access_session(session, current_user):
+    client_ip = request.client.host if request.client else None
+    try:
+        await get_authorized_session(
+            db,
+            db_file.session_id,
+            current_user,
+            claim=True,
+            not_found_as_403=False,
+            ip_address=client_ip,
+        )
+    except HTTPException:
+        # Obfuscate authorization failures as 404.
         raise _not_found()
-
-    # Claim-on-open for doctors viewing OCR on an unassigned session.
-    if session.patient_id != current_user.id:
-        try:
-            await get_authorized_session(
-                db, session.id, current_user, claim=True, not_found_as_403=False
-            )
-        except HTTPException:
-            raise _not_found()
 
     condition_id = (db_file.condition_id or "").strip()
     if not condition_id:
@@ -98,5 +96,23 @@ async def get_document_ocr(
     ocr_text = (matched_lab.extracted_data or "").strip() if matched_lab else ""
     if not ocr_text:
         raise _no_ocr_available()
+
+    await record_request_audit(
+        db,
+        action=AUDIT_OCR_READ,
+        user_id=current_user.id,
+        resource_type="file",
+        resource_id=file_id,
+        request=request,
+    )
+    if is_admin(current_user):
+        await record_request_audit(
+            db,
+            action=AUDIT_ADMIN_CLINICAL_READ,
+            user_id=current_user.id,
+            resource_type="file",
+            resource_id=file_id,
+            request=request,
+        )
 
     return DocumentOcrResponse(ocr_text=ocr_text)

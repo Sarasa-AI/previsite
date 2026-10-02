@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.auth.session_access import get_authorized_session, is_doctor
+from app.auth.session_access import get_authorized_session, is_admin, is_doctor
 from app.db.database import get_db
 from app.models import File as FileModel
 from app.models import Intake, Summary, User
@@ -137,7 +137,21 @@ async def retry_soap_generation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    session = await _get_authorized_session(db, session_id, current_user)
+    """Retry SOAP generation — doctors and admins only, with session authorization."""
+    if not (is_doctor(current_user) or is_admin(current_user)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only doctors and admins can retry SOAP generation",
+        )
+
+    client_ip = request.client.host if request.client else None
+    session = await get_authorized_session(
+        db,
+        session_id,
+        current_user,
+        claim=True,
+        ip_address=client_ip,
+    )
 
     sum_result = await db.execute(
         select(Summary).where(Summary.session_id == session_id)

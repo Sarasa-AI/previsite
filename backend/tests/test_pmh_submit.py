@@ -26,26 +26,9 @@ def _sample_overview_submission(patient_id: int) -> dict:
 
 
 def _register_patient(client: TestClient, *, seed: str) -> tuple[str, int]:
-    national_id = _national_id_from_seed(seed)
-    password = "VeryStrongPassword123!"
-    register_response = client.post(
-        "/api/auth/register",
-        json={
-            "national_id": national_id,
-            "password": password,
-            "role": "patient",
-        },
-    )
-    assert register_response.status_code == 200, register_response.text
-    patient_id = register_response.json()["id"]
+    from tests.auth_helpers import register_and_login_with_id
 
-    login_response = client.post(
-        "/api/auth/login",
-        json={"national_id": national_id, "password": password},
-    )
-    assert login_response.status_code == 200, login_response.text
-    token = login_response.json()["access_token"]
-    return token, patient_id
+    return register_and_login_with_id(client, seed=seed)
 
 
 def test_patient_can_submit_pmh(tmp_path, monkeypatch) -> None:
@@ -72,7 +55,7 @@ def test_doctor_cannot_submit_pmh(tmp_path, monkeypatch) -> None:
 
     login_response = client.post(
         "/api/auth/login",
-        json={"national_id": "bagherzade", "password": "0808"},
+        json={"email": "bagherzade@doctor.com", "password": "0808"},
     )
     assert login_response.status_code == 200, login_response.text
     token = login_response.json()["access_token"]

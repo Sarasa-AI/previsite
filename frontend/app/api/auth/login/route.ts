@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getBackendApiUrl } from "@/lib/backend-config";
+import { setAuthCookiesFromTokenPayload } from "@/lib/auth-cookies";
 
 // Bypass system proxies for local requests
 process.env.NO_PROXY = "localhost,127.0.0.1";
@@ -17,23 +18,6 @@ async function readJsonFromResponse(response: Response): Promise<unknown> {
   }
 }
 
-function shouldUseSecureCookies(request: Request): boolean {
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  return request.url.startsWith("https://") || forwardedProto === "https";
-}
-
-function setAccessCookie(request: Request, token: string) {
-  const res = NextResponse.json({ success: true });
-  res.cookies.set("access_token", token, {
-    httpOnly: true,
-    secure: shouldUseSecureCookies(request),
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24,
-  });
-  return res;
-}
-
 export async function POST(request: Request) {
   const backendApiUrl = getBackendApiUrl();
 
@@ -46,7 +30,6 @@ export async function POST(request: Request) {
 
   let response: Response;
   try {
-    console.log("Attempting login to backend:", `${backendApiUrl}/api/auth/login`);
     response = await fetch(`${backendApiUrl}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -54,7 +37,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Login failed with error:", error);
-    return NextResponse.json({ detail: "Backend is unreachable", error: String(error) }, { status: 502 });
+    return NextResponse.json(
+      { detail: "Backend is unreachable", error: String(error) },
+      { status: 502 },
+    );
   }
 
   const data = (await readJsonFromResponse(response)) as unknown;
@@ -67,11 +53,20 @@ export async function POST(request: Request) {
     if (record.mfa_required === true || record.mfa_setup_required === true) {
       return NextResponse.json(data);
     }
+    if (record.phone_link_required === true) {
+      // Legacy patient must complete OTP phone link — no cookies yet.
+      return NextResponse.json(data);
+    }
     const token = record.access_token;
     if (typeof token === "string" && token) {
-      return setAccessCookie(request, token);
+      // Never forward refresh_token to the browser JS bundle.
+      const res = NextResponse.json({ success: true });
+      return setAuthCookiesFromTokenPayload(res, request, record);
     }
   }
 
-  return NextResponse.json({ detail: "Invalid login response from backend" }, { status: 502 });
+  return NextResponse.json(
+    { detail: "Invalid login response from backend" },
+    { status: 502 },
+  );
 }

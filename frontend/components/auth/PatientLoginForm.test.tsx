@@ -1,91 +1,110 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import PatientLoginForm from "./PatientLoginForm";
+import { toAsciiDigits, normalizeIranianMobileClient } from "@/lib/phone";
+import { mapOtpError } from "@/lib/otp-errors";
 
-describe("PatientLoginForm", () => {
+describe("phone digit conversion", () => {
+  it("converts Persian and Arabic-Indic digits", () => {
+    expect(toAsciiDigits("۰۹۱۲")).toBe("0912");
+    expect(toAsciiDigits("٠٩١٢")).toBe("0912");
+  });
+
+  it("normalizes common Iranian mobile forms", () => {
+    expect(normalizeIranianMobileClient("09121234567")).toBe("+989121234567");
+    expect(normalizeIranianMobileClient("9121234567")).toBe("+989121234567");
+  });
+});
+
+describe("mapOtpError", () => {
+  it("maps structured codes to Persian messages", () => {
+    expect(mapOtpError("INVALID_OTP", "x")).toContain("صحیح نیست");
+    expect(mapOtpError("OTP_COOLDOWN", "x")).toContain("صبر");
+    expect(mapOtpError("UNKNOWN", "fallback")).toBe("fallback");
+  });
+});
+
+describe("PatientLoginForm OTP", () => {
   const onSuccess = vi.fn();
 
   beforeEach(() => {
     onSuccess.mockReset();
     vi.restoreAllMocks();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
-  it("renders national id and password fields", () => {
-    render(<PatientLoginForm onSuccess={onSuccess} />);
-    expect(screen.getByPlaceholderText("کد ملی (۱۰ رقم)")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("رمز عبور")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "ورود" })).toBeInTheDocument();
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it("shows API error for invalid credentials", async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        text: async () => JSON.stringify({ detail: "Invalid credentials" }),
-      }),
-    );
-
-    render(<PatientLoginForm onSuccess={onSuccess} />);
-    await user.type(screen.getByPlaceholderText("کد ملی (۱۰ رقم)"), "0499370899");
-    await user.type(screen.getByPlaceholderText("رمز عبور"), "wrong-pass");
-    await user.click(screen.getByRole("button", { name: "ورود" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Invalid credentials");
-    expect(onSuccess).not.toHaveBeenCalled();
-  });
-
-  it("maps USER_EXISTS-style auth detail via mapAuthError fallback path", async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        text: async () => JSON.stringify({ detail: "INVALID_NATIONAL_ID" }),
-      }),
-    );
-
-    render(<PatientLoginForm onSuccess={onSuccess} />);
-    await user.type(screen.getByPlaceholderText("کد ملی (۱۰ رقم)"), "1234567890");
-    await user.type(screen.getByPlaceholderText("رمز عبور"), "password12");
-    await user.click(screen.getByRole("button", { name: "ورود" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "کد ملی وارد شده معتبر نیست",
-    );
-  });
-
-  it("shows network error when fetch throws", async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
-
-    render(<PatientLoginForm onSuccess={onSuccess} />);
-    await user.type(screen.getByPlaceholderText("کد ملی (۱۰ رقم)"), "0499370899");
-    await user.type(screen.getByPlaceholderText("رمز عبور"), "password12");
-    await user.click(screen.getByRole("button", { name: "ورود" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "ارتباط با سرور برقرار نشد",
-    );
-  });
-
-  it("calls onSuccess when login succeeds", async () => {
-    const user = userEvent.setup();
+  it("renders phone step then advances to code step", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        text: async () => JSON.stringify({ access_token: "tok", token_type: "bearer" }),
+        text: async () =>
+          JSON.stringify({ success: true, cooldown_seconds: 60, expires_in: 120 }),
       }),
     );
 
     render(<PatientLoginForm onSuccess={onSuccess} />);
-    await user.type(screen.getByPlaceholderText("کد ملی (۱۰ رقم)"), "0499370899");
-    await user.type(screen.getByPlaceholderText("رمز عبور"), "VeryStrongPassword123!");
-    await user.click(screen.getByRole("button", { name: "ورود" }));
+    expect(screen.getByLabelText("شماره موبایل")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("شماره موبایل"), "09121234567");
+    await user.click(screen.getByRole("button", { name: "دریافت کد" }));
 
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(await screen.findByLabelText("کد تأیید")).toBeInTheDocument();
+    expect(screen.getByText(/ارسال مجدد تا/)).toBeInTheDocument();
+  });
+
+  it("shows mapped OTP error on verify failure", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () =>
+          JSON.stringify({ success: true, cooldown_seconds: 60, expires_in: 120 }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        text: async () => JSON.stringify({ detail: "INVALID_OTP" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<PatientLoginForm onSuccess={onSuccess} />);
+    await user.type(screen.getByLabelText("شماره موبایل"), "09121234567");
+    await user.click(screen.getByRole("button", { name: "دریافت کد" }));
+    await screen.findByLabelText("کد تأیید");
+    await user.type(screen.getByLabelText("کد تأیید"), "123456");
+    await user.click(screen.getByRole("button", { name: "تأیید و ورود" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("صحیح نیست");
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("counts down resend timer from server cooldown", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () =>
+          JSON.stringify({ success: true, cooldown_seconds: 3, expires_in: 120 }),
+      }),
+    );
+
+    render(<PatientLoginForm onSuccess={onSuccess} />);
+    await user.type(screen.getByLabelText("شماره موبایل"), "09121234567");
+    await user.click(screen.getByRole("button", { name: "دریافت کد" }));
+    expect(await screen.findByText(/ارسال مجدد تا 3/)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
+    await waitFor(() => {
+      expect(screen.getByText("ارسال مجدد کد")).toBeInTheDocument();
+    });
   });
 });

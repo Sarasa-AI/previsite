@@ -2,8 +2,6 @@ import logging
 import re
 from typing import List
 
-import httpx
-
 from app.core.config import is_openrouter_api_key_configured, settings
 
 logger = logging.getLogger(__name__)
@@ -105,39 +103,18 @@ class EmbeddingService:
                 "OpenRouter embedding fallback is not configured (OPENROUTER_API_KEY missing)."
             )
 
-        url = settings.openrouter_base_url.rstrip("/") + "/embeddings"
-        headers = {
-            "Authorization": f"Bearer {settings.openrouter_api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": settings.openrouter_http_referer,
-            "X-Title": settings.openrouter_app_title,
-        }
-        payload = {
-            "model": settings.openrouter_embedding_model,
-            "input": prompt,
-            "dimensions": settings.embedding_dimensions,
-        }
+        from app.privacy.llm_egress_gateway import LlmEgressError, embed
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                body = response.json()
-        except Exception as exc:
+            result = await embed(text=prompt, purpose="embedding")
+        except LlmEgressError as exc:
             logger.warning("OpenRouter embedding request failed: %s", exc)
             raise EmbeddingServiceError(
                 f"Failed to generate embedding with OpenRouter model "
                 f"{settings.openrouter_embedding_model}"
             ) from exc
 
-        try:
-            embedding = body["data"][0]["embedding"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise EmbeddingServiceError(
-                "OpenRouter returned an unexpected embeddings response shape."
-            ) from exc
-
-        return self._validate_dimensions(list(embedding), provider="OpenRouter")
+        return self._validate_dimensions(list(result.embedding), provider="OpenRouter")
 
     async def generate_embedding(self, text: str) -> List[float]:
         prompt = text.strip()

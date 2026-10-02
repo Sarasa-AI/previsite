@@ -1,36 +1,58 @@
 import { NextResponse } from "next/server";
+import { getBackendApiUrl } from "@/lib/backend-config";
+import {
+  clearAuthCookies,
+  readAccessTokenFromRequest,
+} from "@/lib/auth-cookies";
 
-function base64UrlDecode(input: string): string {
-  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  return Buffer.from(padded, "base64").toString("utf-8");
-}
+export const dynamic = "force-dynamic";
 
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  const parts = token.split(".");
-  if (parts.length < 2) return null;
-  try {
-    const payloadJson = base64UrlDecode(parts[1] ?? "");
-    const parsed = JSON.parse(payloadJson) as Record<string, unknown>;
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
+/**
+ * Backend-verified current user. Never decode JWT locally without verification.
+ */
 export async function GET(request: Request) {
-  const token = request.headers.get("cookie")?.match(/access_token=([^;]+)/)?.[1];
+  const token = readAccessTokenFromRequest(request);
   if (!token) {
     return NextResponse.json({ authenticated: false }, { status: 200 });
   }
 
-  const payload = decodeJwtPayload(decodeURIComponent(token));
-  const sub = payload?.sub;
-  const userId = typeof sub === "string" && sub.trim() ? Number(sub) : null;
-  if (!userId || Number.isNaN(userId)) {
+  const backendApiUrl = getBackendApiUrl();
+  let response: Response;
+  try {
+    response = await fetch(`${backendApiUrl}/api/auth/me`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+  } catch {
     return NextResponse.json({ authenticated: false }, { status: 200 });
   }
 
-  return NextResponse.json({ authenticated: true, user_id: userId }, { status: 200 });
-}
+  if (response.status === 401 || response.status === 403) {
+    const res = NextResponse.json({ authenticated: false }, { status: 200 });
+    return clearAuthCookies(res, request);
+  }
 
+  if (!response.ok) {
+    return NextResponse.json({ authenticated: false }, { status: 200 });
+  }
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    return NextResponse.json({ authenticated: false }, { status: 200 });
+  }
+
+  if (!data || typeof data !== "object") {
+    return NextResponse.json({ authenticated: false }, { status: 200 });
+  }
+
+  const record = data as Record<string, unknown>;
+  return NextResponse.json({
+    authenticated: true,
+    id: record.id,
+    role: record.role,
+    display_name: record.display_name,
+  });
+}

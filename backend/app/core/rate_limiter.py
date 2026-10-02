@@ -92,20 +92,84 @@ class InMemoryRateLimiter:
 rate_limiter = InMemoryRateLimiter()
 
 
-def chat_rate_limit(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-) -> None:
-    key = f"chat:{current_user.id}:{request.url.path}"
+def _raise_rate_limited() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="Rate limit exceeded. Please retry later.",
+    )
+
+
+def make_user_rate_limit(*, key_prefix: str, limit_attr: str, window_attr: str):
+    """Build a FastAPI dependency that rate-limits by authenticated user id."""
+
+    def _dependency(
+        request: Request,
+        current_user: User = Depends(get_current_user),
+    ) -> None:
+        limit = int(getattr(settings, limit_attr))
+        window = int(getattr(settings, window_attr))
+        user_key = getattr(current_user, "id", None)
+        if user_key is None:
+            user_key = "anon"
+        key = f"{key_prefix}:{user_key}:{request.url.path}"
+        if not rate_limiter.allow(key=key, limit=limit, window_seconds=window):
+            _raise_rate_limited()
+
+    return _dependency
+
+
+chat_rate_limit = make_user_rate_limit(
+    key_prefix="chat",
+    limit_attr="chat_rate_limit_requests",
+    window_attr="chat_rate_limit_window_seconds",
+)
+intake_write_rate_limit = make_user_rate_limit(
+    key_prefix="intake_write",
+    limit_attr="intake_write_rate_limit_requests",
+    window_attr="intake_write_rate_limit_window_seconds",
+)
+file_upload_rate_limit = make_user_rate_limit(
+    key_prefix="file_upload",
+    limit_attr="file_upload_rate_limit_requests",
+    window_attr="file_upload_rate_limit_window_seconds",
+)
+pdf_export_rate_limit = make_user_rate_limit(
+    key_prefix="pdf_export",
+    limit_attr="pdf_export_rate_limit_requests",
+    window_attr="pdf_export_rate_limit_window_seconds",
+)
+ocr_read_rate_limit = make_user_rate_limit(
+    key_prefix="ocr_read",
+    limit_attr="ocr_read_rate_limit_requests",
+    window_attr="ocr_read_rate_limit_window_seconds",
+)
+medications_search_rate_limit = make_user_rate_limit(
+    key_prefix="med_search",
+    limit_attr="medications_search_rate_limit_requests",
+    window_attr="medications_search_rate_limit_window_seconds",
+)
+privacy_export_rate_limit = make_user_rate_limit(
+    key_prefix="privacy_export",
+    limit_attr="privacy_export_rate_limit_requests",
+    window_attr="privacy_export_rate_limit_window_seconds",
+)
+
+
+def mfa_verify_rate_limit(request: Request) -> None:
+    """Rate-limit MFA verify attempts separately from login lockout.
+
+    Keyed by client IP plus a coarse token fingerprint (not the secret itself).
+    """
+    ip = request.client.host if request.client else "unknown"
+    # Prefer body-derived identity is unavailable at dependency time without
+    # consuming the body; IP + path is sufficient for abuse throttling.
+    key = f"mfa_verify:{(ip or 'unknown').strip()}:{request.url.path}"
     if not rate_limiter.allow(
         key=key,
-        limit=settings.chat_rate_limit_requests,
-        window_seconds=settings.chat_rate_limit_window_seconds,
+        limit=settings.mfa_verify_rate_limit_requests,
+        window_seconds=settings.mfa_verify_rate_limit_window_seconds,
     ):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Rate limit exceeded. Please retry in a minute.",
-        )
+        _raise_rate_limited()
 
 
 def login_attempt_key(ip: str | None, login_id: str) -> str:

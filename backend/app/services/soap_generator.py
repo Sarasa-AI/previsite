@@ -1,5 +1,4 @@
 import logging
-import httpx
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -7,7 +6,6 @@ from typing import Dict, Any, List, Optional, Set
 from datetime import datetime
 from enum import Enum
 
-from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -58,26 +56,12 @@ class SOAPNoteGenerator:
     def __init__(self, rag_service: RagService | None = None):
         """راه‌اندازی کلاینت‌های LLM"""
         self.rag_service = rag_service or default_rag_service
-        self.openrouter_client = None
-
-        http_client_kwargs = {"timeout": 60.0}
-        if settings.HTTP_PROXY and settings.HTTP_PROXY.strip():
-            http_client_kwargs["proxies"] = settings.HTTP_PROXY
-        http_client = httpx.AsyncClient(**http_client_kwargs)
-
-        if settings.openrouter_api_key and settings.openrouter_api_key.strip():
-            self.openrouter_client = AsyncOpenAI(
-                base_url=settings.openrouter_base_url,
-                api_key=settings.openrouter_api_key,
-                http_client=http_client,
-                default_headers={
-                    "HTTP-Referer": settings.openrouter_http_referer,
-                    "X-Title": settings.openrouter_app_title,
-                },
-            )
-            logger.info("OpenRouter client initialized (Async)")
-
-        if not self.openrouter_client:
+        self.openrouter_client = bool(
+            settings.openrouter_api_key and settings.openrouter_api_key.strip()
+        )
+        if self.openrouter_client:
+            logger.info("OpenRouter SOAP path enabled via llm_egress_gateway")
+        else:
             logger.warning("No LLM provider configured")
 
     def _extract_patient_hpi(self, summary: MedicalSummary) -> str:
@@ -525,24 +509,26 @@ If no conflicts: <<<CLINICAL_CONFLICTS>>>[]<<<END_CLINICAL_CONFLICTS>>>
 
     async def _generate_with_openrouter(self, context: str) -> tuple[str, dict]:
         """Generate SOAP via OpenRouter. Returns (note_text, usage_meta)."""
+        from app.privacy.llm_egress_gateway import chat_completion
 
-        response = await self.openrouter_client.chat.completions.create(
+        result = await chat_completion(
+            base_url=settings.openrouter_base_url,
+            api_key=settings.openrouter_api_key or "",
             model=settings.openrouter_default_model,
-            temperature=0.2,
-            max_tokens=3000,
             messages=[
                 {"role": "system", "content": self._get_system_prompt()},
                 {"role": "user", "content": context},
             ],
+            purpose="soap_generation",
+            temperature=0.2,
+            max_tokens=3000,
         )
-
-        usage = getattr(response, "usage", None)
         usage_meta = {
             "llm_model": settings.openrouter_default_model,
-            "input_tokens": getattr(usage, "prompt_tokens", None) if usage else None,
-            "output_tokens": getattr(usage, "completion_tokens", None) if usage else None,
+            "input_tokens": result.usage.get("prompt_tokens"),
+            "output_tokens": result.usage.get("completion_tokens"),
         }
-        return response.choices[0].message.content.strip(), usage_meta
+        return result.content.strip(), usage_meta
 
     async def generate_soap_note(
         self,

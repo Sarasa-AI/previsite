@@ -133,7 +133,7 @@ async def _login_doctor(client: AsyncClient) -> dict[str, str]:
     password = os.environ["SEED_DOCTOR_PASSWORD"]
     response = await client.post(
         "/api/auth/login",
-        json={"national_id": username, "password": password},
+        json={"email": f"{username}@doctor.com" if "@" not in username else username, "password": password},
     )
     assert response.status_code == 200, response.text
     body = response.json()

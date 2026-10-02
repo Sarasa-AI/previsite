@@ -1,4 +1,4 @@
-import axios, { AxiosError } from "axios";
+import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
 export class ApiError extends Error {
   constructor(
@@ -10,10 +10,50 @@ export class ApiError extends Error {
   }
 }
 
+type RetriableConfig = InternalAxiosRequestConfig & { _retry?: boolean };
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+/**
+ * Call BFF refresh exactly once (shared across concurrent 401s).
+ * Returns true when new cookies were set.
+ */
+async function refreshSessionOnce(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    try {
+      const response = await fetch("/api/auth/refresh", {
+        method: "POST",
+        credentials: "include",
+      });
+      return response.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
+}
+
+async function clearSessionAndRedirect(): Promise<void> {
+  try {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+  } catch {
+    // Redirect regardless of logout outcome.
+  }
+  if (typeof window !== "undefined") {
+    const currentPath = window.location.pathname + window.location.search;
+    window.location.href = `/login?next=${encodeURIComponent(currentPath)}`;
+  }
+}
+
 // نکته آموزشی:
 // این فایل عمداً در لایه‌ی کلاینت نگه داشته شده است تا `use client` فقط در
 // پایین‌ترین سطح تعاملی مصرف شود. صفحه‌ها لازم نیست هر بار منطق 401 را تکرار کنند.
-// با interceptor می‌توان مدیریت خطا و در آینده Refresh Token را به‌صورت متمرکز افزود.
+// با interceptor: یک‌بار refresh و یک retry؛ بدون حلقهٔ refresh.
 export const apiClient = axios.create({
   baseURL: "/api",
   withCredentials: true,
@@ -22,15 +62,26 @@ export const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    if (error.response?.status === 401 && typeof window !== "undefined") {
-      try {
-        await fetch("/api/auth/logout", { method: "POST" });
-      } catch {
-        // اگر logout شکست بخورد، باز هم redirect ایمن انجام می‌دهیم.
-      }
+    const config = error.config as RetriableConfig | undefined;
 
-      const currentPath = window.location.pathname + window.location.search;
-      window.location.href = `/login?next=${encodeURIComponent(currentPath)}`;
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      config &&
+      !config._retry
+    ) {
+      config._retry = true;
+      const refreshed = await refreshSessionOnce();
+      if (refreshed) {
+        return apiClient.request(config);
+      }
+      await clearSessionAndRedirect();
+    } else if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      config?._retry
+    ) {
+      await clearSessionAndRedirect();
     }
 
     let errorMessage = "خطای ناشناخته رخ داده است";
@@ -70,9 +121,21 @@ export function extractApiError(payload: unknown, fallbackMessage: string): stri
     }
 
     if (response.detail && typeof response.detail === "object") {
-      const detail = response.detail as { message?: unknown };
+      const detail = response.detail as {
+        message?: unknown;
+        code?: unknown;
+        missing?: unknown;
+      };
       if (typeof detail.message === "string" && detail.message.trim()) {
         return detail.message;
+      }
+      if (detail.code === "CONSENT_REQUIRED") {
+        const missing = Array.isArray(detail.missing)
+          ? detail.missing.filter((k): k is string => typeof k === "string")
+          : [];
+        return missing.length
+          ? `CONSENT_REQUIRED:${missing.join(",")}`
+          : "CONSENT_REQUIRED";
       }
     }
 
@@ -87,6 +150,46 @@ export function extractApiError(payload: unknown, fallbackMessage: string): stri
 
   return fallbackMessage;
 }
+
+export type ConsentRequiredDetail = {
+  code: "CONSENT_REQUIRED";
+  missing: string[];
+};
+
+export function parseConsentRequiredDetail(
+  payload: unknown,
+): ConsentRequiredDetail | null {
+  if (!payload || typeof payload !== "object") return null;
+  const detail = (payload as { detail?: unknown }).detail;
+  if (!detail || typeof detail !== "object") return null;
+  const body = detail as { code?: unknown; missing?: unknown };
+  if (body.code !== "CONSENT_REQUIRED") return null;
+  const missing = Array.isArray(body.missing)
+    ? body.missing.filter((k): k is string => typeof k === "string")
+    : [];
+  return { code: "CONSENT_REQUIRED", missing };
+}
+
+export function isConsentRequiredError(payload: unknown): boolean {
+  return parseConsentRequiredDetail(payload) !== null;
+}
+
+export type ConsentStatusItem = {
+  consent_key: string;
+  policy_version: string;
+  copy_text_key: string;
+  granted: boolean;
+  granted_at?: string | null;
+  withdrawn_at?: string | null;
+  latest_record_id?: number | null;
+  latest_policy_version?: string | null;
+};
+
+export type ConsentStatusResponse = {
+  enforcement_enabled: boolean;
+  required_for_processing: string[];
+  consents: ConsentStatusItem[];
+};
 
 export type SessionResponse = {
   id: number;

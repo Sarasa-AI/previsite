@@ -6,9 +6,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
+from app.auth.security import create_access_token, get_password_hash
 from app.main import app as fastapi_app
 from app.models.audit_log import AuditLog
 from app.models.medical_knowledge import MedicalKnowledge
+from app.models.user import User, UserRole
 from app.services.embedding_service import EmbeddingServiceError
 from app.services.kb_ingest_service import (
     KbIngestValidationError,
@@ -16,8 +18,32 @@ from app.services.kb_ingest_service import (
     parse_json_payload,
     validate_document,
 )
-from tests.test_admin import _register_and_login
-from tests.test_api_integration import _auth_headers
+from tests.test_api_integration import _auth_headers, _national_id_from_seed
+
+
+async def _login_patient(
+    client: AsyncClient,
+    *,
+    seed: str,
+    password: str = "VeryStrongPassword123!",
+) -> str:
+    from tests.auth_helpers import register_and_login_async
+
+    return await register_and_login_async(client, password=password, seed=seed)
+
+async def _admin_token(db, *, email: str, full_name: str) -> str:
+    admin = User(
+        email=email,
+        hashed_password=get_password_hash("VeryStrongPassword123!"),
+        full_name=full_name,
+        role=UserRole.ADMIN,
+        is_active=True,
+    )
+    db.add(admin)
+    await db.commit()
+    await db.refresh(admin)
+    return create_access_token(data={"sub": str(admin.id), "email": admin.email})
+
 
 
 def _valid_doc(**overrides) -> dict:
@@ -111,13 +137,13 @@ async def test_ingest_documents_surfaces_embedding_failure(db, test_db_engine):
 async def test_admin_kb_ingest_endpoint(db, test_db_engine):
     fake_embedding = [0.02] * 768
     transport = ASGITransport(app=fastapi_app)
+    admin_token = await _admin_token(
+        db, email="admin-kb@test.com", full_name="admin_kb"
+    )
 
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        admin_token = await _register_and_login(
-            client, role="admin", seed="AdminKbIngest"
-        )
-        patient_token = await _register_and_login(
-            client, role="patient", seed="PatientKbIngest"
+        patient_token = await _login_patient(
+            client, seed="PatientKbIngest"
         )
 
         payload = json.dumps({"documents": [_valid_doc()]}).encode()
@@ -137,6 +163,13 @@ async def test_admin_kb_ingest_endpoint(db, test_db_engine):
         assert body["documents_processed"] == 1
         assert body["chunks_inserted"] >= 1
         assert body["documents"][0]["document_id"] == "guideline-test-htn"
+
+        forbidden = await client.post(
+            "/api/admin/kb/ingest",
+            headers=_auth_headers(patient_token),
+            files={"file": ("kb.json", BytesIO(payload), "application/json")},
+        )
+        assert forbidden.status_code == 403
 
         audits = (
             await db.execute(

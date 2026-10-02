@@ -13,7 +13,7 @@ from app.core import config as config_module
 from app.main import app as fastapi_app
 from app.models import Session as SessionModel
 from app.models import Summary
-from app.models.user import User, UserRole
+from app.models.user import DoctorVerificationStatus, User, UserRole
 from tests.conftest import setup_async_test_db, teardown_test_db
 from tests.test_mvp_flow import _register_and_login
 
@@ -39,6 +39,7 @@ async def _create_doctor(email: str, full_name: str, password: str) -> User:
             hashed_password=get_password_hash(password),
             role=UserRole.DOCTOR,
             is_active=True,
+            verification_status=DoctorVerificationStatus.VERIFIED,
         )
         db.add(user)
         await db.commit()
@@ -49,7 +50,7 @@ async def _create_doctor(email: str, full_name: str, password: str) -> User:
 def _login(client: TestClient, username: str, password: str) -> str:
     response = client.post(
         "/api/auth/login",
-        json={"national_id": username, "password": password},
+        json={"email": f"{username}@doctor.com" if "@" not in username else username, "password": password},
     )
     assert response.status_code == 200, response.text
     return response.json()["access_token"]

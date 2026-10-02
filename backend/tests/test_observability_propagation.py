@@ -18,13 +18,15 @@ def _clear_ctx():
 
 
 @pytest.mark.asyncio
-async def test_metrics_endpoint_exposes_prometheus_text() -> None:
+async def test_metrics_endpoint_requires_auth() -> None:
+    from app.core import config as config_module
+
+    config_module.settings.metrics_bearer_token = None
+    config_module.settings.app_env = "test"
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/metrics")
-    assert response.status_code == 200
-    assert "text/plain" in response.headers["content-type"]
-    assert "previsit_soap_success_total" in response.text
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

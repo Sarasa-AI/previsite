@@ -101,23 +101,11 @@ async def _register_and_login_async(
     password: str = "VeryStrongPassword123!",
     seed: str = "default-patient",
 ) -> str:
-    resolved_national_id = national_id or _national_id_from_seed(seed)
-    register = await client.post(
-        "/api/auth/register",
-        json={
-            "national_id": resolved_national_id,
-            "password": password,
-            "role": "patient",
-        },
-    )
-    assert register.status_code == 200, register.text
+    from tests.auth_helpers import register_and_login_async
 
-    login = await client.post(
-        "/api/auth/login",
-        json={"national_id": resolved_national_id, "password": password},
+    return await register_and_login_async(
+        client, national_id=national_id, password=password, seed=seed
     )
-    assert login.status_code == 200, login.text
-    return login.json()["access_token"]
 
 
 def _national_id_from_seed(seed: str) -> str:

@@ -10,7 +10,7 @@ type DoctorLoginFormProps = {
 };
 
 export default function DoctorLoginForm({ onSuccess, onMfaRequired }: DoctorLoginFormProps) {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -25,7 +25,7 @@ export default function DoctorLoginForm({ onSuccess, onMfaRequired }: DoctorLogi
       res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ national_id: username, password }),
+        body: JSON.stringify({ email, password }),
       });
     } catch {
       setLoading(false);
@@ -44,7 +44,7 @@ export default function DoctorLoginForm({ onSuccess, onMfaRequired }: DoctorLogi
     setLoading(false);
 
     if (!res.ok) {
-      setError(extractApiError(data, "نام کاربری یا رمز عبور اشتباه است"));
+      setError(extractApiError(data, "ایمیل یا رمز عبور اشتباه است"));
       return;
     }
 
@@ -65,15 +65,16 @@ export default function DoctorLoginForm({ onSuccess, onMfaRequired }: DoctorLogi
     <form className="medical-card space-y-4" onSubmit={onSubmit}>
       <div className="text-center mb-6">
         <h2 className="text-2xl font-bold text-slate-800">ورود به عنوان پزشک</h2>
-        <p className="text-sm text-slate-500 mt-2">نام کاربری و رمز عبور خود را وارد کنید</p>
+        <p className="text-sm text-slate-500 mt-2">ایمیل و رمز عبور خود را وارد کنید</p>
       </div>
       <input
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-        placeholder="نام کاربری"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        type="email"
+        placeholder="ایمیل"
         className="field-input"
         required
-        aria-label="نام کاربری"
+        aria-label="ایمیل"
       />
       <input
         value={password}

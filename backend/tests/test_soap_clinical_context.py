@@ -32,21 +32,13 @@ async def _register_patient_async(
     seed: str,
     password: str = "VeryStrongPassword123!",
 ) -> tuple[str, int, str]:
-    national_id = _national_id_from_seed(seed)
-    register = await client.post(
-        "/api/auth/register",
-        json={"national_id": national_id, "password": password, "role": "patient"},
-    )
-    assert register.status_code == 200, register.text
-    patient_id = register.json()["id"]
+    from tests.auth_helpers import national_id_from_seed, register_and_login_with_id_async
 
-    login = await client.post(
-        "/api/auth/login",
-        json={"national_id": national_id, "password": password},
+    national_id = national_id_from_seed(seed)
+    token, patient_id = await register_and_login_with_id_async(
+        client, national_id=national_id, password=password, seed=seed
     )
-    assert login.status_code == 200, login.text
-    return login.json()["access_token"], patient_id, national_id
-
+    return token, patient_id, national_id
 
 def _demographics_for_patient(national_id: str, *, chief_complaint: str = "Chest pain") -> dict:
     return {**VALID_DEMOGRAPHICS, "national_id": national_id, "chief_complaint": chief_complaint}

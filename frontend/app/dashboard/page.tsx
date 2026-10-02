@@ -5,7 +5,7 @@ import { AxiosError } from "axios";
 import { LogOut, PlusCircle } from "lucide-react";
 import SessionCard from "@/components/dashboard/SessionCard";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { extractApiError, type SessionResponse } from "@/lib/api";
+import { extractApiError, isConsentRequiredError, type SessionResponse } from "@/lib/api";
 import { frontendApi } from "@/lib/client";
 
 export default function DashboardPage() {
@@ -40,6 +40,10 @@ export default function DashboardPage() {
       await loadSessions();
     } catch (requestError) {
       const payload = requestError instanceof AxiosError ? requestError.response?.data : undefined;
+      if (isConsentRequiredError(payload)) {
+        window.location.href = "/consent";
+        return;
+      }
       setError(extractApiError(payload, "ایجاد جلسه ناموفق بود."));
     } finally {
       setLoading(false);

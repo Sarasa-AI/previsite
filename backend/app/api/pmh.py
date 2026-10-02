@@ -1,15 +1,22 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.auth.session_access import doctor_may_access_patient, is_doctor
+from app.auth.session_access import doctor_may_access_patient, is_admin, is_doctor
 from app.db.database import get_db
 from app.models.pmh import PatientPMH
 from app.models.user import User, UserRole
 from app.schemas.pmh import PatientOverviewResponse, PatientOverviewSubmission
+from app.services.audit_service import (
+    AUDIT_ADMIN_CLINICAL_READ,
+    AUDIT_PMH_OVERVIEW_READ,
+    AUDIT_PMH_WRITE,
+    AUDIT_PROFILE_READ_OTHER,
+    record_request_audit,
+)
 from app.services.medical_overview_service import strip_ocr_from_overview
 from app.services.pmh_service import get_patient_overview, upsert_patient_overview
 
@@ -46,13 +53,15 @@ async def _authorize_patient_access(
             )
         return
 
-    if not is_doctor(current_user):
+    if not (is_doctor(current_user) or is_admin(current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
 
-    if not await doctor_may_access_patient(db, patient_id, current_user):
+    if is_doctor(current_user) and not await doctor_may_access_patient(
+        db, patient_id, current_user
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
@@ -62,6 +71,7 @@ async def _authorize_patient_access(
 @router.post("/submit", response_model=PatientOverviewResponse)
 async def submit_pmh(
     data: PatientOverviewSubmission,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> PatientOverviewResponse:
@@ -85,6 +95,15 @@ async def submit_pmh(
     await db.commit()
     await db.refresh(row)
 
+    await record_request_audit(
+        db,
+        action=AUDIT_PMH_WRITE,
+        user_id=current_user.id,
+        resource_type="patient",
+        resource_id=data.patient_id,
+        request=request,
+    )
+
     return PatientOverviewResponse(
         patient_id=row.patient_id,
         overview=strip_ocr_from_overview(data.overview),
@@ -95,6 +114,7 @@ async def submit_pmh(
 @router.get("/overview/{patient_id}", response_model=PatientOverviewResponse)
 async def get_patient_overview_endpoint(
     patient_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> PatientOverviewResponse:
@@ -105,6 +125,33 @@ async def get_patient_overview_endpoint(
         select(PatientPMH).where(PatientPMH.patient_id == patient_id)
     )
     row = result.scalar_one_or_none()
+
+    await record_request_audit(
+        db,
+        action=AUDIT_PMH_OVERVIEW_READ,
+        user_id=current_user.id,
+        resource_type="patient",
+        resource_id=patient_id,
+        request=request,
+    )
+    if current_user.id != patient_id:
+        await record_request_audit(
+            db,
+            action=AUDIT_PROFILE_READ_OTHER,
+            user_id=current_user.id,
+            resource_type="patient",
+            resource_id=patient_id,
+            request=request,
+        )
+    if is_admin(current_user):
+        await record_request_audit(
+            db,
+            action=AUDIT_ADMIN_CLINICAL_READ,
+            user_id=current_user.id,
+            resource_type="patient",
+            resource_id=patient_id,
+            request=request,
+        )
 
     return PatientOverviewResponse(
         patient_id=patient_id,

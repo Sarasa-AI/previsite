@@ -17,6 +17,8 @@ export function validateIranianNationalId(nationalId: string): boolean {
 export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   USER_EXISTS: "این کاربر قبلاً ثبت‌نام کرده است",
   INVALID_NATIONAL_ID: "کد ملی وارد شده معتبر نیست",
+  REGISTER_DISABLED: "ثبت‌نام با رمز عبور غیرفعال است؛ از شماره موبایل استفاده کنید",
+  LEGACY_LOGIN_DISABLED: "ورود با کد ملی دیگر پشتیبانی نمی‌شود",
 };
 
 export function mapAuthError(detail: string | undefined, fallback: string): string {

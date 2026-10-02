@@ -20,25 +20,11 @@ def test_chat_message_and_summary_flow(client, monkeypatch):
     monkeypatch.setattr(llm_service, "chat", mock_chat)
     monkeypatch.setattr(summary_builder, "build_summary", mock_build_summary)
 
-    reg_res = client.post(
-        "/api/auth/register",
-        json={
-            "national_id": "0499370899",
-            "password": "password12345",
-            "role": "patient",
-        },
-    )
-    assert reg_res.status_code == 200
+    from tests.auth_helpers import register_and_login
 
-    login_res = client.post(
-        "/api/auth/login",
-        json={
-            "national_id": "0499370899",
-            "password": "password12345",
-        },
+    token = register_and_login(
+        client, national_id="0499370899", password="password12345", seed="500-fixes"
     )
-    assert login_res.status_code == 200
-    token = login_res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
     session_res = client.post(

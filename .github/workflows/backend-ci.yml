@@ -66,6 +66,17 @@ jobs:
       - name: Run Alembic migrations
         run: alembic upgrade head
 
+      - name: Alembic integrity (must not skip)
+        run: |
+          pytest tests/test_alembic_integrity.py -v --tb=short
+          # Fail if any of these tests were skipped (silent skip is a CI bug)
+          OUT=$(pytest tests/test_alembic_integrity.py -q --tb=no 2>&1 || true)
+          echo "$OUT"
+          if echo "$OUT" | grep -qE '[0-9]+ skipped'; then
+            echo "Alembic integrity tests must not be skipped in CI"
+            exit 1
+          fi
+
       - name: Run pytest with coverage
         run: |
           pytest \

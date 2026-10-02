@@ -1,9 +1,9 @@
 import logging
 
-import httpx
-from openai import APIConnectionError, AuthenticationError, AsyncOpenAI
+from openai import APIConnectionError, AuthenticationError
 
 from app.core.config import is_openrouter_api_key_configured, settings
+from app.privacy.llm_egress_gateway import LlmEgressError, list_models
 
 logger = logging.getLogger(__name__)
 
@@ -16,23 +16,12 @@ async def verify_llm_connection() -> None:
         )
         return
 
-    http_client_kwargs = {"timeout": 30.0}
-    if settings.HTTP_PROXY and settings.HTTP_PROXY.strip():
-        http_client_kwargs["proxies"] = settings.HTTP_PROXY
-    http_client = httpx.AsyncClient(**http_client_kwargs)
-    client = AsyncOpenAI(
-        base_url=settings.openrouter_base_url,
-        api_key=settings.openrouter_api_key,
-        max_retries=0,
-        http_client=http_client,
-        default_headers={
-            "HTTP-Referer": settings.openrouter_http_referer,
-            "X-Title": settings.openrouter_app_title,
-        },
-    )
-
     try:
-        models = await client.models.list()
+        models = await list_models(
+            base_url=settings.openrouter_base_url,
+            api_key=settings.openrouter_api_key or "",
+            purpose="startup_health",
+        )
         model_count = len(getattr(models, "data", []) or [])
         proxy_route = settings.http_proxy or "direct"
         logger.info(
@@ -52,7 +41,7 @@ async def verify_llm_connection() -> None:
         raise RuntimeError(
             "Startup health check failed: invalid OpenRouter credentials."
         ) from exc
-    except APIConnectionError as exc:
+    except (APIConnectionError, LlmEgressError) as exc:
         logger.critical(
             "System Unhealthy | Cannot reach OpenRouter. "
             "Check network connectivity and HTTP_PROXY settings. detail=%s",
@@ -67,6 +56,3 @@ async def verify_llm_connection() -> None:
             exc,
         )
         raise RuntimeError("Startup health check failed.") from exc
-    finally:
-        await client.close()
-        await http_client.aclose()

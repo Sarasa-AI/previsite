@@ -42,26 +42,15 @@ class TestMedicalOverviewIntegration:
             await _setup_test_db(tmp_path, monkeypatch)
             async with await _async_client() as client:
                 national_id = _national_id_from_seed("OverviewSync")
-                register = await client.post(
-                    "/api/auth/register",
-                    json={
-                        "national_id": national_id,
-                        "password": "VeryStrongPassword123!",
-                        "role": "patient",
-                    },
-                )
-                assert register.status_code == 200, register.text
-                patient_id = register.json()["id"]
+                from tests.auth_helpers import register_and_login_with_id_async
 
-                login = await client.post(
-                    "/api/auth/login",
-                    json={
-                        "national_id": national_id,
-                        "password": "VeryStrongPassword123!",
-                    },
+                token, patient_id = await register_and_login_with_id_async(
+                    client,
+                    national_id=national_id,
+                    password="VeryStrongPassword123!",
+                    seed="OverviewSync",
                 )
-                assert login.status_code == 200, login.text
-                headers = _auth_headers(login.json()["access_token"])
+                headers = _auth_headers(token)
                 session_id = await _create_session(client, headers)
                 await _save_layer1(client, session_id, headers)
 

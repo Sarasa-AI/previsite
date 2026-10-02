@@ -12,6 +12,12 @@ from app.models.audit_log import AuditLog
 from app.services.audit_service import record_audit
 from app.services.drug_matcher import drug_matcher
 from app.services.embedding_service import EmbeddingServiceError
+from app.privacy.erasure_service import approve_deletion_request
+from app.schemas.privacy import DeletionRequestResponse
+from app.services.audit_service import (
+    AUDIT_PRIVACY_DELETION_APPROVE,
+    record_request_audit,
+)
 from app.services.kb_ingest_service import (
     KbIngestValidationError,
     ingest_documents,
@@ -113,6 +119,29 @@ async def ingest_kb_document(
         "documents_processed": len(results),
         "chunks_inserted": sum(item.chunks_inserted for item in results),
     }
+
+
+@router.post(
+    "/privacy/deletion/{request_id}/approve",
+    response_model=DeletionRequestResponse,
+)
+async def approve_account_deletion(
+    request_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_admin),
+) -> DeletionRequestResponse:
+    """Mark a cool-off-complete deletion request approved (execution is operator script)."""
+    row = await approve_deletion_request(db, request_id, current_user.id)
+    await record_request_audit(
+        db,
+        action=AUDIT_PRIVACY_DELETION_APPROVE,
+        user_id=current_user.id,
+        resource_type="account_deletion_request",
+        resource_id=row.id,
+        request=request,
+    )
+    return DeletionRequestResponse.model_validate(row)
 
 
 @router.get("/audit-logs", response_model=list[AuditLogItem])

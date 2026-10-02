@@ -69,4 +69,9 @@ export const frontendApi = {
   getPatientProfile: () => apiClient.get("/proxy/api/patients/me/profile"),
   retrySoap: (sessionId: string) => apiClient.post(`/proxy/api/summary/${sessionId}/retry-soap`),
   getPatientOverview: (patientId: string) => apiClient.get(`/proxy/api/pmh/overview/${patientId}`),
+  getMyConsents: () => apiClient.get("/proxy/api/consent/me"),
+  grantConsent: (payload: { consent_key: string; policy_version?: string }) =>
+    apiClient.post("/proxy/api/consent/grant", payload),
+  withdrawConsent: (payload: { consent_key: string }) =>
+    apiClient.post("/proxy/api/consent/withdraw", payload),
 };

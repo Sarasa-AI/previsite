@@ -13,9 +13,9 @@ describe("DoctorLoginForm", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders username and password fields", () => {
+  it("renders email and password fields", () => {
     render(<DoctorLoginForm onSuccess={onSuccess} />);
-    expect(screen.getByPlaceholderText("نام کاربری")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("ایمیل")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("رمز عبور")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "ورود به عنوان پزشک" })).toBeInTheDocument();
   });
@@ -31,7 +31,7 @@ describe("DoctorLoginForm", () => {
     );
 
     render(<DoctorLoginForm onSuccess={onSuccess} />);
-    await user.type(screen.getByPlaceholderText("نام کاربری"), "bagherzade");
+    await user.type(screen.getByPlaceholderText("ایمیل"), "bagherzade@doctor.com");
     await user.type(screen.getByPlaceholderText("رمز عبور"), "bad");
     await user.click(screen.getByRole("button", { name: "ورود" }));
 
@@ -44,7 +44,7 @@ describe("DoctorLoginForm", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
 
     render(<DoctorLoginForm onSuccess={onSuccess} />);
-    await user.type(screen.getByPlaceholderText("نام کاربری"), "bagherzade");
+    await user.type(screen.getByPlaceholderText("ایمیل"), "bagherzade@doctor.com");
     await user.type(screen.getByPlaceholderText("رمز عبور"), "0808");
     await user.click(screen.getByRole("button", { name: "ورود" }));
 
@@ -64,7 +64,7 @@ describe("DoctorLoginForm", () => {
     );
 
     render(<DoctorLoginForm onSuccess={onSuccess} />);
-    await user.type(screen.getByPlaceholderText("نام کاربری"), "bagherzade");
+    await user.type(screen.getByPlaceholderText("ایمیل"), "bagherzade@doctor.com");
     await user.type(screen.getByPlaceholderText("رمز عبور"), "0808");
     await user.click(screen.getByRole("button", { name: "ورود" }));
 
@@ -83,11 +83,32 @@ describe("DoctorLoginForm", () => {
     );
 
     render(<DoctorLoginForm onSuccess={onSuccess} onMfaRequired={onMfaRequired} />);
-    await user.type(screen.getByPlaceholderText("نام کاربری"), "bagherzade");
+    await user.type(screen.getByPlaceholderText("ایمیل"), "bagherzade@doctor.com");
     await user.type(screen.getByPlaceholderText("رمز عبور"), "0808");
     await user.click(screen.getByRole("button", { name: "ورود" }));
 
     await waitFor(() => expect(onMfaRequired).toHaveBeenCalledWith(payload));
     expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("posts email field (not national_id / full name)", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ access_token: "tok" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<DoctorLoginForm onSuccess={onSuccess} />);
+    await user.type(screen.getByPlaceholderText("ایمیل"), "doc@doctor.com");
+    await user.type(screen.getByPlaceholderText("رمز عبور"), "pass");
+    await user.click(screen.getByRole("button", { name: "ورود" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as RequestInit).body as string,
+    );
+    expect(body).toEqual({ email: "doc@doctor.com", password: "pass" });
+    expect(body.national_id).toBeUndefined();
   });
 });

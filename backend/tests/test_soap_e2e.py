@@ -19,20 +19,11 @@ async def _register_patient_async(
     seed: str,
     password: str = "VeryStrongPassword123!",
 ) -> tuple[str, int]:
-    national_id = _national_id_from_seed(seed)
-    register = await client.post(
-        "/api/auth/register",
-        json={"national_id": national_id, "password": password, "role": "patient"},
-    )
-    assert register.status_code == 200, register.text
-    patient_id = register.json()["id"]
+    from tests.auth_helpers import register_and_login_with_id_async
 
-    login = await client.post(
-        "/api/auth/login",
-        json={"national_id": national_id, "password": password},
+    return await register_and_login_with_id_async(
+        client, password=password, seed=seed
     )
-    assert login.status_code == 200, login.text
-    return login.json()["access_token"], patient_id
 
 
 @pytest.mark.asyncio

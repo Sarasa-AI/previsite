@@ -1,36 +1,37 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.auth.security import create_access_token, get_password_hash
 from app.main import app as fastapi_app
 from app.models.drug import BrandDrug, GenericDrug
+from app.models.user import User, UserRole
 from app.services.drug_matcher import drug_matcher
 from tests.test_api_integration import _auth_headers, _national_id_from_seed
 
 
-async def _register_and_login(
+async def _login_patient(
     client: AsyncClient,
     *,
-    role: str,
     seed: str,
     password: str = "VeryStrongPassword123!",
 ) -> str:
-    national_id = _national_id_from_seed(seed)
-    register = await client.post(
-        "/api/auth/register",
-        json={
-            "national_id": national_id,
-            "password": password,
-            "role": role,
-        },
-    )
-    assert register.status_code == 200, register.text
+    from tests.auth_helpers import register_and_login_async
 
-    login = await client.post(
-        "/api/auth/login",
-        json={"national_id": national_id, "password": password},
+    return await register_and_login_async(client, password=password, seed=seed)
+
+
+async def _create_admin(db, *, email: str, full_name: str, password: str) -> User:
+    admin = User(
+        email=email,
+        hashed_password=get_password_hash(password),
+        full_name=full_name,
+        role=UserRole.ADMIN,
+        is_active=True,
     )
-    assert login.status_code == 200, login.text
-    return login.json()["access_token"]
+    db.add(admin)
+    await db.commit()
+    await db.refresh(admin)
+    return admin
 
 
 async def _seed_metfortex(db) -> None:
@@ -46,16 +47,20 @@ async def test_admin_refresh_drug_cache_reloads_singleton(db, test_db_engine) ->
     drug_matcher._entries = []
     await _seed_metfortex(db)
 
+    admin = await _create_admin(
+        db,
+        email="admin-cache@test.com",
+        full_name="admin_cache",
+        password="VeryStrongPassword123!",
+    )
+    admin_token = create_access_token(
+        data={"sub": str(admin.id), "email": admin.email}
+    )
+
     transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        admin_token = await _register_and_login(
+        patient_token = await _login_patient(
             client,
-            role="admin",
-            seed="AdminCacheRefresh",
-        )
-        patient_token = await _register_and_login(
-            client,
-            role="patient",
             seed="PatientCacheRefresh",
         )
 

@@ -10,7 +10,32 @@ from app.core.sentry import capture_categorized_error
 logger = logging.getLogger(__name__)
 
 
-def _error_payload(status_code: int, message: str, path: str) -> dict:
+def _error_payload(status_code: int, detail: object, path: str) -> dict:
+    """Normalize HTTPException detail for JSON responses.
+
+    Structured dict details (e.g. CONSENT_REQUIRED) are preserved so clients
+    can act on machine-readable codes. Plain strings stay strings.
+    """
+    if isinstance(detail, dict):
+        message = (
+            detail.get("message")
+            or detail.get("code")
+            or "Request failed"
+        )
+        if not isinstance(message, str):
+            message = str(message)
+        return {
+            "success": False,
+            "detail": detail,
+            "error": {
+                "status_code": status_code,
+                "message": message,
+                "path": path,
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+        }
+
+    message = detail if isinstance(detail, str) else str(detail)
     return {
         "success": False,
         "detail": message,
@@ -29,7 +54,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.warning("HTTPException %s on %s: %s", exc.status_code, request.url.path, exc.detail)
         return JSONResponse(
             status_code=exc.status_code,
-            content=_error_payload(exc.status_code, str(exc.detail), request.url.path),
+            content=_error_payload(exc.status_code, exc.detail, request.url.path),
         )
 
     @app.exception_handler(StarletteHTTPException)
@@ -39,7 +64,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.warning("StarletteHTTPException %s on %s: %s", exc.status_code, request.url.path, exc.detail)
         return JSONResponse(
             status_code=exc.status_code,
-            content=_error_payload(exc.status_code, str(exc.detail), request.url.path),
+            content=_error_payload(exc.status_code, exc.detail, request.url.path),
         )
 
     @app.exception_handler(Exception)

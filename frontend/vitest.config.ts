@@ -11,6 +11,7 @@ export default defineConfig({
       "lib/**/*.test.ts",
       "components/**/*.test.tsx",
       "app/**/*.test.tsx",
+      "app/**/*.test.ts",
       "src/modules/**/*.test.ts",
       "src/modules/**/*.test.tsx",
       "src/shared/**/*.test.ts",
